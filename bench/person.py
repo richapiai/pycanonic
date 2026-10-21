@@ -2,10 +2,11 @@
 and the synthetic payloads. `raw(i)` is byte-identical to `JSON.stringify(payload(i))` there.
 
 `hand_written` calls pycanonic's own transforms, as person.js does, so canonic and the reference
-compute the same thing. Each of those calls dispatches by name in Rust (about 70 ns, against
-about 27 ns for `str.lower`), and a payload makes 35 of them, so this reference pays more call
-overhead than ordinary glue would. `hand_written_pure` is the same glue over pure-Python ports
-(pytransforms.py) and is the fairer picture of what hand-written Python costs."""
+compute the same thing. Each of those calls dispatches by name in Rust, about 60 ns more than a
+plain method call, and a payload makes 35 of them, so this reference pays call overhead that
+ordinary glue would not. `hand_written_pure` is the same glue over pure-Python ports
+(pytransforms.py). It is about 3x slower, because the ports that do real work (to_domain,
+parse_date, normalize_linkedin) cost far more in Python than the dispatch saves."""
 
 import json
 import math
