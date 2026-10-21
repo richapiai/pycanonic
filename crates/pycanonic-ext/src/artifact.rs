@@ -1,7 +1,7 @@
 //! The `Artifact` class: a compiled plan with its stats, mapping Python objects, `bytes` or `str`.
 
 use crate::pydoc::{PyDoc, text};
-use crate::pysink::{PySink, to_py, value};
+use crate::pysink::{PySink, value};
 use crate::transforms::{PyTransform, take_pending};
 use crate::view::{Level, View, levels};
 use canonic_core::{CompileError, Plan, Status, Transform, Value};
@@ -117,11 +117,16 @@ impl Artifact {
         self.inner.plan.source()
     }
 
-    /// `bytes` or `str` is parsed and mapped with the GIL released; any other object is read as is.
+    /// `bytes` or `str` is parsed with the GIL released, then mapped straight into Python objects;
+    /// any other object is read as is.
     fn map<'py>(&self, py: Python<'py>, src: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let out = if let Some(body) = body_of(src) {
-            let out = py.detach(|| self.inner.map_bytes(&body));
-            to_py(py, &out, &self.names)
+            let node = py.detach(|| self.inner.parse(&body));
+            let mut sink = PySink {
+                py,
+                names: &self.names,
+            };
+            self.inner.map_with(node.as_ref().as_ref(), &mut sink)
         } else {
             let doc = PyDoc {
                 obj: src.clone(),

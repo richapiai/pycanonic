@@ -1,8 +1,8 @@
-//! Python output: `PySink` builds `dict`s and `list`s for a `PyDoc` input with the GIL held, and
-//! `to_py` converts the `Out` tree a bytes input was mapped to (detached) into the same objects.
+//! Python output: `PySink` builds `dict`s and `list`s with the GIL held, for a `PyDoc` input and for
+//! the parse tree of a bytes input alike.
 
 use crate::pydoc::text;
-use canonic_core::{Doc, Out, Value};
+use canonic_core::{Doc, Value};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 use std::borrow::Cow;
@@ -39,26 +39,6 @@ fn list<'py>(py: Python<'py>, items: Vec<Bound<'py, PyAny>>) -> Bound<'py, PyAny
     PyList::new(py, items)
         .expect("a list of Python objects")
         .into_any()
-}
-
-/// An `Out` tree as Python objects; canonical keys come from `names`, interned once per artifact.
-pub fn to_py<'py>(py: Python<'py>, o: &Out, names: &[Py<PyString>]) -> Bound<'py, PyAny> {
-    let v = |x: Value<'_>| value(py, &x);
-    match o {
-        Out::Null => v(Value::Null),
-        Out::Bool(b) => v(Value::Bool(*b)),
-        Out::Int(i) => v(Value::Int(*i)),
-        Out::BigInt(s) => v(Value::BigInt(Cow::Borrowed(s))),
-        Out::Float(f) => v(Value::Float(*f)),
-        Out::Str(s) => v(Value::Str(Cow::Borrowed(s))),
-        Out::List(xs) => list(py, xs.iter().map(|x| to_py(py, x, names)).collect()),
-        Out::Obj(m) => dict(
-            py,
-            m.iter()
-                .map(|(i, x)| (names[*i].bind(py), to_py(py, x, names))),
-        ),
-        Out::Map(m) => dict(py, m.iter().map(|(k, x)| (k.as_str(), to_py(py, x, names)))),
-    }
 }
 
 pub struct PySink<'a, 'py> {
