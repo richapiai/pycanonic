@@ -9,6 +9,7 @@ use crate::sink::{Out, RustSink, Sink};
 use crate::spec::{Path, Source, Step};
 use crate::stats::Stats;
 use crate::transforms::Transform;
+use crate::write::write_json;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -62,6 +63,14 @@ impl Artifact {
     pub fn map_bytes(&self, body: &[u8]) -> Out {
         let node = parse(body, &self.filter).ok();
         self.map_with(node.as_ref().as_ref(), &mut RustSink)
+    }
+
+    /// `map_bytes` written straight to JSON text, no intermediate Python objects.
+    pub fn map_json(&self, body: &[u8]) -> Vec<u8> {
+        let out = self.map_bytes(body);
+        let mut buf = Vec::with_capacity(body.len());
+        write_json(&self.plan, &out, &mut buf);
+        buf
     }
 
     pub fn map_doc<D: Doc>(&self, doc: &D) -> Out {
