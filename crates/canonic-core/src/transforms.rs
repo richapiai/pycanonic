@@ -484,7 +484,8 @@ fn normalize_phone(v: &Value) -> Option<String> {
         Some(rest) => ("+", rest),
         None => ("", s.as_ref()),
     };
-    let mut out = String::from(plus);
+    let mut out = String::with_capacity(s.len());
+    out.push_str(plus);
     for c in rest.chars() {
         if c.is_ascii_digit() {
             out.push(c);
@@ -503,17 +504,30 @@ fn strip_scheme(s: &str) -> &str {
     }
 }
 
-fn is_label(l: &str) -> bool {
-    !l.is_empty()
-        && l.len() <= 63
-        && !l.starts_with('-')
-        && !l.ends_with('-')
-        && l.bytes()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
-}
-
+/// Dot-separated labels of 1 to 63 bytes of `[a-z0-9-]`, none starting or ending with `-`, at
+/// least two of them, 253 bytes at most. One pass over the bytes.
 fn is_domain(s: &str) -> bool {
-    s.len() <= 253 && s.contains('.') && s.split('.').all(is_label)
+    let b = s.as_bytes();
+    if b.len() > 253 {
+        return false;
+    }
+    let (mut len, mut prev, mut dots) = (0usize, b'.', 0usize);
+    for &c in b {
+        if c == b'.' {
+            if len == 0 || prev == b'-' {
+                return false;
+            }
+            (len, dots) = (0, dots + 1);
+        } else {
+            let ok = c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-';
+            if !ok || (len == 0 && c == b'-') || len == 63 {
+                return false;
+            }
+            len += 1;
+        }
+        prev = c;
+    }
+    dots > 0 && len > 0 && prev != b'-'
 }
 
 /// `s` up to the first of the ASCII bytes `stops`.
