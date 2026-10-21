@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 88602a4cb555602e84b5e4744b713e337af6be862c422fc514c20eab5d7a2abb # shrinks to g = Obj([("address", Obj([("address", Arr([Str("0 A𐀀0\0𐀀𐀀"), Str("ࠀ\u{b} \00ࠀA¡"), Str("0\u{b}a\u{b}"), Str(""), Raw("1e400")])), ("back\\slash", Str("𐀀𐀀a\"# ")), ("", Str("A\0𐀀𐀀")), ("a", Raw("-0")), ("address", Str("+1 (415) 555-0100"))])), ("org", Obj([("", Str("¡#"))])), ("mobile", Str("+1 (415) 555-0100")), ("emails", Arr([Obj([])])), (" ", Arr([])), ("emails", Arr([])), ("a", Obj([("a", Str("𐀀ࠀ\\𐀀\u{b} 𐀀\0 𐀀")), ("𐀀A", Arr([Obj([("A𐀀A", Str("ࠀaa")), ("org", Str("\0\0\\¡¡¡0¡ 0A\\")), ("org", Raw("-12.5"))]), Raw("null"), Raw("-12.5"), Str("\u{80}𐀀¡ࠀ"), Obj([("", Str("\0¡\0")), ("address", Str("\u{1f}")), ("¡𐀀\0𐀀", Raw("0")), ("é", Raw("-12.5"))])])), ("q\"uote", Str("{\"a\":")), ("emails", Str("}"))]))]), ws = " \r\n ", escape = 0, sizes = [32, 7, 74, 61]

@@ -143,7 +143,11 @@ fn skip_with(buf: &[u8], start: usize, classify: impl Fn(&[u8; 64]) -> Masks) ->
             if open >> t & 1 == 1 {
                 depth += 1;
             } else {
-                depth -= 1;
+                // A close before any open: `start` was no opening bracket. Give up, never wrap.
+                let Some(d) = depth.checked_sub(1) else {
+                    return Some(None);
+                };
+                depth = d;
                 if depth == 0 {
                     return Some(Some(base + t as usize + 1));
                 }

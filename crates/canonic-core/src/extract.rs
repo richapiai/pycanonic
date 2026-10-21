@@ -7,16 +7,16 @@
 //! keys: the first occurrence wins.
 //!
 //! `extract` tries anchors first (a `memmem` search for the key token, skipping a hit preceded by
-//! an odd run of backslashes), then scans for whatever they missed. `stream` always scans. Skips
-//! walk bytes, never past the last wanted value: a stage-1 index of the whole input would read the
-//! whole body, however early the fields sit.
+//! an odd run of backslashes), then scans for whatever they missed. `stream` always scans. A skipped
+//! container is matched by `json::simd::skip` from its opening bracket, so nothing past the last
+//! wanted value is read; a stage-1 index of the whole input would read the whole body.
 //!
 //! Captured values are decoded like the parser does (`unescape`, the `Node::Num` rule) and go
 //! through the field's transforms and validator with the executor's own functions, so `extract`
 //! equals the routing fields of `map`.
 
 use crate::exec::{transform, transform_many};
-use crate::json::{ALL, Filter, Node, parse, unescape};
+use crate::json::{ALL, Filter, Node, parse, simd, unescape};
 use crate::plan::{Plan, Scalar, TxRef};
 use crate::spec::{Source, Step};
 use crate::transforms::Transform;
@@ -352,6 +352,8 @@ struct State {
     v_depth: usize,
     v_str: bool,
     v_scalar: bool,
+    /// A container just opened at `cap_start`, not yet scanned past.
+    v_fresh: bool,
     cap_start: usize,
     cap_node: usize,
     /// Where the closing-quote search of an unfinished key resumes.
@@ -372,6 +374,7 @@ impl State {
             v_depth: 0,
             v_str: false,
             v_scalar: false,
+            v_fresh: false,
             cap_start: 0,
             cap_node: 0,
             key_scan: 0,
@@ -535,6 +538,7 @@ impl Run<'_> {
         s.v_scalar = !matches!(c, b'"' | b'{' | b'[');
         s.v_str = c == b'"';
         s.v_depth = usize::from(matches!(c, b'{' | b'['));
+        s.v_fresh = s.v_depth == 1;
         if !s.v_scalar {
             s.pos += 1;
         }
@@ -594,6 +598,15 @@ impl Run<'_> {
     /// Scans to the container's end (true) or the end of the input (false), resumably.
     fn skip_bytes(&mut self) -> bool {
         let (b, s) = (self.b, &mut *self.s);
+        // Fresh from the opening bracket, the SIMD skip takes it whole; where it gives up (no close
+        // in the input so far, or a backslash outside a string) the byte loop below decides.
+        if std::mem::take(&mut s.v_fresh)
+            && let Some(end) = simd::skip(b, s.cap_start)
+        {
+            s.pos = end;
+            s.v_depth = 0;
+            return true;
+        }
         let mut pos = s.pos;
         let mut depth = s.v_depth;
         while let Some(&c) = b.get(pos) {
