@@ -58,12 +58,14 @@ pub(crate) fn write_out(names: &[String], out: &Out, buf: &mut Vec<u8>) {
     }
 }
 
-/// A `Sink` that writes JSON while the plan runs, so no `Out` tree is built: each value is written
-/// to `buf` when it is made and stands for its byte range there, and a list or object copies its
-/// children's ranges into place behind them. The root's range is `write_json` of what `RustSink`
-/// builds for the same run, byte for byte.
+/// A `Sink` that writes JSON while the plan runs, so no `Out` tree is built and nothing is copied:
+/// `open` and `next` write a container's bracket, commas and keys in place, each child writes
+/// itself after them, and a value stands for its byte range in `buf`. The root's range is
+/// `write_json` of what `RustSink` builds for the same run, byte for byte.
 pub(crate) struct JsonSink<'n> {
     pub buf: Vec<u8>,
+    /// Where each container still open started.
+    pub open: Vec<usize>,
     /// `"name":` for each of `Plan::names`, written once per artifact by `member_keys`.
     pub keys: &'n [Box<[u8]>],
 }
@@ -80,12 +82,18 @@ pub(crate) fn member_keys(names: &[String]) -> Vec<Box<[u8]>> {
 }
 
 impl JsonSink<'_> {
-    /// The root's text, moved to the front of `buf` and the rest dropped.
+    /// The root's text: all of `buf`, as the root is the first thing written.
     pub fn finish(mut self, root: Range<usize>) -> Vec<u8> {
-        let n = root.len();
-        self.buf.copy_within(root, 0);
-        self.buf.truncate(n);
+        if root.start > 0 {
+            self.buf.copy_within(root.clone(), 0);
+        }
+        self.buf.truncate(root.len());
         self.buf
+    }
+
+    fn close(&mut self, bracket: u8) -> Range<usize> {
+        self.buf.push(bracket);
+        self.open.pop().unwrap_or(0)..self.buf.len()
     }
 
     /// `d` as `RustSink::passthrough` builds it, then as `write_out` writes that.
@@ -134,31 +142,28 @@ impl Sink for JsonSink<'_> {
         start..self.buf.len()
     }
 
-    fn list(&mut self, items: Vec<Range<usize>>) -> Range<usize> {
-        let start = self.buf.len();
-        self.buf.push(b'[');
-        for (n, r) in items.into_iter().enumerate() {
-            if n > 0 {
-                self.buf.push(b',');
-            }
-            self.buf.extend_from_within(r);
-        }
-        self.buf.push(b']');
-        start..self.buf.len()
+    fn open(&mut self, object: bool) {
+        self.open.push(self.buf.len());
+        self.buf.push(if object { b'{' } else { b'[' });
     }
 
-    fn object(&mut self, members: Vec<(usize, Range<usize>)>) -> Range<usize> {
-        let start = self.buf.len();
-        self.buf.push(b'{');
-        for (n, (k, r)) in members.into_iter().enumerate() {
-            if n > 0 {
-                self.buf.push(b',');
-            }
-            self.buf.extend_from_slice(&self.keys[k]);
-            self.buf.extend_from_within(r);
+    fn next(&mut self, name: Option<usize>, first: bool) {
+        if !first {
+            self.buf.push(b',');
         }
-        self.buf.push(b'}');
-        start..self.buf.len()
+        if let Some(k) = name {
+            self.buf.extend_from_slice(&self.keys[k]);
+        }
+    }
+
+    /// The items are already in place, written after `open` and each `next`.
+    fn list(&mut self, _items: Vec<Range<usize>>) -> Range<usize> {
+        self.close(b']')
+    }
+
+    /// The members are already in place, as for `list`.
+    fn object(&mut self, _members: Vec<(usize, Range<usize>)>) -> Range<usize> {
+        self.close(b'}')
     }
 }
 

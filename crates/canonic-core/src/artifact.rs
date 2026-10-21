@@ -78,6 +78,7 @@ impl Artifact {
         let node = self.parse(body);
         let mut sink = JsonSink {
             buf: Vec::with_capacity(body.len()),
+            open: Vec::new(),
             keys: &self.json_keys,
         };
         let root = self.map_with(node.as_ref().as_ref(), &mut sink);

@@ -10,6 +10,16 @@ pub trait Sink {
     /// A source value with no transforms, containers included, as it is.
     fn passthrough<D: Doc>(&mut self, d: &D) -> Self::Out;
     fn list(&mut self, items: Vec<Self::Out>) -> Self::Out;
+    /// Called before the first child of an object (`object`) or a list, then `next` before each
+    /// child, then `object` or `list` with the children. A sink that writes as it goes (JSON text)
+    /// uses these; the default does nothing.
+    fn open(&mut self, object: bool) {
+        let _ = object;
+    }
+    /// Before each child: its canonical name (`Plan::names` index) in an object, `None` in a list.
+    fn next(&mut self, name: Option<usize>, first: bool) {
+        let _ = (name, first);
+    }
     /// A canonical object; each `usize` indexes `Plan::names`.
     fn object(&mut self, members: Vec<(usize, Self::Out)>) -> Self::Out;
 }

@@ -392,9 +392,12 @@ struct Exec<'e, S> {
 
 impl<S: Sink> Exec<'_, S> {
     fn object<D: Doc>(&mut self, fields: &[(usize, Op)], doc: Option<&D>) -> S::Out {
-        let members = fields
-            .iter()
-            .map(|(name, op)| (*name, self.op(op, doc)))
+        self.sink.open(true);
+        let members = (fields.iter().enumerate())
+            .map(|(n, (name, op))| {
+                self.sink.next(Some(*name), n == 0);
+                (*name, self.op(op, doc))
+            })
             .collect();
         self.sink.object(members)
     }
@@ -445,11 +448,14 @@ impl<S: Sink> Exec<'_, S> {
     }
 
     fn tuple<D: Doc>(&mut self, docs: &[Option<D>]) -> S::Out {
-        let items = docs
-            .iter()
-            .map(|d| match d {
-                Some(d) => self.sink.passthrough(d),
-                None => self.sink.scalar(Value::Null),
+        self.sink.open(false);
+        let items = (docs.iter().enumerate())
+            .map(|(n, d)| {
+                self.sink.next(None, n == 0);
+                match d {
+                    Some(d) => self.sink.passthrough(d),
+                    None => self.sink.scalar(Value::Null),
+                }
             })
             .collect();
         self.sink.list(items)
@@ -482,17 +488,19 @@ impl<S: Sink> Exec<'_, S> {
             self.stats.miss(stat);
             return self.sink.scalar(Value::Null);
         };
-        let items = match kind {
-            Kind::Item(fields) => {
-                self.stats.elements(stat, n);
-                (0..n)
-                    .map(|i| self.object(fields, x.item(i).as_ref()))
-                    .collect()
-            }
-            Kind::Elems(path, tx) => (0..n)
-                .map(|i| self.element(read(x.item(i).as_ref(), path), tx, stat))
-                .collect(),
-        };
+        if let Kind::Item(_) = kind {
+            self.stats.elements(stat, n);
+        }
+        self.sink.open(false);
+        let items = (0..n)
+            .map(|i| {
+                self.sink.next(None, i == 0);
+                match kind {
+                    Kind::Item(fields) => self.object(fields, x.item(i).as_ref()),
+                    Kind::Elems(path, tx) => self.element(read(x.item(i).as_ref(), path), tx, stat),
+                }
+            })
+            .collect();
         self.sink.list(items)
     }
 
