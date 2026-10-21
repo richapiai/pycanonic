@@ -53,13 +53,16 @@ def load(
     """An artifact from a plan written by `Artifact.plan_json()`, without compiling the spec again.
 
     An `os.PathLike` is a file path, read as UTF-8. A `str` naming an existing file is read the
-    same way; any other `str`, and `bytes`, is the plan JSON itself. Pass the same `transforms`
-    the plan was compiled with.
+    same way; a `str` starting with `{` or `[`, and `bytes`, is the plan JSON itself. Any other
+    `str` is a missing file: `FileNotFoundError`. Pass the same `transforms` the plan was
+    compiled with.
     """
     if isinstance(path_or_json, os.PathLike) or (
         isinstance(path_or_json, str) and os.path.isfile(path_or_json)
     ):
         text = Path(path_or_json).read_text(encoding="utf-8")
+    elif isinstance(path_or_json, str) and not path_or_json.lstrip().startswith(("{", "[")):
+        raise FileNotFoundError(path_or_json)
     elif isinstance(path_or_json, bytes):
         text = path_or_json.decode("utf-8")
     else:

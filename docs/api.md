@@ -42,7 +42,7 @@ def load(
 ) -> Artifact
 ```
 
-This function loads an artifact from a plan that `artifact.plan_json()` or `canonic build` wrote. It does not compile the spec again. A path object is read as UTF-8. A `str` that names an existing file is read the same way. Any other `str`, and `bytes`, is the plan JSON itself. Pass the same `transforms` the plan was compiled with.
+This function loads an artifact from a plan that `artifact.plan_json()` or `canonic build` wrote. It does not compile the spec again. A path object is read as UTF-8. A `str` that names an existing file is read the same way. A `str` that starts with `{` or `[` (after whitespace), and `bytes`, is the plan JSON itself. Any other `str` raises `FileNotFoundError`. Pass the same `transforms` the plan was compiled with.
 
 ### `validate_spec(spec) -> list[Issue]`
 

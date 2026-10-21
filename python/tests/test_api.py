@@ -93,6 +93,8 @@ def test_load_of_a_plan_file_maps_identically(bench_spec: Bench, tmp_path: Path)
 def test_load_of_a_missing_path_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load(tmp_path / "missing.json")
+    with pytest.raises(FileNotFoundError, match="missing.json"):
+        load(str(tmp_path / "missing.json"))
 
 
 def test_load_passes_custom_transforms(tmp_path: Path, person: dict[str, Any]) -> None:
