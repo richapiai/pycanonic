@@ -12,6 +12,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyIterator, PyList, PyString};
+use std::sync::Arc;
 
 type MaybeNode<'a> = Option<Node<'a>>;
 
@@ -49,6 +50,13 @@ pub struct Level {
     fields: Vec<LevelField>,
 }
 
+/// A `View` attribute of that name, or any `__x__` name: Python looks protocol names up on the
+/// instance (`__wrapped__`, `__getnewargs__`), and those must never get a field.
+fn shadowed(ty: &Bound<'_, pyo3::types::PyType>, name: &str) -> bool {
+    (name.len() > 4 && name.starts_with("__") && name.ends_with("__"))
+        || ty.hasattr(name).unwrap_or(true)
+}
+
 /// Every object level of `fields`, depth first, the root at index 0.
 pub fn levels(py: Python<'_>, names: &[String], fields: &[Named<Field>]) -> Vec<Level> {
     fn walk(
@@ -77,7 +85,7 @@ pub fn levels(py: Python<'_>, names: &[String], fields: &[Named<Field>]) -> Vec<
                     name_idx: f.name_idx,
                     path: p,
                     child,
-                    shadowed: ty.hasattr(names[f.name_idx].as_str()).unwrap_or(true),
+                    shadowed: shadowed(ty, &names[f.name_idx]),
                 }
             })
             .collect();
@@ -89,22 +97,18 @@ pub fn levels(py: Python<'_>, names: &[String], fields: &[Named<Field>]) -> Vec<
     out
 }
 
-/// A view of one canonical object. Attribute access reads a field unless a method or dunder has
-/// the same name; `view[name]` always reads the field.
+/// A view of one canonical object. Attribute access reads a field unless `View` has an attribute
+/// of that name (`to_dict`) or the name is a `__dunder__`; `view[name]` always reads the field.
 #[pyclass(frozen, module = "pycanonic._core")]
 pub struct View {
     artifact: Py<Artifact>,
-    /// The document; a nested view reads its root's.
-    doc: Doc,
+    /// Shared with nested views. An `Arc`, not a `Py` of the root: the root's cache holds its
+    /// children, so a child pointing back at the root would be a cycle the GC can't see.
+    doc: Arc<Source>,
     /// Index into the artifact's `levels`.
     level: usize,
     /// One slot per field at this level: the mapped value, or the nested `View`.
     cache: Box<[PyOnceLock<Py<PyAny>>]>,
-}
-
-enum Doc {
-    Root(Source),
-    Child(Py<View>),
 }
 
 fn slots(n: usize) -> Box<[PyOnceLock<Py<PyAny>>]> {
@@ -124,7 +128,7 @@ impl View {
         let n = a.levels[0].fields.len();
         View {
             artifact,
-            doc: Doc::Root(doc),
+            doc: Arc::new(doc),
             level: 0,
             cache: slots(n),
         }
@@ -141,14 +145,7 @@ impl View {
             py,
             names: &a.names,
         };
-        let src = match &self.doc {
-            Doc::Root(s) => s,
-            Doc::Child(root) => match &root.get().doc {
-                Doc::Root(s) => s,
-                Doc::Child(_) => unreachable!("a child's root is a root"),
-            },
-        };
-        let out = match src {
+        let out = match &*self.doc {
             Source::Parsed(p) => {
                 let node = p.borrow_dependent().as_ref();
                 a.inner.map_field(path, node.as_ref(), &mut sink)
@@ -180,32 +177,27 @@ impl View {
     }
 
     /// Field `i` of this level, mapped (or made a nested view) on first read.
-    fn field(slf: &Bound<'_, Self>, i: usize) -> PyResult<Py<PyAny>> {
-        let py = slf.py();
-        let this = slf.get();
-        if let Some(v) = this.cache[i].get(py) {
+    fn field(&self, py: Python<'_>, i: usize) -> PyResult<Py<PyAny>> {
+        if let Some(v) = self.cache[i].get(py) {
             return Ok(v.clone_ref(py));
         }
-        let f = &this.fields()[i];
+        let f = &self.fields()[i];
         let v = match f.child {
             Some(level) => Py::new(
                 py,
                 View {
-                    artifact: this.artifact.clone_ref(py),
-                    doc: Doc::Child(match &this.doc {
-                        Doc::Root(_) => slf.clone().unbind(),
-                        Doc::Child(root) => root.clone_ref(py),
-                    }),
+                    artifact: self.artifact.clone_ref(py),
+                    doc: self.doc.clone(),
                     level,
-                    cache: slots(this.artifact.get().levels[level].fields.len()),
+                    cache: slots(self.artifact.get().levels[level].fields.len()),
                 },
             )?
             .into_any(),
-            None => this.run(py, &f.path)?.unbind(),
+            None => self.run(py, &f.path)?.unbind(),
         };
         // Not get_or_init: a transform may read this view again. A racing reader's value may win.
-        let _ = this.cache[i].set(py, v);
-        Ok(this.cache[i].get(py).expect("just set").clone_ref(py))
+        let _ = self.cache[i].set(py, v);
+        Ok(self.cache[i].get(py).expect("just set").clone_ref(py))
     }
 
     fn names<'py>(&self, py: Python<'py>) -> Vec<Bound<'py, PyString>> {
@@ -230,7 +222,7 @@ impl View {
         if let Some(i) = this.find(name)
             && !this.fields()[i].shadowed
         {
-            return View::field(slf, i);
+            return this.field(slf.py(), i);
         }
         let object = slf.py().get_type::<PyAny>();
         Ok(object
@@ -240,10 +232,10 @@ impl View {
     }
 
     /// Field `name`, whatever attribute shares its name; `KeyError` when there is no such field.
-    fn __getitem__(slf: &Bound<'_, Self>, name: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        let i = name.cast::<PyString>().ok().and_then(|n| slf.get().find(n));
+    fn __getitem__(&self, py: Python<'_>, name: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        let i = name.cast::<PyString>().ok().and_then(|n| self.find(n));
         match i {
-            Some(i) => View::field(slf, i),
+            Some(i) => self.field(py, i),
             None => Err(PyKeyError::new_err(name.clone().unbind())),
         }
     }

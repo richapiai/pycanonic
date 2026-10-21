@@ -156,3 +156,59 @@ def test_methods_win_attribute_access_and_getitem_reads_the_field():
         v["nope"]
     with pytest.raises(KeyError):
         v[0]
+
+
+NESTED_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "c": {"type": "object", "properties": {"d": {"type": "string"}}},
+        "__wrapped__": {"type": "string"},
+    },
+}
+NESTED_SPEC = {
+    "provider": "p",
+    "endpoint": "e",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"c.d": "x", "__wrapped__": "w"},
+}
+
+
+def test_views_free_their_source_without_the_gc():
+    a = _core.compile(NESTED_SPEC, NESTED_SCHEMA, None)
+    alive = [0]
+
+    class Src(dict):
+        def __init__(self, *args):
+            super().__init__(*args)
+            alive[0] += 1
+
+        def __del__(self):
+            alive[0] -= 1
+
+    for read in (False, True):
+        for _ in range(1000):
+            v = a.view(Src({"x": "X"}))
+            if read:
+                assert v.c.d == "X"
+            del v
+        assert alive[0] == 0, f"read={read}"
+    gc.collect()
+    assert alive[0] == 0
+
+    # A nested view keeps the source alive on its own.
+    v = a.view(Src({"x": "X"}))
+    c = v.c
+    del v
+    assert alive[0] == 1
+    assert c.d == "X"
+    del c
+    assert alive[0] == 0
+
+
+def test_dunder_field_names_are_never_attributes():
+    a = _core.compile(NESTED_SPEC, NESTED_SCHEMA, None)
+    v = a.view({"x": "X", "w": "W"})
+    with pytest.raises(AttributeError):
+        v.__wrapped__
+    assert v["__wrapped__"] == "W"
