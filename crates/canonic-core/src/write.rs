@@ -1,8 +1,10 @@
 //! `Out` as JSON text, byte for byte what `JSON.stringify` writes for the same canonical value.
 
+use crate::doc::Doc;
 use crate::plan::Plan;
-use crate::sink::Out;
-use crate::value::js_number_to_string;
+use crate::sink::{Out, Sink};
+use crate::value::{Value, js_number_to_string};
+use std::ops::Range;
 
 pub fn write_json(plan: &Plan, out: &Out, buf: &mut Vec<u8>) {
     write_out(&plan.names, out, buf);
@@ -53,6 +55,115 @@ pub(crate) fn write_out(names: &[String], out: &Out, buf: &mut Vec<u8>) {
             }
             buf.push(b'}');
         }
+    }
+}
+
+/// A `Sink` that writes JSON while the plan runs, so no `Out` tree is built: each value is written
+/// to `buf` when it is made and stands for its byte range there, and a list or object copies its
+/// children's ranges into place behind them. The root's range is `write_json` of what `RustSink`
+/// builds for the same run, byte for byte.
+pub(crate) struct JsonSink<'n> {
+    pub buf: Vec<u8>,
+    pub names: &'n [String],
+}
+
+impl JsonSink<'_> {
+    /// The root's text, moved to the front of `buf` and the rest dropped.
+    pub fn finish(mut self, root: Range<usize>) -> Vec<u8> {
+        let n = root.len();
+        self.buf.copy_within(root, 0);
+        self.buf.truncate(n);
+        self.buf
+    }
+
+    /// `d` as `RustSink::passthrough` builds it, then as `write_out` writes that.
+    fn doc<D: Doc>(&mut self, d: &D) {
+        if let Some(n) = d.len() {
+            self.buf.push(b'[');
+            for i in 0..n {
+                if i > 0 {
+                    self.buf.push(b',');
+                }
+                match d.item(i) {
+                    Some(x) => self.doc(&x),
+                    None => self.buf.extend_from_slice(b"null"),
+                }
+            }
+            self.buf.push(b']');
+        } else if let Some(m) = d.members() {
+            self.buf.push(b'{');
+            for (n, (k, v)) in m.into_iter().enumerate() {
+                if n > 0 {
+                    self.buf.push(b',');
+                }
+                write_str(&k, &mut self.buf);
+                self.buf.push(b':');
+                self.doc(&v);
+            }
+            self.buf.push(b'}');
+        } else {
+            write_value(&d.leaf(), &mut self.buf);
+        }
+    }
+}
+
+impl Sink for JsonSink<'_> {
+    type Out = Range<usize>;
+
+    fn scalar(&mut self, v: Value<'_>) -> Range<usize> {
+        let start = self.buf.len();
+        write_value(&v, &mut self.buf);
+        start..self.buf.len()
+    }
+
+    fn passthrough<D: Doc>(&mut self, d: &D) -> Range<usize> {
+        let start = self.buf.len();
+        self.doc(d);
+        start..self.buf.len()
+    }
+
+    fn list(&mut self, items: Vec<Range<usize>>) -> Range<usize> {
+        let start = self.buf.len();
+        self.buf.push(b'[');
+        for (n, r) in items.into_iter().enumerate() {
+            if n > 0 {
+                self.buf.push(b',');
+            }
+            self.buf.extend_from_within(r);
+        }
+        self.buf.push(b']');
+        start..self.buf.len()
+    }
+
+    fn object(&mut self, members: Vec<(usize, Range<usize>)>) -> Range<usize> {
+        let start = self.buf.len();
+        self.buf.push(b'{');
+        for (n, (k, r)) in members.into_iter().enumerate() {
+            if n > 0 {
+                self.buf.push(b',');
+            }
+            write_str(&self.names[k], &mut self.buf);
+            self.buf.push(b':');
+            self.buf.extend_from_within(r);
+        }
+        self.buf.push(b'}');
+        start..self.buf.len()
+    }
+}
+
+/// A scalar as `write_out` writes the `Out` that `RustSink::scalar` makes of it.
+fn write_value(v: &Value<'_>, buf: &mut Vec<u8>) {
+    match v {
+        Value::Null | Value::Container => buf.extend_from_slice(b"null"),
+        Value::Bool(true) => buf.extend_from_slice(b"true"),
+        Value::Bool(false) => buf.extend_from_slice(b"false"),
+        Value::Int(i) => write_int(*i, buf),
+        Value::BigInt(s) => buf.extend_from_slice(s.as_bytes()),
+        Value::Float(f) if f.is_finite() => {
+            buf.extend_from_slice(js_number_to_string(*f).as_bytes())
+        }
+        Value::Float(_) => buf.extend_from_slice(b"null"),
+        Value::Str(s) => write_str(s, buf),
     }
 }
 

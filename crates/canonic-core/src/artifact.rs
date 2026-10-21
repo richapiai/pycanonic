@@ -11,7 +11,7 @@ use crate::spec::{Path, Source, Step};
 use crate::stats::Stats;
 use crate::transforms::Transform;
 use crate::value::Value;
-use crate::write::write_json;
+use crate::write::JsonSink;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -69,12 +69,16 @@ impl Artifact {
         self.map_with(node.as_ref().as_ref(), &mut RustSink)
     }
 
-    /// `map_bytes` written straight to JSON text, no intermediate Python objects.
+    /// `map_bytes` written straight to JSON text, no intermediate Python objects: the plan runs into
+    /// a `JsonSink`, so not even an `Out` tree is built.
     pub fn map_json(&self, body: &[u8]) -> Vec<u8> {
-        let out = self.map_bytes(body);
-        let mut buf = Vec::with_capacity(body.len());
-        write_json(&self.plan, &out, &mut buf);
-        buf
+        let node = self.parse(body);
+        let mut sink = JsonSink {
+            buf: Vec::with_capacity(body.len()),
+            names: &self.plan.names,
+        };
+        let root = self.map_with(node.as_ref().as_ref(), &mut sink);
+        sink.finish(root)
     }
 
     pub fn map_doc<D: Doc>(&self, doc: &D) -> Out {
