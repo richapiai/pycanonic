@@ -5,6 +5,11 @@ use crate::sink::Out;
 use crate::value::js_number_to_string;
 
 pub fn write_json(plan: &Plan, out: &Out, buf: &mut Vec<u8>) {
+    write_out(&plan.names, out, buf);
+}
+
+/// `write_json` with the plan's names; an `Out` with no `Out::Obj` needs none.
+pub(crate) fn write_out(names: &[String], out: &Out, buf: &mut Vec<u8>) {
     match out {
         Out::Null => buf.extend_from_slice(b"null"),
         Out::Bool(true) => buf.extend_from_slice(b"true"),
@@ -20,7 +25,7 @@ pub fn write_json(plan: &Plan, out: &Out, buf: &mut Vec<u8>) {
                 if n > 0 {
                     buf.push(b',');
                 }
-                write_json(plan, x, buf);
+                write_out(names, x, buf);
             }
             buf.push(b']');
         }
@@ -30,9 +35,9 @@ pub fn write_json(plan: &Plan, out: &Out, buf: &mut Vec<u8>) {
                 if n > 0 {
                     buf.push(b',');
                 }
-                write_str(&plan.names[*k], buf);
+                write_str(&names[*k], buf);
                 buf.push(b':');
-                write_json(plan, x, buf);
+                write_out(names, x, buf);
             }
             buf.push(b'}');
         }
@@ -44,7 +49,7 @@ pub fn write_json(plan: &Plan, out: &Out, buf: &mut Vec<u8>) {
                 }
                 write_str(k, buf);
                 buf.push(b':');
-                write_json(plan, x, buf);
+                write_out(names, x, buf);
             }
             buf.push(b'}');
         }

@@ -2,6 +2,7 @@ mod artifact;
 mod drift;
 mod pydoc;
 mod pysink;
+mod shadow;
 mod transforms;
 mod view;
 
@@ -21,6 +22,8 @@ mod _core {
     use crate::artifact::{Artifact, ExtractStream, Stats};
     #[pymodule_export]
     use crate::drift::{FillMonitor, fingerprint, shape};
+    #[pymodule_export]
+    use crate::shadow::{ShadowDiff, merge_gate};
     #[pymodule_export]
     use crate::view::View;
 

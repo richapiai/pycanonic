@@ -9,6 +9,7 @@ mod extract;
 pub mod json;
 pub mod plan;
 pub mod resolve;
+pub mod shadow;
 pub mod sink;
 pub mod spec;
 pub mod stats;
@@ -28,6 +29,9 @@ pub use extract::ExtractStream;
 pub use json::{Filter, ParseError, parse, unescape};
 pub use plan::{CompileError, Field, ListKind, Meta, Named, Plan, RoutingField, Scalar, TxRef};
 pub use resolve::compile;
+pub use shadow::{
+    FieldDiff, GateOptions, GateResult, ShadowDiff, ShadowReport, merge_gate, to_out_bounded,
+};
 pub use sink::{Out, RustSink, Sink};
 pub use spec::{Issue, Path, Source, Spec, Status, Step, parse_spec, validate_spec};
 pub use stats::{FieldStats, Stats, StatsSnapshot};

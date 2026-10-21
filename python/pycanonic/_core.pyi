@@ -1,6 +1,6 @@
 """Type stubs for the Rust extension `pycanonic._core`."""
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any, Literal, TypeVar, final
 
 from typing_extensions import NotRequired, TypedDict
@@ -9,12 +9,14 @@ __all__ = [
     "Artifact",
     "ExtractStream",
     "FillMonitor",
+    "ShadowDiff",
     "Stats",
     "View",
     "compile",
     "default_transform",
     "fingerprint",
     "load_plan",
+    "merge_gate",
     "shape",
     "validate_canonical",
     "validate_spec",
@@ -122,3 +124,38 @@ def shape(value: object) -> list[str]:
 
 def fingerprint(value: object) -> str:
     """FNV-1a over `shape(value)`, as 8 hex digits, equal to canonic's; raises where `shape` does."""
+
+class _FieldDiff(TypedDict):
+    compared: int
+    same: int
+    improvements: int
+    regressions: int
+    conflicts: int
+
+class _ShadowReport(TypedDict):
+    responses: int
+    routing: list[str]
+    fields: dict[str, _FieldDiff]
+
+@final
+class ShadowDiff:
+    """Compares a candidate's `map()` output with the promoted one's, field by field, response by response."""
+
+    def __init__(self, routing: Sequence[str]) -> None: ...
+    def add(self, promoted: Mapping[str, Any], candidate: Mapping[str, Any]) -> None:
+        """Records one response. A value deeper than 512 levels or with more than 1,000,000 values
+        (a cyclic one) raises `ValueError` and records nothing."""
+
+    def snapshot(self) -> _ShadowReport: ...
+
+class _GateResult(TypedDict):
+    merge: bool
+    reasons: list[str]
+
+def merge_gate(
+    report: Mapping[str, Any],
+    *,
+    max_change: float = 0.01,
+    known: Sequence[tuple[Mapping[str, Any], Mapping[str, Any]] | Mapping[str, Mapping[str, Any]]] | None = None,
+    fill_alerts: Sequence[object] | None = None,
+) -> _GateResult: ...

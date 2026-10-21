@@ -3,17 +3,19 @@
 from ._api import (
     FieldAlert,
     FillMonitor,
+    GateResult,
     Issue,
     SpecError,
     Transform,
     compile_spec,
     default_transforms,
     load,
+    merge_gate,
     validate_canonical,
     validate_spec,
     validators,
 )
-from ._core import Artifact, Stats, fingerprint, shape
+from ._core import Artifact, ShadowDiff, Stats, fingerprint, shape
 from .registry import Registry
 
 __version__ = "0.1.0"
@@ -22,8 +24,10 @@ __all__ = [
     "Artifact",
     "FieldAlert",
     "FillMonitor",
+    "GateResult",
     "Issue",
     "Registry",
+    "ShadowDiff",
     "SpecError",
     "Stats",
     "Transform",
@@ -31,6 +35,7 @@ __all__ = [
     "default_transforms",
     "fingerprint",
     "load",
+    "merge_gate",
     "shape",
     "validate_canonical",
     "validate_spec",

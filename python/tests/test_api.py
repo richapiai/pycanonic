@@ -162,8 +162,9 @@ def test_the_package_ships_stubs_and_the_typed_marker() -> None:
 @pytest.mark.skipif(importlib.util.find_spec("mypy") is None, reason="mypy is not installed")
 def test_this_file_passes_mypy_strict() -> None:
     drift = str(Path(__file__).with_name("test_drift.py"))
+    shadow = str(Path(__file__).with_name("test_shadow.py"))
     done = subprocess.run(
-        [sys.executable, "-m", "mypy", "--strict", "--no-incremental", __file__, drift],
+        [sys.executable, "-m", "mypy", "--strict", "--no-incremental", __file__, drift, shadow],
         capture_output=True,
         text=True,
     )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -141,3 +141,30 @@ class FillMonitor:
     def check(self, window: Mapping[str, Any]) -> list[FieldAlert]:
         """Feeds one window; the fields whose fill fell or whose errors rose, once it is big enough."""
         return [FieldAlert(**a) for a in self._core.check(window)]
+
+
+@dataclass(frozen=True)
+class GateResult:
+    """`merge` is true only when `reasons`, the rules the candidate broke, is empty."""
+
+    merge: bool
+    reasons: list[str]
+
+
+def merge_gate(
+    report: Mapping[str, Any],
+    *,
+    max_change: float = 0.01,
+    known: Sequence[tuple[Mapping[str, Any], Mapping[str, Any]] | Mapping[str, Mapping[str, Any]]] | None = None,
+    fill_alerts: Sequence[FieldAlert | Mapping[str, Any]] | None = None,
+) -> GateResult:
+    """Whether a shadow candidate may be promoted without a person, given `ShadowDiff.snapshot()`.
+
+    Routing fields: no regressions, no conflicts, improvements only when a `known` entity states
+    the field's value. Every other field: regressions plus conflicts at most `max_change` of
+    `compared`. Any of `fill_alerts` blocks the merge. `known` holds `(candidate, expected)` pairs
+    (or `{"candidate": ..., "expected": ...}`): the candidate's output for an entity whose true
+    routing values are known, next to those values.
+    """
+    r = _core.merge_gate(report, max_change=max_change, known=known, fill_alerts=fill_alerts)
+    return GateResult(merge=r["merge"], reasons=r["reasons"])
