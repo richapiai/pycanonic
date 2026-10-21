@@ -38,7 +38,23 @@ jobs:
       - run: python -m venv .venv
       - run: .venv/bin/pip install maturin pytest
       - run: .venv/bin/maturin develop
-      - run: .venv/bin/pytest python/tests -q
+      - run: .venv/bin/pytest python/tests bench/test_payloads.py -q
+
+  bench:
+    # Non-blocking: the ratio gate is flaky on shared GitHub runners. The blocking run is on the
+    # bench box before a release (bench/README.md).
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python -m venv .venv
+      - run: .venv/bin/pip install maturin -r bench/requirements.txt
+      - run: .venv/bin/maturin develop --release
+      - run: .venv/bin/python bench/run.py --gate
 
   leak-scan:
     runs-on: ubuntu-latest
