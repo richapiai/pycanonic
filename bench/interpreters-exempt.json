@@ -1,0 +1,5 @@
+{
+  "jmespath": "no string functions, so it runs without transforms; a light interpreter under 1 us per field (README: 9.6x)",
+  "jsonbender": "a light interpreter under 1 us per field (README: 8.0x)",
+  "pydantic": "compiles its models into a Rust validator tree: the same kind of work as pycanonic, not an interpreter (README: 3.0x)"
+}

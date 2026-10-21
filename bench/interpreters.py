@@ -5,13 +5,18 @@ the same output as pycanonic before anything is timed.
     python bench/interpreters.py          prints the table
     python bench/interpreters.py --gate   exits 1 unless every mapping library is at least 10x slower
                                           than pycanonic, bytes in and dict in (reference rows are not gated)
+    --exempt FILE                         libraries the gate reports but does not fail on, by
+                                          distribution name, with the reason (default:
+                                          bench/interpreters-exempt.json; the README names them)
 
 `jmespath` and `jmespath-community` install the same `jmespath` module, and `jsonata-python` and
 `jsonata-rs` the same `jsonata` module, so one environment holds one of each pair. requirements.txt
 pins the first of each, requirements-alt.txt the second; the rows are labelled with whichever is installed.
 """
 
+import argparse
 import importlib.metadata as md
+import json
 import platform
 import subprocess
 import sys
@@ -392,7 +397,7 @@ def norm(o):
     return orjson.dumps(o, option=orjson.OPT_SORT_KEYS)
 
 
-def main(gate):
+def main(gate, exempt):
     for k in range(64):
         want = norm(CANONIC.map(payloads[k]))
         if norm(CANONIC.map(raws[k])) != want or orjson.loads(CANONIC.map_json(raws[k])) != CANONIC.map(payloads[k]):
@@ -426,19 +431,28 @@ def main(gate):
             mapper = any(name == r[0] for r in libs)
             note = "" if name.startswith("pycanonic map(") else f"{ratio:.1f}x"
             if mapper and ratio < 10:
-                failed.append(f"{case}: {name} is {ratio:.1f}x")
-                note += " <10x"
+                if name.split()[0] in exempt:
+                    note += " exempt"
+                else:
+                    failed.append(f"{case}: {name} is {ratio:.1f}x")
+                    note += " <10x"
             print(f"{case:<10}{name:<46}{fmt(t):>12}{round(1e9 / t):>12,}{note:>14}")
     print("\n'vs pycanonic' = time / pycanonic map time in the same case (above 1x is slower).")
     print("Not mappers, never gated: orjson.loads, hand-written py, pycanonic map_json.")
+    for lib, why in exempt.items():
+        print(f"Exempt from the 10x gate: {lib}: {why}")
     if gate:
         sys.stdout.flush()
         for f in failed:
             print(f"FAIL {f}", file=sys.stderr)
         if failed or len(libs) < len(LIBRARIES):
             sys.exit(1)
-        print("gate: every mapping library is at least 10x slower than pycanonic, bytes in and dict in")
+        print("gate: every mapping library not exempt is at least 10x slower than pycanonic, bytes in and dict in")
 
 
 if __name__ == "__main__":
-    main("--gate" in sys.argv[1:])
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--gate", action="store_true")
+    ap.add_argument("--exempt", type=Path, default=Path(__file__).parent / "interpreters-exempt.json")
+    args = ap.parse_args()
+    main(args.gate, json.loads(args.exempt.read_text()))

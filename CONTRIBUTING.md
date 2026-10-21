@@ -91,6 +91,8 @@ To cut a release:
    .venv/bin/python bench/interpreters.py --gate
    ```
 
+   `interpreters.py --gate` skips the three libraries in `bench/interpreters-exempt.json` (jmespath, jsonbender, pydantic; the README says why) and fails on any other mapping library under 10x.
+
 3. Run the local checks: `cargo test --workspace`, `.venv/bin/pytest python/tests -q`, `cargo audit`, `scripts/leak-scan.sh` and `scripts/leak-scan.sh --history`.
 4. Tag and push:
 
