@@ -347,6 +347,25 @@ fn zero_byte(x: u64) -> u64 {
     x.wrapping_sub(LO) & !x & HI
 }
 
+/// `a == b` for short byte strings, the keys the parser and `Doc::get` compare all the time, by
+/// overlapping word loads instead of a `memcmp` call; longer ones go to `==`.
+#[inline]
+pub(crate) fn same_key(a: &[u8], b: &[u8]) -> bool {
+    let n = a.len();
+    if n != b.len() {
+        return false;
+    }
+    let w8 = |s: &[u8], at: usize| u64::from_le_bytes(s[at..at + 8].try_into().unwrap_or_default());
+    let w4 = |s: &[u8], at: usize| u32::from_le_bytes(s[at..at + 4].try_into().unwrap_or_default());
+    match n {
+        0 => true,
+        1..=3 => a[0] == b[0] && a[n / 2] == b[n / 2] && a[n - 1] == b[n - 1],
+        4..=7 => w4(a, 0) == w4(b, 0) && w4(a, n - 4) == w4(b, n - 4),
+        8..=16 => w8(a, 0) == w8(b, 0) && w8(a, n - 8) == w8(b, n - 8),
+        _ => a == b,
+    }
+}
+
 /// A string's text from its raw bytes; `plain` (see `Parser::raw_string`) bytes are it already.
 fn decode(raw: &[u8], plain: bool) -> Cow<'_, str> {
     match plain {
@@ -359,7 +378,7 @@ fn decode(raw: &[u8], plain: bool) -> Cow<'_, str> {
 /// The filter entry for the member whose key has the raw (still escaped) bytes `raw`. Filter keys
 /// are decoded UTF-8: plain bytes are compared as they are, anything else is decoded first.
 fn wanted<'f>(keys: &'f [(Box<[u8]>, Filter)], raw: &[u8], plain: bool) -> Option<&'f Filter> {
-    let find = |key: &[u8]| keys.iter().find(|(k, _)| **k == *key).map(|(_, c)| c);
+    let find = |key: &[u8]| keys.iter().find(|(k, _)| same_key(k, key)).map(|(_, c)| c);
     match plain {
         true => find(raw),
         false => find(unescape(raw).as_bytes()),
@@ -459,6 +478,15 @@ mod tests {
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(4096))]
+
+        #[test]
+        fn same_key_is_byte_equality(
+            a in prop::collection::vec(prop::sample::select(b"ab".to_vec()), 0..24),
+            b in prop::collection::vec(prop::sample::select(b"ab".to_vec()), 0..24),
+        ) {
+            prop_assert_eq!(same_key(&a, &b), a == b);
+            prop_assert!(same_key(&a, &a));
+        }
 
         /// `raw_string`'s fast paths read a string as the plain byte scan plus `unescape` does.
         #[test]

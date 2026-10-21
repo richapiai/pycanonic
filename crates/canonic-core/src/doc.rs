@@ -1,6 +1,6 @@
 //! The document the executor reads: the borrowed JSON tree here, Python objects in the extension.
 
-use crate::json::Node;
+use crate::json::{Node, same_key};
 use crate::value::Value;
 use std::any::Any;
 use std::borrow::Cow;
@@ -53,7 +53,9 @@ impl<'a, 'b> Doc for &'a Node<'b> {
     /// A duplicated key reads its last value, as `JSON.parse` does; see `members`.
     fn get(&self, key: &Key) -> Option<Self> {
         match self {
-            Node::Obj(m) => m.iter().rfind(|(k, _)| *k == key.s).map(|(_, v)| v),
+            Node::Obj(m) => (m.iter())
+                .rfind(|(k, _)| same_key(k.as_bytes(), key.s.as_bytes()))
+                .map(|(_, v)| v),
             _ => None,
         }
     }
