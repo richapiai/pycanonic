@@ -123,20 +123,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # wheel and python are the axes; each include entry names its wheel, so it only adds
+        # os (and alpine) to that wheel's jobs.
+        wheel: [manylinux-x86_64, manylinux-aarch64, musllinux-x86_64, macos-universal2, windows-x86_64]
+        python: ["3.10", "3.14"]
         include:
           - wheel: manylinux-x86_64
             os: ubuntu-latest
+            alpine: false
+          # Native arm64 runner: the aarch64 wheel runs as built, no QEMU.
           - wheel: manylinux-aarch64
             os: ubuntu-24.04-arm
+            alpine: false
           - wheel: musllinux-x86_64
             os: ubuntu-latest
             alpine: true
           # Runs the arm64 half of the universal2 wheel; the x86_64 half is built, not run.
           - wheel: macos-universal2
             os: macos-latest
+            alpine: false
           - wheel: windows-x86_64
             os: windows-latest
-        python: ["3.10", "3.14"]
+            alpine: false
     runs-on: ${{ matrix.os }}
     defaults:
       run:

@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2024"
 authors = ["RichAPI AI (TexAu OÜ)"]
 license = "MIT"
+description = "Compile JSON mapping specs into plans that map provider responses to a canonical schema. The core of pycanonic."
+repository = "https://github.com/richapiai/pycanonic"
+homepage = "https://github.com/richapiai/pycanonic"
+keywords = ["json", "mapping", "schema", "normalization", "etl"]
+categories = ["parser-implementations", "encoding"]
+readme = "README.md"
 
 [lib]
 crate-type = ["rlib"]

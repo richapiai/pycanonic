@@ -27,7 +27,7 @@ Argument, required: `"number"`, `"integer"`, `"boolean"` or `"string"`. Anything
 | `boolean` | booleans. `1` and `0`. Strings `true`/`yes`/`1` and `false`/`no`/`0`, any case, trimmed. | `2`, `"maybe"` |
 | `string` | strings as they are. Finite numbers and booleans as JavaScript `String()` writes them. | objects, arrays, `NaN` |
 
-A whole number comes back as an `int`, so `"12.0"` cast to `number` is `12`. `True` is a boolean, not the number 1. A hex string is an id, never a number. Old TypeScript releases accepted `" 0x10"` with spaces, see [known-limits.md](known-limits.md#a-hex-string-with-spaces-is-not-a-number).
+A whole number comes back as an `int`, so `"12.0"` cast to `number` is `12`. `True` is a boolean, not the number 1. A hex, octal or binary literal is an id, never a number. This holds with surrounding whitespace too: `" 0x10"` returns null. JavaScript `Number()` reads both as 16, and both packages reject them. The conformance corpus pins the rule.
 
 ### lower
 

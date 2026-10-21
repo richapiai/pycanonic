@@ -77,7 +77,6 @@ Before the first release, set up these once:
 
 - On PyPI, add a trusted publisher for this repository, workflow `release.yml`, environment `pypi`.
 - In the repository options, create the environments `pypi` and `crates-io`. Add a `CARGO_REGISTRY_TOKEN` secret to `crates-io`.
-- Add `description`, `repository` and `readme` to `crates/canonic-core/Cargo.toml`. crates.io rejects a crate without a description.
 
 To cut a release:
 

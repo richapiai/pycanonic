@@ -6,14 +6,14 @@
 
 pycanonic maps a data provider's JSON response to your own canonical shape. It compiles a JSON mapping spec into a plan and runs it in Rust. The mapping stays a JSON file that you review in a pull request. pycanonic is the Python version of [canonic](https://github.com/richapiai/canonic), the TypeScript package, and it reads the same spec files.
 
-On the 5.9 KB benchmark body with 18 spec fields, `artifact.map(bytes)` takes 5.64 µs. That is the parse and the mapping together. `orjson.loads` of the same body alone takes 13.78 µs. The TypeScript canonic needs 15.25 µs for `JSON.parse` plus `map` on the same machine.
+On the 5.9 KB benchmark body with 18 spec fields, `artifact.map(bytes)` takes 5.64 µs. That is the parse and the mapping together. The TypeScript canonic needs 15.25 µs for `JSON.parse` plus `map` on the same machine. In the earlier run at 74dae8f, `orjson.loads` of the same body alone took 13.78 µs.
 
 ## Why
 
 A product that gets the same kind of data from several providers ends up with one block of glue code per provider. The data can be people, companies, prices or shipments. Each block turns that provider's response into the product's own shape. That code is tedious to write and easy to get subtly wrong. It also breaks without an error the day a provider renames a key. pycanonic turns it into data you can review, test and monitor.
 
 - **A provider is a JSON file.** `canonic infer` drafts the spec from 5 to 20 sample responses and scores every field. A person reviews a diff. A second provider for an endpoint adds a file, not a code path.
-- **The mapper is faster than glue code.** On bytes, `map` beats `orjson.loads` plus hand-written Python by 3.4 times. It is 15 to 146 times faster than six of the eight interpreted mapping libraries we measured. The numbers and the exceptions are below.
+- **The mapper is faster than glue code.** On bytes, `map` beats `orjson.loads` plus hand-written Python by 3.4 times. It is 15 to 147 times faster than six of the eight interpreted mapping libraries we measured. The numbers and the exceptions are below.
 - **Fill and error counts per field show a renamed key.** Every `map` counts them, fields inside list items included. `FillMonitor` raises an alert for a field whose fill drops. `canonic diff` proposes the fixed spec. `merge_gate` decides whether it can ship without a person.
 - **A routing value that fails its format check becomes `None`.** A routing field (email, phone, domain, URL) carries a validator. A provider that answers `"N/A"` gives you `None` and a counted error. The check is on format only, so it cannot tell a personal address from a work one.
 - **One contract, any number of providers.** Callers get your canonical keys, in a fixed order, whichever provider answered.

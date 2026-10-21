@@ -40,10 +40,6 @@ A JSON string can hold an escape such as `\ud800` with no partner. A UTF-8 strin
 - `fingerprint` of a response with such a key differs from the TypeScript fingerprint, because `JSON.stringify` writes the escape.
 - On `map(dict)`, a lone surrogate inside a container that a field passes through stays as it is. pycanonic returns the same Python object and does not rewrite it.
 
-## A hex string with spaces is not a number
-
-`cast` to `number` rejects `" 0x10"`, a hex string with surrounding whitespace. The TypeScript `Number()` accepts it. The TypeScript package now rejects it too, and the conformance corpus pins the rule.
-
 ## Custom transforms
 
 - For a spec that names a transform alone, the call is `f(value)`. For a spec that gives an argument, the call is `f(value, arg)`.

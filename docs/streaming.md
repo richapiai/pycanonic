@@ -88,7 +88,7 @@ Use `extract` and `stream` to route early: pick the next provider, fail fast on 
 
 ## Numbers
 
-`bench/run.py` reads 3 routing fields from 5.9 KB bodies. It also reads 5 routing fields from 10.7 KB bodies, placed from 10% to 90% into the body. Every implementation must return the same output before the script times anything. On an Apple M3 Max with Python 3.14.7, one run on a machine under load:
+`bench/run.py` reads 3 routing fields from 5.9 KB bodies. It also reads 5 routing fields from 10.7 KB bodies, placed from 10% to 90% into the body. Every implementation must return the same output before the script times anything. On an Apple M3 Max with Python 3.14.7, on a machine under load. The pycanonic and TypeScript columns come from one session at pycanonic e425f48. The `orjson.loads` column comes from the earlier run at 74dae8f:
 
 | Case | pycanonic | `orjson.loads` + read | TypeScript canonic |
 |---|---:|---:|---:|

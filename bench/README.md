@@ -40,7 +40,7 @@ stream, 1 KB chunks   canonic stream                            18.20 µs     8.
 'py / ts' = pycanonic time / TypeScript time (below 1.00x is faster). Gated rows fail at 1.00x or above.
 ```
 
-TypeScript has no bytes-in path, so `map, bytes in` and `map, JSON out` are compared with `JSON.parse` plus `map` on the parsed object. The stream row comes from `streaming.js` (the 5-field 10.7 KB bodies in 1 KB chunks). `map, parsed in` and `view, construct` are reported and not gated (design section 8.1). A Python call that returns an extension object costs about 100 ns before Rust runs.
+TypeScript has no bytes-in path, so `map, bytes in` and `map, JSON out` are compared with `JSON.parse` plus `map` on the parsed object. The stream row comes from `streaming.js` (the 5-field 10.7 KB bodies in 1 KB chunks). `map, parsed in` and `view, construct` are reported and not gated. On a parsed object, V8 reads its own objects faster than Rust reads Python dicts, and a view's construct time is mostly the cost of the Python call. A Python call that returns an extension object costs about 100 ns before Rust runs.
 
 The table above is from pycanonic e425f48 (after the second hot-path pass). The Python table is from the earlier run at 74dae8f:
 
@@ -204,7 +204,7 @@ For context, `node bench/interpreters.js` in the canonic checkout on the same ma
 - Where pycanonic's 39 µs on bytes goes (Rust benches in `benches/wide.rs`, per body): the parse takes 11.8 µs for 8.7 KB that is nearly all wanted, the plan 16 µs (about 6 µs of it in the transforms: trim, lower, number and boolean casts), and building the Python objects about 10 µs. `orjson.loads` of the 7.3 KB output alone takes 19 µs, so object building has little left in it.
 - On a dict, a quarter of the time is CPython's `dict` lookup of each source key: the keys `json.loads` makes are not the interned strings pycanonic looks up with, so every hit ends in a string compare. Reading the dict in order (`PyDict_Next`) instead would need `unsafe` outside `simd.rs`.
 - Task 24c (second hot-path pass) brought bytes in from 48 to 39 µs and dict in from 44 to 38 µs: shared path prefixes resolved once per document, a moving read hint on large parsed objects (the key table is built only when the hint misses), the parser trying the next listed key before hashing, and faster number and boolean casts.
-- jmespath runs without transforms, so it does less work than the other rows, as in the TypeScript bench. jmespath-community has `trim`, `lower` and `to_number` and runs with them (about 16x and 20x).
+- jmespath runs without transforms, so it does less work than the other rows, as in the TypeScript bench. jmespath-community has `trim`, `lower` and `to_number` and runs with them (22.7x bytes in, 22.3x dict in).
 
 ### Searched on PyPI
 
