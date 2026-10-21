@@ -126,9 +126,12 @@ pub struct Filter {
     pub index: KeyIndex,
 }
 
-/// `Filter::index`: for more than [`INDEXED`] keys, `(key_hash, position + 1)` per slot.
+/// `Filter::index`: for more than [`INDEXED`] keys, a `KeyTable` and whether any key repeats.
 #[derive(Default)]
-pub struct KeyIndex(OnceLock<Box<[(u32, u32)]>>);
+pub struct KeyIndex(OnceLock<(KeyTable, bool)>);
+
+/// `(key_hash as u32, position + 1)` per slot, 0 empty, as in `Indexed`.
+type KeyTable = Box<[(u32, u32)]>;
 
 impl KeyIndex {
     const fn new() -> KeyIndex {
@@ -249,6 +252,8 @@ impl<'a> Parser<'a> {
         }
         self.pos += 1;
         // A pruned object keeps at most one member per listed key, duplicates aside.
+        // Where the next key is expected in `f.keys` (see `wanted`).
+        let mut next = 0;
         let mut members: Vec<(Cow<'a, str>, Node<'a>)> =
             Vec::with_capacity(if f.all { 0 } else { f.keys.len() });
         // Every occurrence of a wanted key is built; `Doc::get` reads the last, as `JSON.parse` does.
@@ -269,7 +274,7 @@ impl<'a> Parser<'a> {
             let child = if f.all {
                 Some(&ALL)
             } else {
-                wanted(f, raw, plain)
+                wanted(f, raw, plain, &mut next)
             };
             // An unlisted member is skipped and not kept: no path reads it, so its key is never decoded.
             match child {
@@ -484,27 +489,44 @@ fn decode(raw: &[u8], plain: bool) -> Cow<'_, str> {
 /// The filter entry for the member whose key has the raw (still escaped) bytes `raw`. Filter keys
 /// are decoded UTF-8: plain bytes are compared as they are, anything else is decoded first.
 /// Past [`INDEXED`] keys the lookup goes through `Filter::index`.
-fn wanted<'f>(f: &'f Filter, raw: &[u8], plain: bool) -> Option<&'f Filter> {
+///
+/// `next` is the position after the last key this object matched. Documents tend to send keys in
+/// the order the plan lists them, so that key is tried first, before hashing (when the filter has
+/// no repeated key, so the first match is the only one).
+fn wanted<'f>(f: &'f Filter, raw: &[u8], plain: bool, next: &mut usize) -> Option<&'f Filter> {
     let keys = &f.keys;
-    let find = |key: &[u8]| {
+    let mut find = |key: &[u8]| {
         if keys.len() <= INDEXED {
             return keys.iter().find(|(k, _)| same_key(k, key)).map(|(_, c)| c);
         }
-        let table = f.index.0.get_or_init(|| {
+        let (table, repeated) = f.index.0.get_or_init(|| {
             let mut t = vec![(0u32, 0u32); (keys.len() * 2).next_power_of_two()];
+            let mut repeated = false;
             for (p, (k, _)) in keys.iter().enumerate() {
                 let h = key_hash(k);
                 // A repeated filter key keeps its first entry, as the scan finds it.
                 let slot = probe(&t, h, |q| same_key(&keys[q].0, k));
                 if t[slot].1 == 0 {
                     t[slot] = (h as u32, p as u32 + 1);
+                } else {
+                    repeated = true;
                 }
             }
-            t.into_boxed_slice()
+            (t.into_boxed_slice(), repeated)
         });
+        if !repeated
+            && let Some((k, c)) = keys.get(*next)
+            && same_key(k, key)
+        {
+            *next += 1;
+            return Some(c);
+        }
         match table[probe(table, key_hash(key), |q| same_key(&keys[q].0, key))].1 {
             0 => None,
-            p => Some(&keys[p as usize - 1].1),
+            p => {
+                *next = p as usize;
+                Some(&keys[p as usize - 1].1)
+            }
         }
     };
     match plain {
