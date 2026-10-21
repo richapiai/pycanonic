@@ -216,8 +216,28 @@ const ESCAPE: [u8; 256] = {
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
+/// Whether any byte of `b` is a control byte, `"` or a backslash: eight bytes at a time (a byte below
+/// 0x20 borrows when 0x20 is taken from it, as a zero byte does from 1), the tail by table.
+fn needs_escape(b: &[u8]) -> bool {
+    const LO: u64 = 0x0101_0101_0101_0101;
+    const HI: u64 = 0x8080_8080_8080_8080;
+    let below = |x: u64, n: u64| x.wrapping_sub(LO * n) & !x & HI;
+    let (words, tail) = b.as_chunks::<8>();
+    words.iter().any(|w| {
+        let x = u64::from_le_bytes(*w);
+        below(x, 0x20) | below(x ^ (LO * 0x22), 1) | below(x ^ (LO * 0x5c), 1) != 0
+    }) || tail.iter().any(|&c| ESCAPE[c as usize] != 0)
+}
+
 pub(crate) fn write_str(s: &str, buf: &mut Vec<u8>) {
     let bytes = s.as_bytes();
+    if !needs_escape(bytes) {
+        buf.reserve(bytes.len() + 2);
+        buf.push(b'"');
+        buf.extend_from_slice(bytes);
+        buf.push(b'"');
+        return;
+    }
     buf.push(b'"');
     let mut start = 0;
     for (i, &b) in bytes.iter().enumerate() {
