@@ -23,26 +23,26 @@ Measured on an Apple M3 Max (36 GB, macOS 27.0) with Python 3.14.7 and Node 26.1
 ```
 
 ```
-pycanonic 74dae8f against canonic 936d6fd, same session
+pycanonic 10bd264 against canonic 936d6fd, same session
 
 case                  TypeScript rows                         TypeScript   pycanonic   py / ts  gate
-map, bytes in         map + JSON.parse (input)                  15.86 µs     5.68 µs     0.36x  PASS
-map, JSON out         map + JSON.parse (input)                  15.86 µs     4.92 µs     0.31x  PASS
-map, parsed in        map                                        3.44 µs     3.88 µs     1.13x  reported
-view, construct       view, construct                               7 ns      100 ns    13.39x  reported
-view, 3 reads         view, 3 reads                               747 ns      678 ns     0.91x  PASS
-extract routing       extract routing                            8.65 µs     1.33 µs     0.15x  PASS
-extract, anchored     extract, anchored                          1.21 µs      714 ns     0.59x  PASS
-extract 5, 10.7 KB    extract 5, 10.7 KB                        15.57 µs     1.88 µs     0.12x  PASS
-extract 5, anchored   extract 5, anchored                        3.76 µs     1.12 µs     0.30x  PASS
-stream, 1 KB chunks   canonic stream                            18.25 µs     8.37 µs     0.46x  PASS
+map, bytes in         map + JSON.parse (input)                  15.66 µs     5.69 µs     0.36x  PASS
+map, JSON out         map + JSON.parse (input)                  15.66 µs     4.63 µs     0.30x  PASS
+map, parsed in        map                                        3.46 µs     3.90 µs     1.13x  reported
+view, construct       view, construct                               7 ns      102 ns    13.89x  reported
+view, 3 reads         view, 3 reads                               742 ns      719 ns     0.97x  PASS
+extract routing       extract routing                            8.20 µs     1.32 µs     0.16x  PASS
+extract, anchored     extract, anchored                          1.20 µs      708 ns     0.59x  PASS
+extract 5, 10.7 KB    extract 5, 10.7 KB                        15.63 µs     1.90 µs     0.12x  PASS
+extract 5, anchored   extract 5, anchored                        3.86 µs     1.12 µs     0.29x  PASS
+stream, 1 KB chunks   canonic stream                            18.21 µs     8.96 µs     0.49x  PASS
 
 'py / ts' = pycanonic time / TypeScript time (below 1.00x is faster). Gated rows fail at 1.00x or above.
 ```
 
 TypeScript has no bytes-in path, so `map, bytes in` and `map, JSON out` are compared with `JSON.parse` plus `map` on the parsed object. The stream row comes from `streaming.js` (the 5-field 10.7 KB bodies in 1 KB chunks). `map, parsed in` and `view, construct` are reported and not gated (design section 8.1). A Python call that returns an extension object costs about 100 ns before Rust runs.
 
-The Python table from the same run:
+The table above is from pycanonic 10bd264 (after the key-table fix below). The Python table is from the earlier run at 74dae8f:
 
 ```
 Python 3.14.7 darwin-arm64, pycanonic 74dae8f, payloads from canonic 936d6fd
@@ -99,7 +99,7 @@ The two timing smoke tests in `bench/test_run.py` are opt-in: `PYCANONIC_BENCH_T
 
 The rule from the owner: every published Python mapping library must be at least 10x slower than pycanonic on this mapping, bytes in and dict in. `--gate` checks exactly that and exits 1 otherwise. orjson and the hand-written row are not mappers, so they are reported and never gated.
 
-The rule does not hold today. Three libraries are less than 10x slower: pydantic (about 2x), jsonbender (about 6x) and plain jmespath without transforms (about 7x). The reasons are below the tables.
+The rule does not hold today. Three libraries are less than 10x slower: pydantic (about 2x to 2.5x), jsonbender (about 6.5x) and plain jmespath without transforms (about 8x). The reasons are below the tables.
 
 ### Method
 
@@ -124,7 +124,7 @@ How each library expresses it:
 
 ### Results
 
-Apple M3 Max (36 GB, macOS 27.0), Python 3.14.7, release build, pycanonic at d330865 (the commit that adds this section changes only bench files), payloads from canonic 936d6fd. The machine was not idle (load average 3.5 to 4). One run each.
+Apple M3 Max (36 GB, macOS 27.0), Python 3.14.7, release build, pycanonic at 10bd264, payloads from canonic 936d6fd. The machine was not idle (load average 4 to 6). One run each. The first run, at d330865 before the key-table fix, is in the second table.
 
 `jmespath` and `jmespath-community` install the same `jmespath` module, and `jsonata-python` and `jsonata-rs` the same `jsonata` module, so they need separate environments. `requirements.txt` holds the first of each pair and `requirements-alt.txt` the second.
 
@@ -163,6 +163,24 @@ jsonata-rs==0.1.4
 
 | implementation | bytes in | vs pycanonic | dict in | vs pycanonic |
 |---|---:|---:|---:|---:|
+| pycanonic map | 47.85 µs |  | 43.90 µs |  |
+| pycanonic map_json(bytes), JSON out, reported | 39.76 µs | 0.8x |  |  |
+| glom 25.12.0 | 4707.38 µs | 98.4x | 4669.71 µs | 106.4x |
+| jmespath 1.1.0, without transforms | 371.80 µs | 7.8x **<10x** | 357.44 µs | 8.1x **<10x** |
+| jsonpath-ng 1.12.0 | 809.47 µs | 16.9x | 789.45 µs | 18.0x |
+| jsonbender 0.9.3 | 312.47 µs | 6.5x **<10x** | 285.71 µs | 6.5x **<10x** |
+| pydantic 2.14.1 | 119.30 µs | 2.5x **<10x** | 86.14 µs | 2.0x **<10x** |
+| jsonata-python 0.7.1 | 5582.43 µs | 116.7x | 5583.34 µs | 127.2x |
+| jq 1.13.0 (jq.py) | 2837.21 µs | 59.3x | 2812.86 µs | 64.1x |
+| hand-written py (pure-Python transforms), not a mapper | 89.77 µs | 1.9x | 60.16 µs | 1.4x |
+| orjson.loads, parse only, not a mapper | 21.00 µs | 0.4x |  |  |
+| jmespath-community 1.1.3 (alt env) | 878.95 µs | 18.6x | 848.52 µs | 19.7x |
+| jsonata-rs 0.1.4 (alt env) | 587.49 µs | 12.4x | 566.62 µs | 13.1x |
+
+At d330865, before the key-table fix:
+
+| implementation | bytes in | vs pycanonic | dict in | vs pycanonic |
+|---|---:|---:|---:|---:|
 | pycanonic map | 57.44 µs |  | 45.25 µs |  |
 | pycanonic map_json(bytes), JSON out, reported | 52.01 µs | 0.9x |  |  |
 | glom 25.12.0 | 5077.59 µs | 88.4x | 4993.76 µs | 110.4x |
@@ -182,8 +200,9 @@ For context, `node bench/interpreters.js` in the canonic checkout on the same ma
 ### Why three libraries miss 10x
 
 - **pydantic** compiles its models once into a Rust validator tree (pydantic-core). On a parsed dict it does the same kind of work pycanonic does: walk a Python dict from Rust and build Python objects. `model_validate` alone takes about 54 µs; `model_dump` adds about 30 µs to give back a dict. It is not an interpreter in the JSONata sense, so it is the hardest bar here.
-- **jsonbender** and **jmespath** are pure-Python interpreters, but light ones: about 300 to 380 µs for 501 fields, under 1 µs a field. They miss 10x because pycanonic is slow on this mapping. pycanonic takes about 45 µs on a dict and about 57 µs on bytes. That is about 90 ns a field. The pure-Python hand-written row takes 62 µs, only 1.4x pycanonic's time. TypeScript canonic takes 9.2 µs for the same mapping on this machine.
-- The bytes path is slower than the parsed-dict path even without Python objects: `map_json` (Rust only, JSON out) takes 52 µs where `orjson.loads` of the same bytes takes 22 µs. One likely reason, not yet measured: `Doc::get` for the parsed JSON tree (`crates/canonic-core/src/doc.rs`) finds a member by a linear `rfind` over the object, and the source objects here have up to 77 members (`org`), so mapping a large object costs about n² key comparisons.
+- **jsonbender** and **jmespath** are pure-Python interpreters, but light ones: about 290 to 370 µs for 501 fields, under 1 µs a field. They miss 10x because pycanonic is slow on this mapping. pycanonic takes about 44 µs on a dict and about 48 µs on bytes, about 90 ns a field. The pure-Python hand-written row takes 60 µs, only 1.4x pycanonic's time. TypeScript canonic takes 9.2 µs for the same mapping on this machine.
+- On a dict, most of the time is CPython's: a `dict` lookup of each source key (the keys `json.loads` makes are not the interned strings pycanonic looks up with, so each hit ends in a string compare) and one new Python object per output value. Reading the first path step without a refcount pair was tried and did not move it.
+- On bytes, the parse took 17.4 µs of the 8.7 KB payload and the JSON writing copied every value once per nesting level. `Doc::get` on the parse tree was a linear scan, and the source objects here keep up to 77 members. A pruned object of more than 8 members now has a key table (`Node::Indexed`), the parser sizes member lists from the filter, and `map_json` writes each value in place. `map_json` went from 52 to 40 µs and `map(bytes)` from 57 to 48 µs. The parse now takes 14.8 µs; `orjson.loads` takes 21 µs and builds Python objects.
 - jmespath runs without transforms, so it does less work than the other rows, as in the TypeScript bench. jmespath-community has `trim`, `lower` and `to_number` and runs with them (about 16x and 20x).
 - jsonata-rs passes at 10.6x on bytes in, which is close enough to 10 that a noisy run can fail it.
 
