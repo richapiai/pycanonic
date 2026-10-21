@@ -3,6 +3,7 @@
 use crate::pydoc::{PyDoc, text};
 use crate::pysink::{PySink, to_py, value};
 use crate::transforms::{PyTransform, take_pending};
+use crate::view::View;
 use canonic_core::{CompileError, Plan, Status, Transform, Value};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -13,11 +14,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 #[pyclass(frozen, module = "pycanonic._core")]
 pub struct Artifact {
-    inner: canonic_core::Artifact,
+    pub(crate) inner: canonic_core::Artifact,
     /// Interned path keys, indexed by `Key::tag`.
-    keys: Vec<Py<PyString>>,
+    pub(crate) keys: Vec<Py<PyString>>,
     /// Interned canonical field names, indexed like `Plan::names`.
-    names: Vec<Py<PyString>>,
+    pub(crate) names: Vec<Py<PyString>>,
 }
 
 /// Python callables by transform name.
@@ -42,7 +43,7 @@ pub fn value_error(e: CompileError) -> PyErr {
 }
 
 /// The UTF-8 bytes of a `bytes` or `str` input; `None` for any other object.
-fn body_of<'s>(src: &'s Bound<'_, PyAny>) -> Option<Cow<'s, [u8]>> {
+pub(crate) fn body_of<'s>(src: &'s Bound<'_, PyAny>) -> Option<Cow<'s, [u8]>> {
     if let Ok(b) = src.cast::<PyBytes>() {
         Some(Cow::Borrowed(b.as_bytes()))
     } else if let Ok(s) = src.cast::<PyString>() {
@@ -154,6 +155,11 @@ impl Artifact {
             body_of(raw).ok_or_else(|| PyTypeError::new_err("extract takes bytes or str"))?;
         let out = py.detach(|| self.inner.extract(&body));
         take_pending().map_or_else(|| routing_dict(py, &self.inner.plan, &out), Err)
+    }
+
+    /// A lazy canonical object over `src` (as `map` takes it): each field is mapped on first read.
+    fn view(slf: Py<Self>, src: &Bound<'_, PyAny>) -> View {
+        View::new(slf, src)
     }
 
     /// A fresh incremental reader of the routing fields; one per response.

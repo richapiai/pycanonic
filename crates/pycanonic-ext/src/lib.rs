@@ -2,6 +2,7 @@ mod artifact;
 mod pydoc;
 mod pysink;
 mod transforms;
+mod view;
 
 use pyo3::prelude::*;
 
@@ -17,6 +18,8 @@ mod _core {
 
     #[pymodule_export]
     use crate::artifact::{Artifact, ExtractStream, Stats};
+    #[pymodule_export]
+    use crate::view::View;
 
     #[pyfunction]
     fn version() -> &'static str {

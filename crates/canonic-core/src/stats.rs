@@ -71,6 +71,18 @@ impl Stats {
         }
     }
 
+    /// No slots, so every count is dropped (`bump` ignores them) and nothing is allocated.
+    pub(crate) fn none() -> Stats {
+        Stats {
+            names: Vec::new(),
+            responses: AtomicU64::new(0),
+            misses: counters(0),
+            errors: counters(0),
+            elems: counters(0),
+            within: Box::new([]),
+        }
+    }
+
     // Out-of-range slots are ignored rather than panicking; Artifact::new range-checks the plan.
     fn bump(c: &[AtomicU64], slot: usize, by: u64) {
         if let Some(c) = c.get(slot) {

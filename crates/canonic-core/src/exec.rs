@@ -369,6 +369,35 @@ pub fn execute<D: Doc, S: Sink>(
     .object(&program.root, doc)
 }
 
+/// One field of `program` over `doc`, as `execute` would map it, counting no stats. `path` is the
+/// chain of field indices from the root (`[i, j]`: member `j` of the object field `i`); `[]` is the
+/// whole root object. `None` when `path` names no field.
+pub fn execute_field<D: Doc, S: Sink>(
+    program: &Program,
+    path: &[usize],
+    doc: Option<&D>,
+    sink: &mut S,
+    custom: &[Arc<dyn Transform>],
+) -> Option<S::Out> {
+    let quiet = Stats::none();
+    let mut e = Exec {
+        sink,
+        stats: &quiet,
+        custom,
+    };
+    let Some((&last, parents)) = path.split_last() else {
+        return Some(e.object(&program.root, doc));
+    };
+    let mut level = &program.root;
+    for &i in parents {
+        match &level.get(i)?.1 {
+            Op::Object(c) => level = c,
+            _ => return None,
+        }
+    }
+    Some(e.op(&level.get(last)?.1, doc))
+}
+
 struct Exec<'e, S> {
     sink: &'e mut S,
     stats: &'e Stats,

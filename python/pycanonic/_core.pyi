@@ -1,6 +1,6 @@
 """Type stubs for the Rust extension `pycanonic._core`."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, Literal, TypeVar, final
 
 from typing_extensions import NotRequired, TypedDict
@@ -9,6 +9,7 @@ __all__ = [
     "Artifact",
     "ExtractStream",
     "Stats",
+    "View",
     "compile",
     "default_transform",
     "load_plan",
@@ -42,6 +43,14 @@ class ExtractStream:
     def result(self) -> dict[str, Any]: ...
 
 @final
+class View:
+    """A lazy canonical object: each field is mapped on its first read and kept; no stats."""
+
+    def __getattr__(self, field: str) -> Any: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def __iter__(self) -> Iterator[str]: ...
+
+@final
 class Artifact:
     @property
     def provider(self) -> str: ...
@@ -58,6 +67,7 @@ class Artifact:
     @property
     def stats(self) -> Stats: ...
     def map(self, src: object) -> dict[str, Any]: ...
+    def view(self, src: object) -> View: ...
     def map_json(self, raw: bytes | str) -> bytes: ...
     def extract(self, raw: bytes | str) -> dict[str, Any]: ...
     def stream(self) -> ExtractStream: ...

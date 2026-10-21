@@ -2,8 +2,8 @@
 // the stats cases, injected transforms, the large-spec cases, and the bench pin from the POC.
 
 use canonic_core::{
-    Artifact, CompileError, FieldStats, Out, Plan, StatsSnapshot, Transform, Value, compile,
-    filter_for,
+    Artifact, CompileError, FieldStats, Out, Plan, RustSink, StatsSnapshot, Transform, Value,
+    compile, filter_for,
 };
 use serde_json::{Value as J, json};
 use std::collections::HashMap;
@@ -401,6 +401,59 @@ fn bench_bodies_map_to_the_poc_outputs() {
         assert_eq!(got.to_string(), want.to_string(), "body {i} key order");
     }
     assert_eq!(a.stats.snapshot().responses, 64);
+}
+
+#[test]
+fn map_field_maps_one_field_by_index_path_and_counts_nothing() {
+    let a = artifact(
+        &fixture("specs/bench.json"),
+        &fixture("specs/canonical/bench.json"),
+    );
+    let bodies = fixture("bench_bodies.json");
+    let names = &a.plan.names;
+    for raw in bodies["raws"].as_array().unwrap() {
+        let node = a.parse(raw.as_str().unwrap().as_bytes());
+        let doc = node.as_ref();
+        let Out::Obj(whole) = a.map_with(doc.as_ref(), &mut RustSink) else {
+            panic!("map gives an object")
+        };
+        a.stats.reset();
+        let root = a.map_field(&[], doc.as_ref(), &mut RustSink).unwrap();
+        assert_eq!(
+            to_json(&root, names),
+            to_json(&Out::Obj(whole.clone()), names)
+        );
+        for (i, (_, want)) in whole.iter().enumerate() {
+            let got = a.map_field(&[i], doc.as_ref(), &mut RustSink).unwrap();
+            assert_eq!(&got, want, "field {i}");
+            if let Out::Obj(members) = want {
+                for (j, (_, w)) in members.iter().enumerate() {
+                    assert_eq!(
+                        a.map_field(&[i, j], doc.as_ref(), &mut RustSink).as_ref(),
+                        Some(w)
+                    );
+                }
+                assert_eq!(
+                    a.map_field(&[i, members.len()], doc.as_ref(), &mut RustSink),
+                    None
+                );
+            } else {
+                // Only an object field has members.
+                assert_eq!(a.map_field(&[i, 0], doc.as_ref(), &mut RustSink), None);
+            }
+        }
+        assert_eq!(
+            a.map_field(&[whole.len()], doc.as_ref(), &mut RustSink),
+            None
+        );
+        let s = a.stats.snapshot();
+        assert_eq!(s.responses, 0);
+        assert!(
+            s.fields
+                .iter()
+                .all(|(_, f)| f.fill == 0 && f.errors == 0 && f.total.is_none_or(|t| t == 0))
+        );
+    }
 }
 
 // The rules of codegen.ts, one at a time.

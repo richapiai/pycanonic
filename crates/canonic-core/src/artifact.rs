@@ -2,9 +2,9 @@
 //! filter. Port of the `map` and `stats` half of canonic/packages/canonic/src/artifact.ts.
 
 use crate::doc::Doc;
-use crate::exec::{Program, execute};
+use crate::exec::{Program, execute, execute_field};
 use crate::extract::{ExtractStream, Extractor};
-use crate::json::{Filter, parse};
+use crate::json::{Filter, Node, parse};
 use crate::plan::{CompileError, Field, ListKind, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, RustSink, Sink};
 use crate::spec::{Path, Source, Step};
@@ -65,7 +65,7 @@ impl Artifact {
     /// Parses `body` with the plan's filter and maps it. A body that doesn't parse reads as absent:
     /// every field null, counted as misses.
     pub fn map_bytes(&self, body: &[u8]) -> Out {
-        let node = parse(body, &self.filter).ok();
+        let node = self.parse(body);
         self.map_with(node.as_ref().as_ref(), &mut RustSink)
     }
 
@@ -91,6 +91,22 @@ impl Artifact {
     /// `extract` over chunks as they arrive; always scans, anchors are for `extract` only.
     pub fn stream(&self) -> ExtractStream {
         ExtractStream::new(self.extractor.clone())
+    }
+
+    /// `body` parsed with the plan's filter, `None` when it doesn't parse (which reads as absent).
+    pub fn parse<'a>(&self, body: &'a [u8]) -> Option<Node<'a>> {
+        parse(body, &self.filter).ok()
+    }
+
+    /// One field as `map_with` maps it, by index path (see `exec::execute_field`). Counts no stats,
+    /// as a JavaScript View getter doesn't. `None` when `path` names no field.
+    pub fn map_field<D: Doc, S: Sink>(
+        &self,
+        path: &[usize],
+        doc: Option<&D>,
+        sink: &mut S,
+    ) -> Option<S::Out> {
+        execute_field(&self.program, path, doc, sink, &self.custom)
     }
 
     pub fn map_with<D: Doc, S: Sink>(&self, doc: Option<&D>, sink: &mut S) -> S::Out {
