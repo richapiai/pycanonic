@@ -1,0 +1,170 @@
+{
+  "name": "constructs/transform-pipeline",
+  "canonical": {
+    "type": "object",
+    "properties": {
+      "first_name": {
+        "type": "string"
+      },
+      "last_name": {
+        "type": "string"
+      },
+      "full_name": {
+        "type": "string",
+        "semantic": "full_name"
+      },
+      "email": {
+        "type": "string",
+        "semantic": "email",
+        "routing": true,
+        "aliases": [
+          "work_email"
+        ]
+      },
+      "phone": {
+        "type": "string",
+        "semantic": "phone",
+        "routing": true
+      },
+      "linkedin_url": {
+        "type": "string",
+        "semantic": "linkedin_url"
+      },
+      "headcount": {
+        "type": "integer"
+      },
+      "verified": {
+        "type": "boolean"
+      },
+      "born": {
+        "type": "string",
+        "semantic": "iso_date"
+      },
+      "company": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string",
+            "semantic": "domain",
+            "routing": true
+          }
+        }
+      },
+      "experiences": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "company": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "email": {
+        "from": "e",
+        "transform": [
+          "trim",
+          "lower"
+        ]
+      },
+      "linkedin_url": {
+        "from": "li",
+        "transform": [
+          "trim",
+          "normalize_linkedin"
+        ]
+      }
+    }
+  },
+  "inputs": [
+    "{\"e\":\"  ADA@Acme.COM \",\"li\":\" https://uk.linkedin.com/in/Ada-L/?trk=x \"}",
+    "{\"e\":\"N/A\",\"li\":\"https://example.com/in/ada\"}"
+  ],
+  "expected": {
+    "map": [
+      {
+        "first_name": null,
+        "last_name": null,
+        "full_name": null,
+        "email": "ada@acme.com",
+        "phone": null,
+        "linkedin_url": "https://www.linkedin.com/in/ada-l",
+        "headcount": null,
+        "verified": null,
+        "born": null,
+        "company": {
+          "name": null,
+          "domain": null
+        },
+        "experiences": null,
+        "skills": null
+      },
+      {
+        "first_name": null,
+        "last_name": null,
+        "full_name": null,
+        "email": null,
+        "phone": null,
+        "linkedin_url": null,
+        "headcount": null,
+        "verified": null,
+        "born": null,
+        "company": {
+          "name": null,
+          "domain": null
+        },
+        "experiences": null,
+        "skills": null
+      }
+    ],
+    "extract": [
+      {
+        "email": "ada@acme.com"
+      },
+      {
+        "email": null
+      }
+    ],
+    "stats": {
+      "responses": 2,
+      "fields": {
+        "email": {
+          "fill": 1,
+          "errors": 1
+        },
+        "linkedin_url": {
+          "fill": 1,
+          "errors": 1
+        }
+      }
+    }
+  },
+  "duplicate_keys": false
+}

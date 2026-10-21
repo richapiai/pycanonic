@@ -236,29 +236,16 @@ fn array_filters_keep_positions() {
 }
 
 #[test]
-fn duplicate_keys_keep_the_first_in_the_pruned_path() {
-    let f = keys(vec![("a", all())]);
-    let out = parse(br#"{"a":1,"a":{"x":2}}"#, &f).unwrap();
-    assert_eq!(
-        members(&out),
-        &[
-            (Cow::Borrowed("a"), Node::Num("1")),
-            (Cow::Borrowed("a"), Node::Skipped)
-        ]
-    );
-}
-
-#[test]
-fn first_occurrence_wins_even_when_it_is_not_built() {
+fn every_occurrence_of_a_wanted_key_is_built_and_a_path_read_takes_the_last() {
+    use canonic_core::{Doc, Key};
     let f = keys(vec![("a", keys(vec![("b", all())]))]);
-    let out = parse(br#"{"a":[1],"a":{"b":2}}"#, &f).unwrap();
-    assert_eq!(
-        members(&out),
-        &[
-            (Cow::Borrowed("a"), Node::Skipped),
-            (Cow::Borrowed("a"), Node::Skipped)
-        ]
-    );
+    let out = parse(br#"{"a":{"b":1},"a":[1],"a":{"b":2}}"#, &f).unwrap();
+    let m = members(&out);
+    assert_eq!(m.len(), 3);
+    assert_eq!(m[1].1, Node::Skipped);
+    let key = |s: &str, tag| Key { s: s.into(), tag };
+    let b = (&out).get(&key("a", 0)).and_then(|a| a.get(&key("b", 1)));
+    assert_eq!(b, Some(&Node::Num("2")));
 }
 
 #[test]

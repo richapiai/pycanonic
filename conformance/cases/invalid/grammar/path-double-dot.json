@@ -1,0 +1,94 @@
+{
+  "name": "invalid/grammar/path-double-dot",
+  "canonical": {
+    "type": "object",
+    "properties": {
+      "first_name": {
+        "type": "string"
+      },
+      "last_name": {
+        "type": "string"
+      },
+      "full_name": {
+        "type": "string",
+        "semantic": "full_name"
+      },
+      "email": {
+        "type": "string",
+        "semantic": "email",
+        "routing": true,
+        "aliases": [
+          "work_email"
+        ]
+      },
+      "phone": {
+        "type": "string",
+        "semantic": "phone",
+        "routing": true
+      },
+      "linkedin_url": {
+        "type": "string",
+        "semantic": "linkedin_url"
+      },
+      "headcount": {
+        "type": "integer"
+      },
+      "verified": {
+        "type": "boolean"
+      },
+      "born": {
+        "type": "string",
+        "semantic": "iso_date"
+      },
+      "company": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string",
+            "semantic": "domain",
+            "routing": true
+          }
+        }
+      },
+      "experiences": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "company": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "first_name": "a..b"
+    }
+  },
+  "error": "invalid spec: spec.fields[\"first_name\"]: must be a path like a.b[0][\"c d\"]"
+}

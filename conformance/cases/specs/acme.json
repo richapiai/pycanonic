@@ -1,0 +1,431 @@
+{
+  "name": "specs/acme",
+  "canonical": {
+    "type": "object",
+    "properties": {
+      "first_name": {
+        "type": "string"
+      },
+      "last_name": {
+        "type": "string"
+      },
+      "full_name": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string",
+        "semantic": "email",
+        "routing": true,
+        "aliases": [
+          "work_email",
+          "business_email"
+        ]
+      },
+      "phone": {
+        "type": "string",
+        "semantic": "phone",
+        "routing": true,
+        "aliases": [
+          "mobile",
+          "tel"
+        ]
+      },
+      "title": {
+        "type": "string"
+      },
+      "seniority": {
+        "type": "string"
+      },
+      "linkedin_url": {
+        "type": "string"
+      },
+      "location": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          }
+        }
+      },
+      "company": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string",
+            "semantic": "domain",
+            "routing": true
+          },
+          "headcount": {
+            "type": "integer"
+          },
+          "industry": {
+            "type": "string"
+          },
+          "founded": {
+            "type": "string"
+          }
+        }
+      },
+      "experiences": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "company": {
+              "type": "string"
+            },
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "updated_at": {
+        "type": "string"
+      }
+    }
+  },
+  "spec": {
+    "$schema": "../spec.schema.json",
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "first_name": {
+        "from": "profile.fullName",
+        "transform": {
+          "split_name": "first"
+        }
+      },
+      "last_name": {
+        "from": "profile.fullName",
+        "transform": {
+          "split_name": "last"
+        }
+      },
+      "full_name": "profile.fullName",
+      "email": {
+        "coalesce": [
+          "contact.workEmail",
+          "contact.emails[0].address"
+        ],
+        "transform": [
+          "trim",
+          "lower"
+        ]
+      },
+      "phone": {
+        "from": "contact.mobile",
+        "transform": "normalize_phone"
+      },
+      "title": {
+        "from": "profile.headline",
+        "transform": "trim"
+      },
+      "seniority": "profile.level",
+      "linkedin_url": {
+        "from": "social.li",
+        "transform": "normalize_linkedin"
+      },
+      "location.city": "geo.city",
+      "location.country": "geo.countryCode",
+      "company.name": "org.name",
+      "company.domain": {
+        "from": "org.website",
+        "transform": "to_domain"
+      },
+      "company.headcount": {
+        "from": "org.size",
+        "transform": {
+          "cast": "integer"
+        }
+      },
+      "company.industry": "org.industry",
+      "company.founded": {
+        "from": "org.foundedOn",
+        "transform": "parse_date"
+      },
+      "experiences[]": {
+        "from": "workHistory",
+        "item": {
+          "title": "role",
+          "company": "orgName",
+          "start": {
+            "from": "from",
+            "transform": "parse_date"
+          },
+          "end": {
+            "from": "to",
+            "transform": "parse_date"
+          }
+        }
+      },
+      "skills[]": {
+        "from": "tags",
+        "pluck": "label",
+        "transform": "lower"
+      },
+      "updated_at": {
+        "from": "_meta.updated",
+        "transform": "parse_date"
+      }
+    }
+  },
+  "inputs": [
+    "{\"id\":\"n_0\",\"profile\":{\"fullName\":\"Ada Lovelace\",\"headline\":\" VP Engineering \",\"level\":\"vp\"},\"contact\":{\"workEmail\":null,\"emails\":[{\"address\":\"ada.lovelace@acme0.com\",\"type\":\"work\"}],\"mobile\":\"+1 415 555 0100\"},\"social\":{\"li\":\"https://www.linkedin.com/in/ada-lovelace-0/\"},\"geo\":{\"city\":\"London\",\"countryCode\":\"GB\"},\"org\":{\"name\":\"Acme Inc\",\"website\":\"https://www.acme0.com/about\",\"size\":\"10\",\"industry\":\"Software\",\"foundedOn\":\"1990-01-10\"},\"workHistory\":[{\"role\":\"VP Engineering\",\"orgName\":\"Globex Ltd\",\"from\":\"2010-01\",\"to\":\"2012-10\"}],\"tags\":[{\"label\":\"SQL\"},{\"label\":\"SALES\"}],\"_meta\":{\"updated\":1700000000},\"stats\":{\"s0\":0,\"s1\":1,\"s2\":2,\"s3\":3,\"s4\":4,\"s5\":5,\"s6\":6,\"s7\":7,\"s8\":8,\"s9\":9}}",
+    "{\"id\":\"n_1\",\"profile\":{\"fullName\":\"Alan Knuth\",\"headline\":\" Head of Data \",\"level\":\"head\"},\"contact\":{\"workEmail\":\"alan.knuth@globex1.com\",\"emails\":[{\"address\":\"alan.knuth@globex1.com\",\"type\":\"work\"}],\"mobile\":\"+1 415 555 0101\"},\"social\":{\"li\":\"https://www.linkedin.com/in/alan-knuth-1/\"},\"geo\":{\"city\":\"Toronto\",\"countryCode\":\"CA\"},\"org\":{\"name\":\"Globex Inc\",\"website\":\"https://www.globex1.com/about\",\"size\":\"47\",\"industry\":\"Energy\",\"foundedOn\":\"1991-02-11\"},\"workHistory\":[{\"role\":\"Head of Data\",\"orgName\":\"Initech Ltd\",\"from\":\"2010-01\",\"to\":\"2012-10\"},{\"role\":\"Staff Engineer\",\"orgName\":\"Umbrella Ltd\",\"from\":\"2011-02\",\"to\":\"2013-11\"}],\"tags\":[{\"label\":\"GO\"},{\"label\":\"PYTHON\"}],\"_meta\":{\"updated\":1700086400},\"stats\":{\"s0\":31,\"s1\":32,\"s2\":33,\"s3\":34,\"s4\":35,\"s5\":36,\"s6\":37,\"s7\":38,\"s8\":39,\"s9\":40}}",
+    "{\"id\":\"n_7\",\"profile\":{\"fullName\":\"John Berners-Lee\",\"headline\":\" Head of Data \",\"level\":\"head\"},\"contact\":{\"workEmail\":\"john.berners-lee@globex7.com\",\"emails\":[{\"address\":\"john.berners-lee@globex7.com\",\"type\":\"work\"}],\"mobile\":\"+1 415 555 0107\"},\"social\":{\"li\":\"https://www.linkedin.com/in/john-berners-lee-7/\"},\"geo\":{\"city\":\"Toronto\",\"countryCode\":\"CA\"},\"org\":{\"name\":\"Globex Inc\",\"website\":\"https://www.globex7.com/about\",\"size\":\"269\",\"industry\":\"Energy\",\"foundedOn\":\"1997-08-17\"},\"workHistory\":[{\"role\":\"Head of Data\",\"orgName\":\"Initech Ltd\",\"from\":\"2010-01\",\"to\":\"2012-10\"},{\"role\":\"Staff Engineer\",\"orgName\":\"Umbrella Ltd\",\"from\":\"2011-02\",\"to\":\"2013-11\"}],\"tags\":[{\"label\":\"KOTLIN\"},{\"label\":\"RUST\"}],\"_meta\":{\"updated\":1700604800},\"stats\":{\"s0\":217,\"s1\":218,\"s2\":219,\"s3\":220,\"s4\":221,\"s5\":222,\"s6\":223,\"s7\":224,\"s8\":225,\"s9\":226}}"
+  ],
+  "expected": {
+    "map": [
+      {
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "full_name": "Ada Lovelace",
+        "email": "ada.lovelace@acme0.com",
+        "phone": "+14155550100",
+        "title": "VP Engineering",
+        "seniority": "vp",
+        "linkedin_url": "https://www.linkedin.com/in/ada-lovelace-0",
+        "location": {
+          "city": "London",
+          "country": "GB"
+        },
+        "company": {
+          "name": "Acme Inc",
+          "domain": "acme0.com",
+          "headcount": 10,
+          "industry": "Software",
+          "founded": "1990-01-10"
+        },
+        "experiences": [
+          {
+            "title": "VP Engineering",
+            "company": "Globex Ltd",
+            "start": "2010-01",
+            "end": "2012-10"
+          }
+        ],
+        "skills": [
+          "sql",
+          "sales"
+        ],
+        "updated_at": "2023-11-14"
+      },
+      {
+        "first_name": "Alan",
+        "last_name": "Knuth",
+        "full_name": "Alan Knuth",
+        "email": "alan.knuth@globex1.com",
+        "phone": "+14155550101",
+        "title": "Head of Data",
+        "seniority": "head",
+        "linkedin_url": "https://www.linkedin.com/in/alan-knuth-1",
+        "location": {
+          "city": "Toronto",
+          "country": "CA"
+        },
+        "company": {
+          "name": "Globex Inc",
+          "domain": "globex1.com",
+          "headcount": 47,
+          "industry": "Energy",
+          "founded": "1991-02-11"
+        },
+        "experiences": [
+          {
+            "title": "Head of Data",
+            "company": "Initech Ltd",
+            "start": "2010-01",
+            "end": "2012-10"
+          },
+          {
+            "title": "Staff Engineer",
+            "company": "Umbrella Ltd",
+            "start": "2011-02",
+            "end": "2013-11"
+          }
+        ],
+        "skills": [
+          "go",
+          "python"
+        ],
+        "updated_at": "2023-11-15"
+      },
+      {
+        "first_name": "John",
+        "last_name": "Berners-Lee",
+        "full_name": "John Berners-Lee",
+        "email": "john.berners-lee@globex7.com",
+        "phone": "+14155550107",
+        "title": "Head of Data",
+        "seniority": "head",
+        "linkedin_url": "https://www.linkedin.com/in/john-berners-lee-7",
+        "location": {
+          "city": "Toronto",
+          "country": "CA"
+        },
+        "company": {
+          "name": "Globex Inc",
+          "domain": "globex7.com",
+          "headcount": 269,
+          "industry": "Energy",
+          "founded": "1997-08-17"
+        },
+        "experiences": [
+          {
+            "title": "Head of Data",
+            "company": "Initech Ltd",
+            "start": "2010-01",
+            "end": "2012-10"
+          },
+          {
+            "title": "Staff Engineer",
+            "company": "Umbrella Ltd",
+            "start": "2011-02",
+            "end": "2013-11"
+          }
+        ],
+        "skills": [
+          "kotlin",
+          "rust"
+        ],
+        "updated_at": "2023-11-21"
+      }
+    ],
+    "extract": [
+      {
+        "email": "ada.lovelace@acme0.com",
+        "phone": "+14155550100",
+        "company.domain": "acme0.com"
+      },
+      {
+        "email": "alan.knuth@globex1.com",
+        "phone": "+14155550101",
+        "company.domain": "globex1.com"
+      },
+      {
+        "email": "john.berners-lee@globex7.com",
+        "phone": "+14155550107",
+        "company.domain": "globex7.com"
+      }
+    ],
+    "stats": {
+      "responses": 3,
+      "fields": {
+        "first_name": {
+          "fill": 3,
+          "errors": 0
+        },
+        "last_name": {
+          "fill": 3,
+          "errors": 0
+        },
+        "full_name": {
+          "fill": 3,
+          "errors": 0
+        },
+        "email": {
+          "fill": 3,
+          "errors": 0
+        },
+        "phone": {
+          "fill": 3,
+          "errors": 0
+        },
+        "title": {
+          "fill": 3,
+          "errors": 0
+        },
+        "seniority": {
+          "fill": 3,
+          "errors": 0
+        },
+        "linkedin_url": {
+          "fill": 3,
+          "errors": 0
+        },
+        "location.city": {
+          "fill": 3,
+          "errors": 0
+        },
+        "location.country": {
+          "fill": 3,
+          "errors": 0
+        },
+        "company.name": {
+          "fill": 3,
+          "errors": 0
+        },
+        "company.domain": {
+          "fill": 3,
+          "errors": 0
+        },
+        "company.headcount": {
+          "fill": 3,
+          "errors": 0
+        },
+        "company.industry": {
+          "fill": 3,
+          "errors": 0
+        },
+        "company.founded": {
+          "fill": 3,
+          "errors": 0
+        },
+        "experiences[]": {
+          "fill": 3,
+          "errors": 0
+        },
+        "experiences[].title": {
+          "fill": 5,
+          "errors": 0,
+          "total": 5
+        },
+        "experiences[].company": {
+          "fill": 5,
+          "errors": 0,
+          "total": 5
+        },
+        "experiences[].start": {
+          "fill": 5,
+          "errors": 0,
+          "total": 5
+        },
+        "experiences[].end": {
+          "fill": 5,
+          "errors": 0,
+          "total": 5
+        },
+        "skills[]": {
+          "fill": 3,
+          "errors": 0
+        },
+        "updated_at": {
+          "fill": 3,
+          "errors": 0
+        }
+      }
+    }
+  },
+  "duplicate_keys": false
+}

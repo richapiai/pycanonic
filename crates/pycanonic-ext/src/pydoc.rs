@@ -74,7 +74,16 @@ impl Doc for PyDoc<'_, '_> {
     fn get(&self, key: &Key) -> Option<Self> {
         let d = self.obj.cast::<PyDict>().ok()?;
         let k = self.keys.get(key.tag as usize)?.bind(self.obj.py());
-        d.get_item(k).ok().flatten().map(|v| self.wrap(v))
+        if let Some(v) = d.get_item(k).ok().flatten() {
+            return Some(self.wrap(v));
+        }
+        // A spec's lone surrogate is U+FFFD in the plan; a dict key holding one matches it the same way.
+        if !key.s.contains(char::REPLACEMENT_CHARACTER) {
+            return None;
+        }
+        d.iter()
+            .find(|(k, _)| k.cast::<PyString>().is_ok_and(|s| text(s) == key.s))
+            .map(|(_, v)| self.wrap(v))
     }
 
     fn idx(&self, i: usize) -> Option<Self> {

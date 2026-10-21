@@ -50,9 +50,10 @@ fn number(raw: &str) -> Value<'_> {
 }
 
 impl<'a, 'b> Doc for &'a Node<'b> {
+    /// A duplicated key reads its last value, as `JSON.parse` does (`extract` keeps the first).
     fn get(&self, key: &Key) -> Option<Self> {
         match self {
-            Node::Obj(m) => m.iter().find(|(k, _)| *k == key.s).map(|(_, v)| v),
+            Node::Obj(m) => m.iter().rfind(|(k, _)| *k == key.s).map(|(_, v)| v),
             _ => None,
         }
     }

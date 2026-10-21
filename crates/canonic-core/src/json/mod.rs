@@ -157,8 +157,7 @@ impl<'a> Parser<'a> {
         }
         self.pos += 1;
         let mut members: Vec<(Cow<'a, str>, Node<'a>)> = Vec::new();
-        // First occurrence of a wanted key wins, built or not; later repeats are skipped.
-        let mut seen = vec![false; f.keys.len()];
+        // Every occurrence of a wanted key is built; `Doc::get` reads the last, as `JSON.parse` does.
         self.ws();
         if self.buf.get(self.pos) == Some(&b'}') {
             self.pos += 1;
@@ -178,9 +177,8 @@ impl<'a> Parser<'a> {
             } else {
                 f.keys
                     .iter()
-                    .position(|(k, _)| **k == *key.as_bytes())
-                    .filter(|&i| !std::mem::replace(&mut seen[i], true))
-                    .map(|i| &f.keys[i].1)
+                    .find(|(k, _)| **k == *key.as_bytes())
+                    .map(|(_, c)| c)
             };
             let v = match child {
                 Some(c) => self.value(c, depth)?,

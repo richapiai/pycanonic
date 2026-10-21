@@ -1,0 +1,198 @@
+{
+  "name": "constructs/pluck",
+  "canonical": {
+    "type": "object",
+    "properties": {
+      "first_name": {
+        "type": "string"
+      },
+      "last_name": {
+        "type": "string"
+      },
+      "full_name": {
+        "type": "string",
+        "semantic": "full_name"
+      },
+      "email": {
+        "type": "string",
+        "semantic": "email",
+        "routing": true,
+        "aliases": [
+          "work_email"
+        ]
+      },
+      "phone": {
+        "type": "string",
+        "semantic": "phone",
+        "routing": true
+      },
+      "linkedin_url": {
+        "type": "string",
+        "semantic": "linkedin_url"
+      },
+      "headcount": {
+        "type": "integer"
+      },
+      "verified": {
+        "type": "boolean"
+      },
+      "born": {
+        "type": "string",
+        "semantic": "iso_date"
+      },
+      "company": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string",
+            "semantic": "domain",
+            "routing": true
+          }
+        }
+      },
+      "experiences": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "company": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "skills[]": {
+        "from": "tags",
+        "pluck": "label",
+        "transform": "lower"
+      }
+    }
+  },
+  "inputs": [
+    "{\"tags\":[]}",
+    "{\"tags\":[{\"label\":\"Math\"}]}",
+    "{\"tags\":[{\"label\":\"A\"},{\"label\":7},{},null]}",
+    "{\"tags\":{\"label\":\"x\"}}"
+  ],
+  "expected": {
+    "map": [
+      {
+        "first_name": null,
+        "last_name": null,
+        "full_name": null,
+        "email": null,
+        "phone": null,
+        "linkedin_url": null,
+        "headcount": null,
+        "verified": null,
+        "born": null,
+        "company": {
+          "name": null,
+          "domain": null
+        },
+        "experiences": null,
+        "skills": []
+      },
+      {
+        "first_name": null,
+        "last_name": null,
+        "full_name": null,
+        "email": null,
+        "phone": null,
+        "linkedin_url": null,
+        "headcount": null,
+        "verified": null,
+        "born": null,
+        "company": {
+          "name": null,
+          "domain": null
+        },
+        "experiences": null,
+        "skills": [
+          "math"
+        ]
+      },
+      {
+        "first_name": null,
+        "last_name": null,
+        "full_name": null,
+        "email": null,
+        "phone": null,
+        "linkedin_url": null,
+        "headcount": null,
+        "verified": null,
+        "born": null,
+        "company": {
+          "name": null,
+          "domain": null
+        },
+        "experiences": null,
+        "skills": [
+          "a",
+          null,
+          null,
+          null
+        ]
+      },
+      {
+        "first_name": null,
+        "last_name": null,
+        "full_name": null,
+        "email": null,
+        "phone": null,
+        "linkedin_url": null,
+        "headcount": null,
+        "verified": null,
+        "born": null,
+        "company": {
+          "name": null,
+          "domain": null
+        },
+        "experiences": null,
+        "skills": null
+      }
+    ],
+    "extract": [
+      {},
+      {},
+      {},
+      {}
+    ],
+    "stats": {
+      "responses": 4,
+      "fields": {
+        "skills[]": {
+          "fill": 3,
+          "errors": 2
+        }
+      }
+    }
+  },
+  "duplicate_keys": false
+}

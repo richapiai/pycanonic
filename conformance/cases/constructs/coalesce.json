@@ -1,0 +1,201 @@
+{
+  "name": "constructs/coalesce",
+  "canonical": {
+    "type": "object",
+    "properties": {
+      "first_name": {
+        "type": "string"
+      },
+      "last_name": {
+        "type": "string"
+      },
+      "full_name": {
+        "type": "string",
+        "semantic": "full_name"
+      },
+      "email": {
+        "type": "string",
+        "semantic": "email",
+        "routing": true,
+        "aliases": [
+          "work_email"
+        ]
+      },
+      "phone": {
+        "type": "string",
+        "semantic": "phone",
+        "routing": true
+      },
+      "linkedin_url": {
+        "type": "string",
+        "semantic": "linkedin_url"
+      },
+      "headcount": {
+        "type": "integer"
+      },
+      "verified": {
+        "type": "boolean"
+      },
+      "born": {
+        "type": "string",
+        "semantic": "iso_date"
+      },
+      "company": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string",
+            "semantic": "domain",
+            "routing": true
+          }
+        }
+      },
+      "experiences": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "company": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "email": {
+        "coalesce": [
+          "work_email",
+          "emails[0].address",
+          "personal"
+        ]
+      }
+    }
+  },
+  "inputs": [
+    "{\"work_email\":\"a@acme.com\",\"personal\":\"p@home.org\"}",
+    "{\"work_email\":null,\"emails\":[{\"address\":\"b@acme.com\"}]}",
+    "{\"emails\":[],\"personal\":\"p@home.org\"}",
+    "{}"
+  ],
+  "expected": {
+    "map": [
+      {
+        "first_name": null,
+        "last_name": null,
+        "full_name": null,
+        "email": "a@acme.com",
+        "phone": null,
+        "linkedin_url": null,
+        "headcount": null,
+        "verified": null,
+        "born": null,
+        "company": {
+          "name": null,
+          "domain": null
+        },
+        "experiences": null,
+        "skills": null
+      },
+      {
+        "first_name": null,
+        "last_name": null,
+        "full_name": null,
+        "email": "b@acme.com",
+        "phone": null,
+        "linkedin_url": null,
+        "headcount": null,
+        "verified": null,
+        "born": null,
+        "company": {
+          "name": null,
+          "domain": null
+        },
+        "experiences": null,
+        "skills": null
+      },
+      {
+        "first_name": null,
+        "last_name": null,
+        "full_name": null,
+        "email": "p@home.org",
+        "phone": null,
+        "linkedin_url": null,
+        "headcount": null,
+        "verified": null,
+        "born": null,
+        "company": {
+          "name": null,
+          "domain": null
+        },
+        "experiences": null,
+        "skills": null
+      },
+      {
+        "first_name": null,
+        "last_name": null,
+        "full_name": null,
+        "email": null,
+        "phone": null,
+        "linkedin_url": null,
+        "headcount": null,
+        "verified": null,
+        "born": null,
+        "company": {
+          "name": null,
+          "domain": null
+        },
+        "experiences": null,
+        "skills": null
+      }
+    ],
+    "extract": [
+      {
+        "email": "a@acme.com"
+      },
+      {
+        "email": "b@acme.com"
+      },
+      {
+        "email": "p@home.org"
+      },
+      {
+        "email": null
+      }
+    ],
+    "stats": {
+      "responses": 4,
+      "fields": {
+        "email": {
+          "fill": 3,
+          "errors": 0
+        }
+      }
+    }
+  },
+  "duplicate_keys": false
+}

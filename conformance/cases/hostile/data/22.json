@@ -1,0 +1,338 @@
+{
+  "name": "hostile/data/22",
+  "canonical": {
+    "type": "object",
+    "properties": {
+      "first_name": {
+        "type": "string"
+      },
+      "last_name": {
+        "type": "string"
+      },
+      "full_name": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string",
+        "semantic": "email",
+        "routing": true,
+        "aliases": [
+          "work_email",
+          "business_email"
+        ]
+      },
+      "phone": {
+        "type": "string",
+        "semantic": "phone",
+        "routing": true,
+        "aliases": [
+          "mobile",
+          "tel"
+        ]
+      },
+      "title": {
+        "type": "string"
+      },
+      "seniority": {
+        "type": "string"
+      },
+      "linkedin_url": {
+        "type": "string"
+      },
+      "location": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          }
+        }
+      },
+      "company": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string",
+            "semantic": "domain",
+            "routing": true
+          },
+          "headcount": {
+            "type": "integer"
+          },
+          "industry": {
+            "type": "string"
+          },
+          "founded": {
+            "type": "string"
+          }
+        }
+      },
+      "experiences": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "company": {
+              "type": "string"
+            },
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "updated_at": {
+        "type": "string"
+      }
+    }
+  },
+  "spec": {
+    "$schema": "../spec.schema.json",
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "first_name": {
+        "from": "profile.fullName",
+        "transform": {
+          "split_name": "first"
+        }
+      },
+      "last_name": {
+        "from": "profile.fullName",
+        "transform": {
+          "split_name": "last"
+        }
+      },
+      "full_name": "profile.fullName",
+      "email": {
+        "coalesce": [
+          "contact.workEmail",
+          "contact.emails[0].address"
+        ],
+        "transform": [
+          "trim",
+          "lower"
+        ]
+      },
+      "phone": {
+        "from": "contact.mobile",
+        "transform": "normalize_phone"
+      },
+      "title": {
+        "from": "profile.headline",
+        "transform": "trim"
+      },
+      "seniority": "profile.level",
+      "linkedin_url": {
+        "from": "social.li",
+        "transform": "normalize_linkedin"
+      },
+      "location.city": "geo.city",
+      "location.country": "geo.countryCode",
+      "company.name": "org.name",
+      "company.domain": {
+        "from": "org.website",
+        "transform": "to_domain"
+      },
+      "company.headcount": {
+        "from": "org.size",
+        "transform": {
+          "cast": "integer"
+        }
+      },
+      "company.industry": "org.industry",
+      "company.founded": {
+        "from": "org.foundedOn",
+        "transform": "parse_date"
+      },
+      "experiences[]": {
+        "from": "workHistory",
+        "item": {
+          "title": "role",
+          "company": "orgName",
+          "start": {
+            "from": "from",
+            "transform": "parse_date"
+          },
+          "end": {
+            "from": "to",
+            "transform": "parse_date"
+          }
+        }
+      },
+      "skills[]": {
+        "from": "tags",
+        "pluck": "label",
+        "transform": "lower"
+      },
+      "updated_at": {
+        "from": "_meta.updated",
+        "transform": "parse_date"
+      }
+    }
+  },
+  "inputs": [
+    "\udfff",
+    "{\"\\udfff\":\"\\udfff\",\"profile\":{\"fullName\":\"\\udfff\",\"headline\":\"\\udfff\",\"\\udfff\":\"\\udfff\"},\"contact\":{\"workEmail\":\"\\udfff\",\"mobile\":\"\\udfff\"},\"org\":{\"website\":\"\\udfff\",\"size\":\"\\udfff\"},\"tags\":[{\"label\":\"\\udfff\"}]}"
+  ],
+  "expected": {
+    "map": [
+      null,
+      {
+        "first_name": "\udfff",
+        "last_name": null,
+        "full_name": "\udfff",
+        "email": null,
+        "phone": null,
+        "title": "\udfff",
+        "seniority": null,
+        "linkedin_url": null,
+        "location": {
+          "city": null,
+          "country": null
+        },
+        "company": {
+          "name": null,
+          "domain": null,
+          "headcount": null,
+          "industry": null,
+          "founded": null
+        },
+        "experiences": null,
+        "skills": [
+          "\udfff"
+        ],
+        "updated_at": null
+      }
+    ],
+    "extract": [
+      {
+        "email": null,
+        "phone": null,
+        "company.domain": null
+      },
+      {
+        "email": null,
+        "phone": null,
+        "company.domain": null
+      }
+    ],
+    "stats": {
+      "responses": 1,
+      "fields": {
+        "first_name": {
+          "fill": 1,
+          "errors": 0
+        },
+        "last_name": {
+          "fill": 0,
+          "errors": 1
+        },
+        "full_name": {
+          "fill": 1,
+          "errors": 0
+        },
+        "email": {
+          "fill": 0,
+          "errors": 1
+        },
+        "phone": {
+          "fill": 0,
+          "errors": 1
+        },
+        "title": {
+          "fill": 1,
+          "errors": 0
+        },
+        "seniority": {
+          "fill": 0,
+          "errors": 0
+        },
+        "linkedin_url": {
+          "fill": 0,
+          "errors": 0
+        },
+        "location.city": {
+          "fill": 0,
+          "errors": 0
+        },
+        "location.country": {
+          "fill": 0,
+          "errors": 0
+        },
+        "company.name": {
+          "fill": 0,
+          "errors": 0
+        },
+        "company.domain": {
+          "fill": 0,
+          "errors": 1
+        },
+        "company.headcount": {
+          "fill": 0,
+          "errors": 1
+        },
+        "company.industry": {
+          "fill": 0,
+          "errors": 0
+        },
+        "company.founded": {
+          "fill": 0,
+          "errors": 0
+        },
+        "experiences[]": {
+          "fill": 0,
+          "errors": 0
+        },
+        "experiences[].title": {
+          "fill": 0,
+          "errors": 0,
+          "total": 0
+        },
+        "experiences[].company": {
+          "fill": 0,
+          "errors": 0,
+          "total": 0
+        },
+        "experiences[].start": {
+          "fill": 0,
+          "errors": 0,
+          "total": 0
+        },
+        "experiences[].end": {
+          "fill": 0,
+          "errors": 0,
+          "total": 0
+        },
+        "skills[]": {
+          "fill": 1,
+          "errors": 0
+        },
+        "updated_at": {
+          "fill": 0,
+          "errors": 0
+        }
+      }
+    }
+  },
+  "duplicate_keys": false
+}

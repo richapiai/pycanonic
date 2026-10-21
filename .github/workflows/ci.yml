@@ -45,3 +45,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: scripts/leak-scan.sh
+
+  conformance-fresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # The corpus runners live in `cargo test` and `pytest python/tests`; this fails once the
+      # vendored corpus is more than 30 days behind, so conformance/sync.sh gets run again.
+      - run: |
+          committed=$(sed -n 2p conformance/SOURCE_COMMIT)
+          age=$(( ($(date +%s) - $(date -d "$committed" +%s)) / 86400 ))
+          echo "corpus $(head -1 conformance/SOURCE_COMMIT) from $committed, $age days old"
+          test "$age" -le 30

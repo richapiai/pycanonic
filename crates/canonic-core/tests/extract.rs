@@ -408,7 +408,8 @@ fn a_path_below_a_captured_value_is_read_from_the_captured_text_first_key_wins()
     assert_eq!(r[0], Some(Value::Null)); // an object fails the email validator
     assert_eq!(keyed(&a, &r)["phone"], json!("+14155550100"));
     assert_eq!(bytewise(&a, raw), keyed(&a, &r));
-    assert_eq!(ex(&a, raw), map_routing(&a, raw));
+    // `map` keeps the last, as JSON.parse does (known-limits.md, "Duplicate keys").
+    assert_eq!(map_routing(&a, raw)["phone"], json!("+442079460018"));
 }
 
 #[test]
@@ -788,6 +789,19 @@ fn serialize(g: &G, f: &Fmt, out: &mut String) {
 }
 
 /// Times `key` occurs as an object key anywhere, and whether it is a root key.
+/// `g` with only the first occurrence of each key in every object.
+fn first_keys(g: &G) -> G {
+    match g {
+        G::Obj(e) => {
+            let mut seen = std::collections::HashSet::new();
+            let e = e.iter().filter(|(k, _)| seen.insert(k.as_str()));
+            G::Obj(e.map(|(k, v)| (k.clone(), first_keys(v))).collect())
+        }
+        G::Arr(v) => G::Arr(v.iter().map(first_keys).collect()),
+        other => other.clone(),
+    }
+}
+
 fn count_key(g: &G, key: &str) -> usize {
     match g {
         G::Obj(e) => e
@@ -817,8 +831,8 @@ fn chunked<'r>(raw: &'r [u8], sizes: &[usize]) -> Vec<&'r [u8]> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(3000))]
 
-    /// The Rust parser keeps the first duplicate key on path reads, like the extractor, so this
-    /// holds with duplicate keys too (TypeScript's JSON.parse keeps the last; see known-limits.md).
+    /// `extract` keeps the first of a duplicated key and `map` the last, as in TypeScript
+    /// (known-limits.md), so `map` reads the document with only the first of each key.
     #[test]
     fn extract_equals_the_routing_fields_of_map_whole_and_chunked(
         g in root(),
@@ -829,7 +843,9 @@ proptest! {
         let mut raw = String::new();
         serialize(&g, &Fmt { ws, escape }, &mut raw);
         let raw = raw.as_bytes();
-        let want = map_routing(&ACME_SCAN, raw);
+        let mut firsts = String::new();
+        serialize(&first_keys(&g), &Fmt { ws, escape }, &mut firsts);
+        let want = map_routing(&ACME_SCAN, firsts.as_bytes());
         prop_assert_eq!(&ex(&ACME_SCAN, raw), &want);
         prop_assert_eq!(&streamed(&ACME_SCAN, chunked(raw, &sizes)), &want);
         // Anchored: holds while the anchor key sits once, at the root.
