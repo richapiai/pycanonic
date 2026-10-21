@@ -248,7 +248,9 @@ impl<'a> Parser<'a> {
             return Err(ParseError::Depth);
         }
         self.pos += 1;
-        let mut members: Vec<(Cow<'a, str>, Node<'a>)> = Vec::new();
+        // A pruned object keeps at most one member per listed key, duplicates aside.
+        let mut members: Vec<(Cow<'a, str>, Node<'a>)> =
+            Vec::with_capacity(if f.all { 0 } else { f.keys.len() });
         // Every occurrence of a wanted key is built; `Doc::get` reads the last, as `JSON.parse` does.
         self.ws();
         if self.buf.get(self.pos) == Some(&b'}') {
