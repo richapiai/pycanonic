@@ -240,7 +240,20 @@ fn is_js_space(c: char) -> bool {
 }
 
 fn js_trim(s: &str) -> &str {
-    s.trim_matches(is_js_space)
+    // ASCII edges by byte; the char walk only when an edge is non-ASCII (maybe Unicode space).
+    let ascii_space = |c: &u8| matches!(c, b'\t'..=b'\r' | b' ');
+    let b = s.as_bytes();
+    let start = b.iter().position(|c| !ascii_space(c)).unwrap_or(b.len());
+    let end = b
+        .iter()
+        .rposition(|c| !ascii_space(c))
+        .map_or(start, |i| i + 1);
+    if b[start..end].first().is_some_and(|c| !c.is_ascii())
+        || b[start..end].last().is_some_and(|c| !c.is_ascii())
+    {
+        return s.trim_matches(is_js_space);
+    }
+    &s[start..end]
 }
 
 fn lower(s: Cow<'_, str>) -> Cow<'_, str> {
@@ -484,7 +497,7 @@ fn normalize_phone(v: &Value) -> Option<String> {
 
 /// Drops a scheme whose `://` starts within the first 10 UTF-16 units.
 fn strip_scheme(s: &str) -> &str {
-    match s.find("://") {
+    match s.as_bytes().windows(3).position(|w| w == b"://") {
         Some(i) if i > 0 && s[..i].encode_utf16().nth(9).is_none() => &s[i + 3..],
         _ => s,
     }
@@ -503,12 +516,15 @@ fn is_domain(s: &str) -> bool {
     s.len() <= 253 && s.contains('.') && s.split('.').all(is_label)
 }
 
-fn cut<'s>(s: &'s str, stops: &[char]) -> &'s str {
-    s.find(stops).map_or(s, |i| &s[..i])
+/// `s` up to the first of the ASCII bytes `stops`.
+fn cut<'s>(s: &'s str, stops: &[u8]) -> &'s str {
+    s.bytes()
+        .position(|c| stops.contains(&c))
+        .map_or(s, |i| &s[..i])
 }
 
 fn host_of(s: &str) -> &str {
-    cut(s, &['/', '?', '#', ':'])
+    cut(s, b"/?#:")
 }
 
 /// The domain of `v`, borrowed from it when trimming and lowering changed nothing.
@@ -538,7 +554,7 @@ fn normalize_linkedin(v: &str) -> Option<String> {
         return None;
     }
     let rest = s[host.len()..].strip_prefix('/')?;
-    let mut parts = cut(rest, &['?', '#']).split('/');
+    let mut parts = cut(rest, b"?#").split('/');
     let kind = parts.next().unwrap_or("");
     let slug = parts.next().unwrap_or("");
     if !["in", "company", "school"].contains(&kind) || slug.is_empty() {
