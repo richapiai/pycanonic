@@ -78,7 +78,8 @@ impl Doc for PyDoc<'_, '_> {
             return Some(self.wrap(v));
         }
         // A spec's lone surrogate is U+FFFD in the plan; a dict key holding one matches it the same way.
-        if !key.s.contains(char::REPLACEMENT_CHARACTER) {
+        // ASCII first: a word-at-a-time check, where `contains(char)` is a memcmp per candidate.
+        if key.s.is_ascii() || !key.s.contains(char::REPLACEMENT_CHARACTER) {
             return None;
         }
         d.iter()
