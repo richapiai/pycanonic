@@ -154,7 +154,10 @@ impl Transform for Builtin {
             },
             Builtin::NormalizePhone => normalize_phone(&v).map(owned),
             Builtin::NormalizeLinkedin => as_str(&v).and_then(normalize_linkedin).map(owned),
-            Builtin::ToDomain => as_str(&v).and_then(to_domain).map(owned),
+            Builtin::ToDomain => match v {
+                Value::Str(s) => to_domain(s).map(Value::Str),
+                _ => None,
+            },
         };
         out.unwrap_or(Value::Null)
     }
@@ -196,7 +199,7 @@ pub fn validate(semantic: Semantic, v: Value<'_>) -> Value<'_> {
     let ok = match semantic {
         Semantic::Email => s.is_some_and(valid_email),
         Semantic::Phone => normalize_phone(&v).is_some(),
-        Semantic::Domain => s.is_some_and(|s| is_domain(&s.to_lowercase())),
+        Semantic::Domain => s.is_some_and(|s| is_domain(&lower(Cow::Borrowed(s)))),
         Semantic::LinkedinUrl => s.and_then(normalize_linkedin).is_some(),
         Semantic::Url => s.is_some_and(valid_url),
         Semantic::IsoDate => s.is_some_and(|s| s == js_trim(s) && date_from_string(s).is_some()),
@@ -423,7 +426,15 @@ fn date_from_epoch(v: f64) -> Option<String> {
         return None;
     }
     let (y, m, d) = civil_from_days((ms / 86_400_000.0).floor() as i64);
-    Some(format!("{y:04}-{m:02}-{d:02}"))
+    // 1970 to 9999, so four digits; written by hand, `format!` is most of this function's time.
+    let digit = |n: i64, p: i64| char::from(b'0' + (n / p % 10) as u8);
+    let mut out = String::with_capacity(10);
+    out.extend([1000, 100, 10, 1].map(|p| digit(y, p)));
+    for n in [m, d] {
+        out.push('-');
+        out.extend([10, 1].map(|p| digit(n, p)));
+    }
+    Some(out)
 }
 
 /// Howard Hinnant's days-since-1970 to proleptic Gregorian (year, month, day).
@@ -500,20 +511,27 @@ fn host_of(s: &str) -> &str {
     cut(s, &['/', '?', '#', ':'])
 }
 
-fn to_domain(v: &str) -> Option<String> {
-    let lowered = js_trim(v).to_lowercase();
-    let mut s = lowered.as_str();
+/// The domain of `v`, borrowed from it when trimming and lowering changed nothing.
+fn to_domain(v: Cow<'_, str>) -> Option<Cow<'_, str>> {
+    match lower(sub(v, js_trim)) {
+        Cow::Borrowed(s) => domain_of(s).map(Cow::Borrowed),
+        Cow::Owned(s) => domain_of(&s).map(|h| Cow::Owned(h.to_string())),
+    }
+}
+
+/// The domain inside trimmed, lowercased `s`.
+fn domain_of(mut s: &str) -> Option<&str> {
     if s.contains('@') && !s.contains('/') {
         s = s.rsplit_once('@').map_or(s, |(_, after)| after);
     }
     let mut host = host_of(strip_scheme(s));
     host = host.strip_prefix("www.").unwrap_or(host);
     host = host.strip_suffix('.').unwrap_or(host);
-    is_domain(host).then(|| host.to_string())
+    is_domain(host).then_some(host)
 }
 
 fn normalize_linkedin(v: &str) -> Option<String> {
-    let lowered = js_trim(v).to_lowercase();
+    let lowered = lower(Cow::Borrowed(js_trim(v)));
     let s = strip_scheme(&lowered);
     let host = host_of(s);
     if host != "linkedin.com" && !host.ends_with(".linkedin.com") {
@@ -526,20 +544,25 @@ fn normalize_linkedin(v: &str) -> Option<String> {
     if !["in", "company", "school"].contains(&kind) || slug.is_empty() {
         return None;
     }
-    Some(format!("https://www.linkedin.com/{kind}/{slug}"))
+    let mut out = String::with_capacity(25 + kind.len() + 1 + slug.len());
+    out.push_str("https://www.linkedin.com/");
+    out.push_str(kind);
+    out.push('/');
+    out.push_str(slug);
+    Some(out)
 }
 
 fn valid_email(v: &str) -> bool {
     match (v.find('@'), v.rfind('@')) {
         (Some(at), Some(last)) if at >= 1 && at == last && !v.contains(' ') => {
-            is_domain(&v[at + 1..].to_lowercase())
+            is_domain(&lower(Cow::Borrowed(&v[at + 1..])))
         }
         _ => false,
     }
 }
 
 fn valid_url(v: &str) -> bool {
-    let s = v.to_lowercase();
+    let s = lower(Cow::Borrowed(v));
     (s.starts_with("http://") || s.starts_with("https://")) && is_domain(host_of(strip_scheme(&s)))
 }
 
