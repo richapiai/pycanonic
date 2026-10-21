@@ -32,16 +32,17 @@ pub enum Node<'a> {
     Num(&'a str),
     Str(Cow<'a, str>),
     Arr(Vec<Node<'a>>),
-    /// Members in document order, duplicates included.
+    /// Members in document order, duplicates included. A member the filter doesn't list is left
+    /// out; a listed one whose value it pruned is kept as `Skipped`.
     Obj(Vec<(Cow<'a, str>, Node<'a>)>),
-    /// A member or element the filter pruned. Array positions are kept.
+    /// A value the filter pruned. Array positions are kept.
     Skipped,
 }
 
 /// What the plan reads below one value.
 ///
 /// `all` parses everything below. Otherwise an object is built only if `keys` is non-empty
-/// (unlisted members become `Skipped`), an array only if `idxs` or `elems` is set (an
+/// (unlisted members are left out), an array only if `idxs` or `elems` is set (an
 /// `idxs` entry wins over `elems` for its position), and any other container is `Skipped`
 /// whole. Scalars are always read. Keys are the decoded UTF-8 bytes.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -156,23 +157,25 @@ impl<'a> Parser<'a> {
             if self.buf.get(self.pos) != Some(&b'"') {
                 return self.err();
             }
-            let key = self.string()?;
+            let end = scan_string_end(self.buf, self.pos + 1)?;
+            let raw = &self.buf[self.pos + 1..end - 1];
+            self.pos = end;
             self.ws();
             self.expect(b':')?;
             self.ws();
             let child = if f.all {
                 Some(&ALL)
             } else {
-                f.keys
-                    .iter()
-                    .find(|(k, _)| **k == *key.as_bytes())
-                    .map(|(_, c)| c)
+                wanted(&f.keys, raw)
             };
-            let v = match child {
-                Some(c) => self.value(c, depth)?,
-                None => self.skip()?,
-            };
-            members.push((key, v));
+            // An unlisted member is skipped and not kept: no path reads it, so its key is never decoded.
+            match child {
+                Some(c) => {
+                    let v = self.value(c, depth)?;
+                    members.push((unescape(raw), v));
+                }
+                None => _ = self.skip()?,
+            }
             self.ws();
             match self.buf.get(self.pos) {
                 Some(b',') => self.pos += 1,
@@ -304,6 +307,17 @@ impl<'a> Parser<'a> {
             None => scan_container(self.buf, start),
         }
     }
+}
+
+/// The filter entry for the member whose key has the raw (still escaped) bytes `raw`. Filter keys
+/// are decoded UTF-8, so raw bytes with no backslash that are valid UTF-8 are compared as they are
+/// and only an escaped or broken key is decoded.
+fn wanted<'f>(keys: &'f [(Box<[u8]>, Filter)], raw: &[u8]) -> Option<&'f Filter> {
+    let find = |key: &[u8]| keys.iter().find(|(k, _)| **k == *key).map(|(_, c)| c);
+    if !raw.contains(&b'\\') && (raw.is_ascii() || std::str::from_utf8(raw).is_ok()) {
+        return find(raw);
+    }
+    find(unescape(raw).as_bytes())
 }
 
 // The byte scans: the reference for `simd::skip`, and the fallback where it gives up.

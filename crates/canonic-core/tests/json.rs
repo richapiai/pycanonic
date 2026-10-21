@@ -154,13 +154,7 @@ fn deep_nesting_inside_a_skipped_subtree_is_fine() {
     doc.extend(nested(100_000));
     doc.push(b'}');
     let out = parse(&doc, &keys(vec![("keep", all())])).unwrap();
-    assert_eq!(
-        members(&out),
-        &[
-            (Cow::Borrowed("keep"), Node::Num("1")),
-            (Cow::Borrowed("noise"), Node::Skipped)
-        ]
-    );
+    assert_eq!(members(&out), &[(Cow::Borrowed("keep"), Node::Num("1"))]);
 }
 
 #[test]
@@ -182,10 +176,7 @@ fn filter_prunes_siblings_and_noise() {
     assert_eq!(root[0].0, "a");
     assert_eq!(
         members(&root[0].1),
-        &[
-            (Cow::Borrowed("b"), Node::Str(Cow::Borrowed("want"))),
-            (Cow::Borrowed("c"), Node::Skipped)
-        ]
+        &[(Cow::Borrowed("b"), Node::Str(Cow::Borrowed("want")))]
     );
 }
 
