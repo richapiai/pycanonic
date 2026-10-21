@@ -1,5 +1,7 @@
-//! Stage 1: one pass that finds every structural byte, the simdjson way; and the same block
-//! classification run on demand from one bracket to its match, which is how the parser skips.
+//! The simdjson block classification, used two ways. [`skip`] runs it on demand from one bracket
+//! to its match: that is how the parser and the extract scanner skip a container. [`structurals`]
+//! runs it over the whole input as a stage-1 index. The parser no longer reads that index; it stays
+//! for its bench and its tests, which check the shared classifiers.
 //!
 //! Each 64-byte block is classified into five bitmasks (quotes, backslashes, `{ [`, `} ]`, `: ,`) by a
 //! backend: NEON on aarch64, AVX2 or SSE2 on x86_64, plain bytes elsewhere. The rest is shared
@@ -8,8 +10,18 @@
 //!
 //! A backslash escapes the next byte wherever it is, as in simdjson. The parser only lets a
 //! backslash escape inside a string, so the two disagree after a backslash outside a string. Valid
-//! JSON never has one; when it occurs it is reported in the index so the parser can fall back to
-//! scanning bytes from there.
+//! JSON never has one. `structurals` reports it in the index; `skip` gives up on it, and the caller
+//! scans bytes for that container instead.
+//!
+//! The crate's only `unsafe` lives here: the SIMD loads and [`ascii_str`].
+
+/// `b` as `&str` without a UTF-8 pass, for bytes the caller has already seen to be ASCII (number
+/// text, plain strings); the parser borrows these on its hot path.
+pub(crate) fn ascii_str(b: &[u8]) -> &str {
+    debug_assert!(b.is_ascii());
+    // SAFETY: every caller has checked each byte of `b` is below 0x80, and ASCII is valid UTF-8.
+    unsafe { std::str::from_utf8_unchecked(b) }
+}
 
 /// Sorted positions of every unescaped `"` (opening and closing), and of `{ } [ ] : , \` outside
 /// strings. Positions are `u32`: the parser caps input at 2^31 bytes ([`super::MAX_BYTES`]); past

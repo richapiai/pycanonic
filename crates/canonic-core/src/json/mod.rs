@@ -255,10 +255,8 @@ impl<'a> Parser<'a> {
             }
             self.required_digits()?;
         }
-        // SAFETY: only the ASCII bytes matched above were consumed, and ASCII is UTF-8.
-        Ok(Node::Num(unsafe {
-            std::str::from_utf8_unchecked(&self.buf[start..self.pos])
-        }))
+        // Only the ASCII bytes matched above were consumed.
+        Ok(Node::Num(simd::ascii_str(&self.buf[start..self.pos])))
     }
 
     fn digits(&mut self) {
@@ -369,8 +367,8 @@ pub(crate) fn same_key(a: &[u8], b: &[u8]) -> bool {
 /// A string's text from its raw bytes; `plain` (see `Parser::raw_string`) bytes are it already.
 fn decode(raw: &[u8], plain: bool) -> Cow<'_, str> {
     match plain {
-        // SAFETY: `raw_string` saw every plain byte below 0x80, and ASCII is UTF-8.
-        true => Cow::Borrowed(unsafe { std::str::from_utf8_unchecked(raw) }),
+        // `raw_string` saw every plain byte below 0x80.
+        true => Cow::Borrowed(simd::ascii_str(raw)),
         false => unescape(raw),
     }
 }
