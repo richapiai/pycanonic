@@ -1,0 +1,57 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "first_name": {
+        "from": "n",
+        "transform": {
+          "split_name": "first"
+        }
+      },
+      "last_name": {
+        "from": "n",
+        "transform": {
+          "split_name": "last"
+        }
+      },
+      "headcount": {
+        "from": "size",
+        "transform": {
+          "cast": "integer"
+        }
+      },
+      "born": {
+        "from": "dob",
+        "transform": "parse_date"
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "n": "Ada King Lovelace",
+        "size": 12,
+        "dob": "1815-12-10T00:00:00Z"
+      },
+      "expected": {
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "headcount": 12,
+        "born": "1815-12-10"
+      }
+    },
+    {
+      "payload": {
+        "n": "Ada",
+        "size": "12.5",
+        "dob": "1815-02-30"
+      },
+      "expected": {
+        "first_name": "Ada"
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "first_name": "given",
+      "last_name": "family"
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "given": "Ada",
+        "family": "Lovelace"
+      },
+      "expected": {
+        "first_name": "Ada",
+        "last_name": "Lovelace"
+      }
+    }
+  ]
+}

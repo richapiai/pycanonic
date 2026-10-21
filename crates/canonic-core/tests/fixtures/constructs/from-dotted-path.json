@@ -1,0 +1,55 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "first_name": {
+        "from": "person.name.first"
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "person": {
+          "name": {
+            "first": "Ada"
+          }
+        }
+      },
+      "expected": {
+        "first_name": "Ada"
+      }
+    },
+    {
+      "payload": {
+        "person": {
+          "name": {
+            "first": null
+          }
+        }
+      },
+      "expected": {}
+    },
+    {
+      "payload": {
+        "person": {
+          "name": null
+        }
+      },
+      "expected": {}
+    },
+    {
+      "payload": {
+        "person": "flat string"
+      },
+      "expected": {}
+    },
+    {
+      "payload": {},
+      "expected": {}
+    }
+  ]
+}

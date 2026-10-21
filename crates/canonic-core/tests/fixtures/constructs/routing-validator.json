@@ -1,0 +1,43 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "email": "e",
+      "phone": {
+        "from": "p",
+        "transform": "normalize_phone"
+      },
+      "company.domain": {
+        "from": "site",
+        "transform": "to_domain"
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "e": "ada@acme.com",
+        "p": "+44 (20) 7946-0018",
+        "site": "https://www.Acme.com/about"
+      },
+      "expected": {
+        "email": "ada@acme.com",
+        "phone": "+442079460018",
+        "company": {
+          "domain": "acme.com"
+        }
+      }
+    },
+    {
+      "payload": {
+        "e": "N/A",
+        "p": "n/a",
+        "site": "localhost"
+      },
+      "expected": {}
+    }
+  ]
+}

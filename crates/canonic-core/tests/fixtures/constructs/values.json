@@ -1,0 +1,19 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "skills[]": { "from": "tags", "transform": ["trim", "lower"] },
+      "experiences[]": { "from": "jobs", "item": { "tags[]": { "from": "labels" } } }
+    }
+  },
+  "cases": [
+    { "payload": { "tags": [] }, "expected": { "skills": [] } },
+    { "payload": { "tags": [" SQL ", "Go"] }, "expected": { "skills": ["sql", "go"] } },
+    { "payload": { "tags": ["a", 7, null, { "x": 1 }] }, "expected": { "skills": ["a", null, null, null] } },
+    { "payload": { "tags": "sql" }, "expected": {} },
+    { "payload": { "jobs": [{ "labels": ["x", "y"] }, {}] }, "expected": { "experiences": [{ "title": null, "company": null, "tags": ["x", "y"] }, { "title": null, "company": null, "tags": null }] } }
+  ]
+}

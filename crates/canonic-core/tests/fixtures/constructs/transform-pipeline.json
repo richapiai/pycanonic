@@ -1,0 +1,43 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "email": {
+        "from": "e",
+        "transform": [
+          "trim",
+          "lower"
+        ]
+      },
+      "linkedin_url": {
+        "from": "li",
+        "transform": [
+          "trim",
+          "normalize_linkedin"
+        ]
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "e": "  ADA@Acme.COM ",
+        "li": " https://uk.linkedin.com/in/Ada-L/?trk=x "
+      },
+      "expected": {
+        "email": "ada@acme.com",
+        "linkedin_url": "https://www.linkedin.com/in/ada-l"
+      }
+    },
+    {
+      "payload": {
+        "e": "N/A",
+        "li": "https://example.com/in/ada"
+      },
+      "expected": {}
+    }
+  ]
+}

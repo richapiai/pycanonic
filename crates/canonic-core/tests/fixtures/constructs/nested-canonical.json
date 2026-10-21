@@ -1,0 +1,34 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "company.name": "org.name",
+      "company.domain": "org.domain"
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "org": {
+          "name": "Acme",
+          "domain": "acme.com"
+        }
+      },
+      "expected": {
+        "company": {
+          "name": "Acme",
+          "domain": "acme.com"
+        }
+      }
+    },
+    {
+      "payload": {
+        "org": null
+      },
+      "expected": {}
+    }
+  ]
+}

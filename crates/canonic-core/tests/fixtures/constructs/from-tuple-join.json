@@ -1,0 +1,49 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "full_name": {
+        "from": [
+          "first",
+          "last"
+        ],
+        "transform": "join"
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "first": "Ada",
+        "last": "Lovelace"
+      },
+      "expected": {
+        "full_name": "Ada Lovelace"
+      }
+    },
+    {
+      "payload": {
+        "first": "Ada"
+      },
+      "expected": {
+        "full_name": "Ada"
+      }
+    },
+    {
+      "payload": {
+        "first": "",
+        "last": "Lovelace"
+      },
+      "expected": {
+        "full_name": "Lovelace"
+      }
+    },
+    {
+      "payload": {},
+      "expected": {}
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "spec": {
+    "$schema": "../../../../../spec.schema.json",
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 4,
+    "status": "shadow",
+    "anchors": {
+      "email": "\"workEmail\":"
+    },
+    "fields": {
+      "email": "workEmail"
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "workEmail": "ada@acme.com"
+      },
+      "expected": {
+        "email": "ada@acme.com"
+      }
+    }
+  ]
+}

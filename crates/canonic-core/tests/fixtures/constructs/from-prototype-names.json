@@ -1,0 +1,36 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "first_name": "constructor",
+      "last_name": "person.toString"
+    }
+  },
+  "cases": [
+    {
+      "payload": {},
+      "expected": {}
+    },
+    {
+      "payload": {
+        "person": {}
+      },
+      "expected": {}
+    },
+    {
+      "payload": {
+        "constructor": "Ada",
+        "person": {
+          "toString": "Lovelace"
+        }
+      },
+      "expected": {
+        "first_name": "Ada",
+        "last_name": "Lovelace"
+      }
+    }
+  ]
+}

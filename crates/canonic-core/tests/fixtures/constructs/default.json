@@ -1,0 +1,51 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "verified": {
+        "from": "flags.verified",
+        "default": false
+      },
+      "headcount": {
+        "from": "size",
+        "transform": {
+          "cast": "integer"
+        },
+        "default": 0
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "flags": {
+          "verified": true
+        },
+        "size": "40"
+      },
+      "expected": {
+        "verified": true,
+        "headcount": 40
+      }
+    },
+    {
+      "payload": {},
+      "expected": {
+        "verified": false,
+        "headcount": 0
+      }
+    },
+    {
+      "payload": {
+        "size": "about 40"
+      },
+      "expected": {
+        "verified": false,
+        "headcount": 0
+      }
+    }
+  ]
+}

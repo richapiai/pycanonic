@@ -1,0 +1,67 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "first_name": "$[0].name",
+      "last_name": "$.name",
+      "full_name": "[\"$\"]",
+      "experiences[]": {
+        "from": "$",
+        "item": {
+          "title": "role"
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": [
+        {
+          "name": "Ada",
+          "role": "CTO"
+        },
+        {
+          "role": "CEO"
+        }
+      ],
+      "expected": {
+        "first_name": "Ada",
+        "experiences": [
+          {
+            "title": "CTO",
+            "company": null,
+            "tags": null
+          },
+          {
+            "title": "CEO",
+            "company": null,
+            "tags": null
+          }
+        ]
+      }
+    },
+    {
+      "payload": [],
+      "expected": {
+        "experiences": []
+      }
+    },
+    {
+      "payload": {
+        "name": "Lovelace",
+        "$": "Ada Lovelace"
+      },
+      "expected": {
+        "last_name": "Lovelace",
+        "full_name": "Ada Lovelace"
+      }
+    },
+    {
+      "payload": null,
+      "expected": {}
+    }
+  ]
+}

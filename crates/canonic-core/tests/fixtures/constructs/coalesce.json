@@ -1,0 +1,54 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "email": {
+        "coalesce": [
+          "work_email",
+          "emails[0].address",
+          "personal"
+        ]
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "work_email": "a@acme.com",
+        "personal": "p@home.org"
+      },
+      "expected": {
+        "email": "a@acme.com"
+      }
+    },
+    {
+      "payload": {
+        "work_email": null,
+        "emails": [
+          {
+            "address": "b@acme.com"
+          }
+        ]
+      },
+      "expected": {
+        "email": "b@acme.com"
+      }
+    },
+    {
+      "payload": {
+        "emails": [],
+        "personal": "p@home.org"
+      },
+      "expected": {
+        "email": "p@home.org"
+      }
+    },
+    {
+      "payload": {},
+      "expected": {}
+    }
+  ]
+}

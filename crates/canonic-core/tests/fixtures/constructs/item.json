@@ -1,0 +1,107 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "experiences[]": {
+        "from": "jobs",
+        "item": {
+          "title": {
+            "from": "role",
+            "transform": "trim"
+          },
+          "company": "org.name",
+          "tags[]": {
+            "from": "labels",
+            "pluck": "name"
+          }
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "jobs": []
+      },
+      "expected": {
+        "experiences": []
+      }
+    },
+    {
+      "payload": {
+        "jobs": [
+          {
+            "role": " CTO ",
+            "org": {
+              "name": "Acme"
+            },
+            "labels": [
+              {
+                "name": "eng"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "experiences": [
+          {
+            "title": "CTO",
+            "company": "Acme",
+            "tags": [
+              "eng"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "payload": {
+        "jobs": [
+          {
+            "role": "A"
+          },
+          null,
+          {
+            "org": {
+              "name": "B"
+            },
+            "labels": []
+          }
+        ]
+      },
+      "expected": {
+        "experiences": [
+          {
+            "title": "A",
+            "company": null,
+            "tags": null
+          },
+          {
+            "title": null,
+            "company": null,
+            "tags": null
+          },
+          {
+            "title": null,
+            "company": "B",
+            "tags": []
+          }
+        ]
+      }
+    },
+    {
+      "payload": {
+        "jobs": "not an array"
+      },
+      "expected": {}
+    },
+    {
+      "payload": {},
+      "expected": {}
+    }
+  ]
+}

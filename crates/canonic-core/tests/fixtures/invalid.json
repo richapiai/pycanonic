@@ -1,0 +1,1043 @@
+{
+  "grammar": [
+    {
+      "name": "not an object",
+      "spec": [
+        1,
+        2
+      ]
+    },
+    {
+      "name": "missing provider",
+      "spec": {
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "email": "e"
+        }
+      }
+    },
+    {
+      "name": "empty endpoint",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "email": "e"
+        }
+      }
+    },
+    {
+      "name": "version zero",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 0,
+        "status": "promoted",
+        "fields": {
+          "email": "e"
+        }
+      }
+    },
+    {
+      "name": "version fraction",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1.5,
+        "status": "promoted",
+        "fields": {
+          "email": "e"
+        }
+      }
+    },
+    {
+      "name": "version string",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": "1",
+        "status": "promoted",
+        "fields": {
+          "email": "e"
+        }
+      }
+    },
+    {
+      "name": "unknown status",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "live",
+        "fields": {
+          "email": "e"
+        }
+      }
+    },
+    {
+      "name": "unknown top-level key",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "email": "e"
+        },
+        "owner": "me"
+      }
+    },
+    {
+      "name": "schema not a string",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "email": "e"
+        },
+        "$schema": 3
+      }
+    },
+    {
+      "name": "anchor empty",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "email": "e"
+        },
+        "anchors": {
+          "email": ""
+        }
+      }
+    },
+    {
+      "name": "anchors not an object",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "email": "e"
+        },
+        "anchors": [
+          "email"
+        ]
+      }
+    },
+    {
+      "name": "fields empty",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {}
+      }
+    },
+    {
+      "name": "fields missing",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted"
+      }
+    },
+    {
+      "name": "canonical key with dash",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "work-email": "e"
+        }
+      }
+    },
+    {
+      "name": "canonical key double dot",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "a..b": "e"
+        }
+      }
+    },
+    {
+      "name": "canonical key array mid-path",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "a[].b": "e"
+        }
+      }
+    },
+    {
+      "name": "rule is a number",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": 5
+        }
+      }
+    },
+    {
+      "name": "rule is null",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": null
+        }
+      }
+    },
+    {
+      "name": "from and coalesce",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "coalesce": [
+              "b",
+              "c"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "neither from nor coalesce",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "transform": "trim"
+          }
+        }
+      }
+    },
+    {
+      "name": "coalesce single path",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "coalesce": [
+              "a"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "tuple from single path",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": [
+              "a"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "empty path",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": ""
+        }
+      }
+    },
+    {
+      "name": "path double dot",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": "a..b"
+        }
+      }
+    },
+    {
+      "name": "path leading zero index",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": "a[01]"
+        }
+      }
+    },
+    {
+      "name": "path unquoted bracket",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": "a[b]"
+        }
+      }
+    },
+    {
+      "name": "path dot before bracket",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": "a.[\"b\"]"
+        }
+      }
+    },
+    {
+      "name": "path with space",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": "a b"
+        }
+      }
+    },
+    {
+      "name": "path single-quoted key",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": "['a']"
+        }
+      }
+    },
+    {
+      "name": "path raw newline in quoted key",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": "[\"a\nb\"]"
+        }
+      }
+    },
+    {
+      "name": "path trailing dot",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": "a."
+        }
+      }
+    },
+    {
+      "name": "default object",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "default": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "default null",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "default": null
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown rule key",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "to": "b"
+          }
+        }
+      }
+    },
+    {
+      "name": "transform empty name",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": ""
+          }
+        }
+      }
+    },
+    {
+      "name": "transform dashed name",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": "to-domain"
+          }
+        }
+      }
+    },
+    {
+      "name": "transform empty pipeline",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": []
+          }
+        }
+      }
+    },
+    {
+      "name": "transform two keys",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": {
+              "cast": "number",
+              "trim": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "transform empty object",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "transform number",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "transform nested array",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": [
+              [
+                "trim"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "array rule shorthand",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "skills[]": "tags"
+        }
+      }
+    },
+    {
+      "name": "array rule item and pluck",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "skills[]": {
+            "from": "t",
+            "pluck": "l",
+            "item": {
+              "x": "y"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "array rule item with transform",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "experiences[]": {
+            "from": "j",
+            "item": {
+              "title": "r"
+            },
+            "transform": "trim"
+          }
+        }
+      }
+    },
+    {
+      "name": "array rule coalesce",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "skills[]": {
+            "coalesce": [
+              "a",
+              "b"
+            ],
+            "pluck": "l"
+          }
+        }
+      }
+    },
+    {
+      "name": "array rule tuple from",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "skills[]": {
+            "from": [
+              "a",
+              "b"
+            ],
+            "pluck": "l"
+          }
+        }
+      }
+    },
+    {
+      "name": "array rule default",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "skills[]": {
+            "from": "t",
+            "pluck": "l",
+            "default": "x"
+          }
+        }
+      }
+    },
+    {
+      "name": "item empty",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "experiences[]": {
+            "from": "j",
+            "item": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "item bad key",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "experiences[]": {
+            "from": "j",
+            "item": {
+              "job title": "r"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "item bad path",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "experiences[]": {
+            "from": "j",
+            "item": {
+              "title": "a..b"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "semantic": [
+    {
+      "name": "unknown canonical field",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "nickname": "n"
+        }
+      },
+      "error": "fields[\"nickname\"]"
+    },
+    {
+      "name": "scalar rule on array field",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "skills": "t"
+        }
+      },
+      "error": "fields[\"skills\"]"
+    },
+    {
+      "name": "scalar rule on object field",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "company": "org"
+        }
+      },
+      "error": "fields[\"company\"]"
+    },
+    {
+      "name": "array rule on scalar field",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "email[]": {
+            "from": "e",
+            "pluck": "x"
+          }
+        }
+      },
+      "error": "fields[\"email[]\"]"
+    },
+    {
+      "name": "item on array of scalars",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "skills[]": {
+            "from": "t",
+            "item": {
+              "x": "y"
+            }
+          }
+        }
+      },
+      "error": "fields[\"skills[]\"]"
+    },
+    {
+      "name": "pluck on array of objects",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "experiences[]": {
+            "from": "j",
+            "pluck": "x"
+          }
+        }
+      },
+      "error": "fields[\"experiences[]\"]"
+    },
+    {
+      "name": "unknown transform",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": "shout"
+          }
+        }
+      },
+      "error": "fields[\"first_name\"]"
+    },
+    {
+      "name": "cast without argument",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "headcount": {
+            "from": "a",
+            "transform": "cast"
+          }
+        }
+      },
+      "error": "fields[\"headcount\"]"
+    },
+    {
+      "name": "cast bad argument",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "headcount": {
+            "from": "a",
+            "transform": {
+              "cast": "float"
+            }
+          }
+        }
+      },
+      "error": "fields[\"headcount\"]"
+    },
+    {
+      "name": "split_name bad argument",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": {
+              "split_name": "middle"
+            }
+          }
+        }
+      },
+      "error": "fields[\"first_name\"]"
+    },
+    {
+      "name": "join non-string separator",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "full_name": {
+            "from": [
+              "a",
+              "b"
+            ],
+            "transform": {
+              "join": 1
+            }
+          }
+        }
+      },
+      "error": "fields[\"full_name\"]"
+    },
+    {
+      "name": "argument to a no-argument transform",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": {
+              "lower": true
+            }
+          }
+        }
+      },
+      "error": "fields[\"first_name\"]"
+    },
+    {
+      "name": "prototype name as transform",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "first_name": {
+            "from": "a",
+            "transform": "constructor"
+          }
+        }
+      },
+      "error": "fields[\"first_name\"]"
+    },
+    {
+      "name": "unknown field inside item",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "experiences[]": {
+            "from": "j",
+            "item": {
+              "nope": "x"
+            }
+          }
+        }
+      },
+      "error": "fields[\"experiences[]\"].item[\"nope\"]"
+    },
+    {
+      "name": "anchor for unmapped field",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "email": "e"
+        },
+        "anchors": {
+          "phone": "\"mobile\":"
+        }
+      },
+      "error": "anchors[\"phone\"]"
+    },
+    {
+      "name": "anchor on a non-routing field",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "anchors": {
+          "first_name": "\"n\":"
+        },
+        "fields": {
+          "first_name": "n"
+        }
+      },
+      "error": "anchors[\"first_name\"]: only routing fields"
+    },
+    {
+      "name": "anchor on a coalesce field",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "anchors": {
+          "email": "\"a\":"
+        },
+        "fields": {
+          "email": {
+            "coalesce": [
+              "a",
+              "b"
+            ]
+          }
+        }
+      },
+      "error": "anchors[\"email\"]: anchored fields need a single from path"
+    },
+    {
+      "name": "anchor on a path ending in an index",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "anchors": {
+          "email": "\"a\":"
+        },
+        "fields": {
+          "email": "a[0]"
+        }
+      },
+      "error": "anchors[\"email\"]: anchored fields need a single from path"
+    },
+    {
+      "name": "anchor token that doesn't match the key",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "anchors": {
+          "email": "\"mail\":"
+        },
+        "fields": {
+          "email": "work.email"
+        }
+      },
+      "error": "anchors[\"email\"]: token must be"
+    },
+    {
+      "name": "array of objects without item",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "experiences[]": {
+            "from": "t"
+          }
+        }
+      },
+      "error": "fields[\"experiences[]\"]"
+    },
+    {
+      "name": "default on a routing field",
+      "spec": {
+        "provider": "acme",
+        "endpoint": "person.enrich",
+        "version": 1,
+        "status": "promoted",
+        "fields": {
+          "email": {
+            "from": "e",
+            "default": "none@acme.com"
+          }
+        }
+      },
+      "error": "fields[\"email\"]: routing fields can't have a default"
+    }
+  ]
+}

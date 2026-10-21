@@ -1,0 +1,30 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "full_name": {
+        "from": [
+          "last",
+          "first"
+        ],
+        "transform": {
+          "join": ", "
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "first": "Ada",
+        "last": "Lovelace"
+      },
+      "expected": {
+        "full_name": "Lovelace, Ada"
+      }
+    }
+  ]
+}

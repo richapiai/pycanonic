@@ -1,0 +1,69 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "person.enrich",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "skills[]": {
+        "from": "tags",
+        "pluck": "label",
+        "transform": "lower"
+      }
+    }
+  },
+  "cases": [
+    {
+      "payload": {
+        "tags": []
+      },
+      "expected": {
+        "skills": []
+      }
+    },
+    {
+      "payload": {
+        "tags": [
+          {
+            "label": "Math"
+          }
+        ]
+      },
+      "expected": {
+        "skills": [
+          "math"
+        ]
+      }
+    },
+    {
+      "payload": {
+        "tags": [
+          {
+            "label": "A"
+          },
+          {
+            "label": 7
+          },
+          {},
+          null
+        ]
+      },
+      "expected": {
+        "skills": [
+          "a",
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "payload": {
+        "tags": {
+          "label": "x"
+        }
+      },
+      "expected": {}
+    }
+  ]
+}
