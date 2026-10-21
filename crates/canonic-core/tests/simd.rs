@@ -1,7 +1,7 @@
 // Stage 1: every backend of `structurals` against the portable one, and the portable one against
 // a byte-at-a-time state machine.
 
-use canonic_core::json::simd::{structurals, structurals_portable};
+use canonic_core::json::simd::{skip, skip_portable, structurals, structurals_portable};
 use proptest::prelude::*;
 
 /// The definition, one byte at a time: quotes that are not escaped by an odd backslash run, and
@@ -36,33 +36,87 @@ fn check(buf: &[u8]) {
     let want = reference(buf);
     assert_eq!(structurals_portable(buf).idx, want, "portable on {buf:?}");
     assert_eq!(structurals(buf).idx, want, "dispatched on {buf:?}");
-    let brackets: Vec<u32> = want
-        .iter()
-        .copied()
-        .filter(|&i| matches!(buf[i as usize], b'{' | b'}' | b'[' | b']' | b'\\'))
-        .collect();
-    assert_eq!(
-        structurals_portable(buf).brackets,
-        brackets,
-        "portable brackets on {buf:?}"
-    );
-    assert_eq!(
-        structurals(buf).brackets,
-        brackets,
-        "dispatched brackets on {buf:?}"
-    );
-    #[cfg(target_arch = "x86_64")]
-    assert_eq!(
-        canonic_core::json::simd::structurals_sse2(buf).brackets,
-        brackets,
-        "sse2 brackets on {buf:?}"
-    );
     #[cfg(target_arch = "x86_64")]
     assert_eq!(
         canonic_core::json::simd::structurals_sse2(buf).idx,
         want,
         "sse2 on {buf:?}"
     );
+    for start in 0..buf.len() {
+        if matches!(buf[start], b'{' | b'[') && !inside(buf, start) {
+            let want = reference_skip(buf, start);
+            assert_eq!(
+                skip_portable(buf, start),
+                want,
+                "portable skip {start} on {buf:?}"
+            );
+            assert_eq!(skip(buf, start), want, "dispatched skip {start} on {buf:?}");
+        }
+    }
+}
+
+/// Whether byte `at` is inside a string, by the same rules as `reference`.
+fn inside(buf: &[u8], at: usize) -> bool {
+    let (mut in_str, mut esc) = (false, false);
+    for &b in &buf[..at] {
+        match b {
+            b'\\' => {
+                esc = !esc;
+                continue;
+            }
+            b'"' if !esc => in_str = !in_str,
+            _ => {}
+        }
+        esc = false;
+    }
+    in_str
+}
+
+/// `skip` one byte at a time from a bracket outside a string: brackets counted outside strings;
+/// `None` at a backslash outside a string within the 64-byte block where `skip` would see it, or
+/// when nothing closes.
+fn reference_skip(buf: &[u8], start: usize) -> Option<usize> {
+    let (mut in_str, mut esc, mut depth) = (false, false, 0usize);
+    let mut end = None;
+    for (i, &b) in buf.iter().enumerate().skip(start) {
+        match b {
+            b'\\' => {
+                if !in_str {
+                    return None;
+                }
+                esc = !esc;
+                continue;
+            }
+            b'"' if !esc => in_str = !in_str,
+            b'{' | b'[' if !in_str => depth += 1,
+            b'}' | b']' if !in_str => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(i + 1);
+                    break;
+                }
+            }
+            _ => {}
+        }
+        esc = false;
+    }
+    // `skip` looks at the whole block holding the close: a backslash outside a string after the
+    // close in that block makes it give up too.
+    let e = end?;
+    let block_end = (start + (e - 1 - start) / 64 * 64 + 64).min(buf.len());
+    for &b in &buf[e..block_end] {
+        match b {
+            b'\\' if !in_str => return None,
+            b'\\' => {
+                esc = !esc;
+                continue;
+            }
+            b'"' if !esc => in_str = !in_str,
+            _ => {}
+        }
+        esc = false;
+    }
+    end
 }
 
 #[test]

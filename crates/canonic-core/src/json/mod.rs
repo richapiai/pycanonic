@@ -9,8 +9,8 @@
 //! - skipped subtrees are only bracket-matched, not validated;
 //! - strings are decoded by [`unescape`], which never fails.
 //!
-//! [`simd::structurals`] indexes the structural bytes once; string ends and skips jump through
-//! that index instead of walking bytes.
+//! A skipped container is matched by [`simd::skip`], 64 bytes at a time; what the filter builds is
+//! read byte by byte, strings with `memchr`.
 
 pub mod simd;
 mod unescape;
@@ -75,30 +75,15 @@ pub fn parse<'a>(buf: &'a [u8], filter: &Filter) -> Result<Node<'a>, ParseError>
     parse_in(buf, filter, true)
 }
 
-/// `indexed: false` parses with the byte scans alone, the reference the index must agree with.
-fn parse_in<'a>(buf: &'a [u8], filter: &Filter, indexed: bool) -> Result<Node<'a>, ParseError> {
+/// `simd: false` skips with the byte scan alone, the reference [`simd::skip`] must agree with.
+fn parse_in<'a>(buf: &'a [u8], filter: &Filter, simd: bool) -> Result<Node<'a>, ParseError> {
     check_size(buf.len())?;
     let pos = if buf.starts_with(b"\xEF\xBB\xBF") {
         3
     } else {
         0
     };
-    let s = if indexed {
-        simd::structurals(buf)
-    } else {
-        simd::Structurals {
-            idx: Vec::new(),
-            brackets: Vec::new(),
-        }
-    };
-    let mut p = Parser {
-        buf,
-        pos,
-        idx: s.idx,
-        k: 0,
-        brackets: s.brackets,
-        kb: 0,
-    };
+    let mut p = Parser { buf, pos, simd };
     p.ws();
     // Trailing content is ignored on purpose (JSON.parse would reject it; see module doc).
     p.value(filter, 0)
@@ -114,14 +99,8 @@ fn check_size(len: usize) -> Result<(), ParseError> {
 struct Parser<'a> {
     buf: &'a [u8],
     pos: usize,
-    /// Structural positions from stage 1; empty once it can't be trusted (see [`Parser::fallback`]).
-    idx: Vec<u32>,
-    /// First entry of `idx` not yet passed. Only moves forward, like `pos`.
-    k: usize,
-    /// The bracket and backslash entries of `idx`, which a skip walks instead of all of them.
-    brackets: Vec<u32>,
-    /// First entry of `brackets` not yet passed. Only moves forward.
-    kb: usize,
+    /// Skip containers with [`simd::skip`]; the byte scan otherwise.
+    simd: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -297,7 +276,7 @@ impl<'a> Parser<'a> {
 
     /// Reads a string; `pos` is on the opening quote and ends after the closing one.
     fn string(&mut self) -> Result<Cow<'a, str>, ParseError> {
-        let end = self.string_end(self.pos)?;
+        let end = scan_string_end(self.buf, self.pos + 1)?;
         let raw = &self.buf[self.pos + 1..end - 1];
         self.pos = end;
         Ok(unescape(raw))
@@ -308,7 +287,7 @@ impl<'a> Parser<'a> {
         match self.buf.get(self.pos) {
             Some(b'{' | b'[') => self.pos = self.skip_container(self.pos)?,
             // Decoding never fails, so a skipped string only needs its end.
-            Some(b'"') => self.pos = self.string_end(self.pos)?,
+            Some(b'"') => self.pos = scan_string_end(self.buf, self.pos + 1)?,
             // Other scalars are cheap: read and drop them so they are still checked.
             _ => {
                 self.value(&ALL, 0)?;
@@ -317,81 +296,17 @@ impl<'a> Parser<'a> {
         Ok(Node::Skipped)
     }
 
-    /// Moves `k` to the first entry at or after `p` and returns it if it is `p` itself. Every
-    /// byte the parser reads outside strings and skips agrees with stage 1, so a quote or
-    /// bracket the parser stands on is in the index unless the index was dropped.
-    fn entry_at(&mut self, p: usize) -> Option<usize> {
-        while self.idx.get(self.k).is_some_and(|&i| (i as usize) < p) {
-            self.k += 1;
+    /// Offset just past the container opening at `start`. Where [`simd::skip`] gives up (a
+    /// backslash outside a string, or no close) the byte scan decides, errors included.
+    fn skip_container(&self, start: usize) -> Result<usize, ParseError> {
+        match self.simd.then(|| simd::skip(self.buf, start)).flatten() {
+            Some(end) => Ok(end),
+            None => scan_container(self.buf, start),
         }
-        (self.idx.get(self.k).map(|&i| i as usize) == Some(p)).then_some(self.k)
-    }
-
-    /// Stage 1 and the parser disagree past a backslash outside a string (the parser ignores it,
-    /// stage 1 lets it escape). Valid JSON never has one; from there on, scan bytes.
-    fn fallback(&mut self) {
-        self.idx = Vec::new();
-        self.k = 0;
-        self.brackets = Vec::new();
-        self.kb = 0;
-    }
-
-    /// Offset just past the closing quote of the string opening at `open`. Inside a string the
-    /// index holds only quotes, so the next entry is the closing one.
-    fn string_end(&mut self, open: usize) -> Result<usize, ParseError> {
-        let Some(k) = self.entry_at(open) else {
-            return scan_string_end(self.buf, open + 1);
-        };
-        self.k = k + 1;
-        match self.idx.get(self.k) {
-            Some(&close) => {
-                self.k += 1;
-                Ok(close as usize + 1)
-            }
-            None => Err(ParseError::Syntax(self.buf.len())),
-        }
-    }
-
-    /// Offset just past the container opening at `start`: the brackets in the index are counted
-    /// with a plain integer, not matched or validated, so any depth is fine. Only the bracket
-    /// entries are walked; `k` then jumps past the close with a binary search.
-    fn skip_container(&mut self, start: usize) -> Result<usize, ParseError> {
-        if self.entry_at(start).is_none() {
-            return scan_container(self.buf, start);
-        }
-        while self
-            .brackets
-            .get(self.kb)
-            .is_some_and(|&i| (i as usize) < start)
-        {
-            self.kb += 1;
-        }
-        let mut depth = 0usize;
-        for (j, &i) in self.brackets.iter().enumerate().skip(self.kb) {
-            let i = i as usize;
-            match self.buf[i] {
-                b'{' | b'[' => depth += 1,
-                b'}' | b']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        self.kb = j + 1;
-                        self.k += self.idx[self.k..].partition_point(|&x| (x as usize) <= i);
-                        return Ok(i + 1);
-                    }
-                }
-                _ => {
-                    self.fallback();
-                    return scan_container(self.buf, start);
-                }
-            }
-        }
-        self.k = self.idx.len();
-        self.kb = self.brackets.len();
-        Err(ParseError::Syntax(self.buf.len()))
     }
 }
 
-// The byte scans: the reference for the index, and the fallback when it can't be trusted.
+// The byte scans: the reference for `simd::skip`, and the fallback where it gives up.
 
 /// Offset just past the closing quote of a string whose body starts at `from`.
 fn scan_string_end(buf: &[u8], from: usize) -> Result<usize, ParseError> {
@@ -464,7 +379,7 @@ mod tests {
         }
     }
 
-    /// The index walk and the byte scan agree, errors and offsets included.
+    /// The SIMD skip and the byte scan agree, errors and offsets included.
     fn same(buf: &[u8]) {
         for f in [all(), pruned(), Filter::default()] {
             assert_eq!(parse_in(buf, &f, true), parse_in(buf, &f, false), "{buf:?}");
@@ -474,7 +389,7 @@ mod tests {
     #[test]
     fn a_backslash_outside_a_string_falls_back_to_the_byte_scan() {
         // In a skipped subtree `\"` opens a string for the parser but is an escaped quote to
-        // stage 1; the index must not be trusted past it.
+        // stage 1; the SIMD skip must give up there.
         let doc = br#"{"x":[\"],"a":1}"#;
         assert_eq!(parse(doc, &pruned()), Err(ParseError::Syntax(doc.len())));
         same(doc);

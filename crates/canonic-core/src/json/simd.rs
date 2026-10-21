@@ -1,6 +1,7 @@
-//! Stage 1: one pass that finds every structural byte, the simdjson way.
+//! Stage 1: one pass that finds every structural byte, the simdjson way; and the same block
+//! classification run on demand from one bracket to its match, which is how the parser skips.
 //!
-//! Each 64-byte block is classified into four bitmasks (quotes, backslashes, `{ } [ ]`, `: ,`) by a
+//! Each 64-byte block is classified into five bitmasks (quotes, backslashes, `{ [`, `} ]`, `: ,`) by a
 //! backend: NEON on aarch64, AVX2 or SSE2 on x86_64, plain bytes elsewhere. The rest is shared
 //! integer code: backslash runs of odd length escape the byte after them, a prefix-XOR over the
 //! unescaped quotes gives the in-string mask, and both carry from one block to the next.
@@ -16,15 +17,14 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Structurals {
     pub idx: Vec<u32>,
-    /// The entries of `idx` that are `{ } [ ]` or `\`: what a skip has to look at.
-    pub brackets: Vec<u32>,
 }
 
-/// One block classified: bit `i` is byte `i`. `br` is `{ } [ ]`, `op` is `: ,`.
+/// One block classified: bit `i` is byte `i`. `op` is `: ,`.
 struct Masks {
     quote: u64,
     bs: u64,
-    br: u64,
+    open: u64,
+    close: u64,
     op: u64,
 }
 
@@ -60,52 +60,138 @@ pub fn structurals_sse2(buf: &[u8]) -> Structurals {
 
 /// The reference backend: same result as [`structurals`], one byte at a time.
 pub fn structurals_portable(buf: &[u8]) -> Structurals {
-    scan(buf, |b| {
-        let mut m = Masks {
-            quote: 0,
-            bs: 0,
-            br: 0,
-            op: 0,
-        };
-        for (i, &c) in b.iter().enumerate() {
-            let bit = 1u64 << i;
-            match c {
-                b'"' => m.quote |= bit,
-                b'\\' => m.bs |= bit,
-                b'{' | b'}' | b'[' | b']' => m.br |= bit,
-                b':' | b',' => m.op |= bit,
-                _ => {}
-            }
+    scan(buf, classify_portable)
+}
+
+fn classify_portable(b: &[u8; 64]) -> Masks {
+    let mut m = Masks {
+        quote: 0,
+        bs: 0,
+        open: 0,
+        close: 0,
+        op: 0,
+    };
+    for (i, &c) in b.iter().enumerate() {
+        let bit = 1u64 << i;
+        match c {
+            b'"' => m.quote |= bit,
+            b'\\' => m.bs |= bit,
+            b'{' | b'[' => m.open |= bit,
+            b'}' | b']' => m.close |= bit,
+            b':' | b',' => m.op |= bit,
+            _ => {}
         }
-        m
-    })
+    }
+    m
+}
+
+/// Offset just past the container whose opening bracket is at `start`, brackets counted outside
+/// strings, not matched or validated. `None` when the container doesn't close, or when a backslash
+/// outside a string comes up in a block before it does: there stage 1 and the parser disagree, so
+/// the caller scans bytes instead.
+#[cfg(target_arch = "aarch64")]
+pub fn skip(buf: &[u8], start: usize) -> Option<usize> {
+    // SAFETY: NEON is part of every aarch64 CPU.
+    skip_with(buf, start, |b| unsafe { neon::classify(b) })
+}
+
+/// See the aarch64 `skip`. `is_x86_feature_detected!` caches its answer.
+#[cfg(target_arch = "x86_64")]
+pub fn skip(buf: &[u8], start: usize) -> Option<usize> {
+    if is_x86_feature_detected!("avx2") {
+        // SAFETY: the CPU supports AVX2, checked just above.
+        unsafe { x86::skip_avx2(buf, start) }
+    } else {
+        // SAFETY: SSE2 is part of every x86_64 CPU.
+        skip_with(buf, start, |b| unsafe { x86::classify_sse2(b) })
+    }
+}
+
+#[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+pub fn skip(buf: &[u8], start: usize) -> Option<usize> {
+    skip_portable(buf, start)
+}
+
+/// [`skip`] one byte at a time, for tests.
+pub fn skip_portable(buf: &[u8], start: usize) -> Option<usize> {
+    skip_with(buf, start, classify_portable)
+}
+
+#[inline(always)]
+fn skip_with(buf: &[u8], start: usize, classify: impl Fn(&[u8; 64]) -> Masks) -> Option<usize> {
+    let (mut odd_bs, mut in_str) = (0u64, 0u64);
+    let mut depth = 0u32;
+    // `Some(Some(end))` closed, `Some(None)` gives up, `None` goes on to the next block.
+    let mut block = |b: &[u8; 64], base: usize| -> Option<Option<usize>> {
+        let m = classify(b);
+        let quote = m.quote & !escaped(m.bs, &mut odd_bs);
+        let inside = prefix_xor(quote) ^ in_str;
+        in_str = 0u64.wrapping_sub(inside >> 63);
+        if m.bs & !inside != 0 {
+            return Some(None);
+        }
+        let open = m.open & !inside;
+        let close = m.close & !inside;
+        // The depth can only reach zero in this block if it has at least `depth` closes.
+        if (close.count_ones()) < depth {
+            depth = depth + open.count_ones() - close.count_ones();
+            return None;
+        }
+        let mut s = open | close;
+        while s != 0 {
+            let t = s.trailing_zeros();
+            if open >> t & 1 == 1 {
+                depth += 1;
+            } else {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(Some(base + t as usize + 1));
+                }
+            }
+            s &= s - 1;
+        }
+        None
+    };
+    let (blocks, rest) = buf.get(start..)?.as_chunks::<64>();
+    for (n, b) in blocks.iter().enumerate() {
+        if let Some(end) = block(b, start + n * 64) {
+            return end;
+        }
+    }
+    if !rest.is_empty() {
+        // Spaces classify as nothing, so the padding adds no brackets.
+        let mut pad = [b' '; 64];
+        pad[..rest.len()].copy_from_slice(rest);
+        if let Some(end) = block(&pad, start + blocks.len() * 64) {
+            return end;
+        }
+    }
+    None
 }
 
 #[inline(always)]
 fn scan(buf: &[u8], classify: impl Fn(&[u8; 64]) -> Masks) -> Structurals {
     let mut idx = Vec::with_capacity(buf.len() / 4 + 64);
-    let mut brackets = Vec::with_capacity(buf.len() / 32 + 64);
     let (mut odd_bs, mut in_str) = (0u64, 0u64);
-    let mut block = |b: &[u8; 64], base: usize, idx: &mut Vec<u32>, brackets: &mut Vec<u32>| {
+    let mut block = |b: &[u8; 64], base: usize, idx: &mut Vec<u32>| {
         let m = classify(b);
         let quote = m.quote & !escaped(m.bs, &mut odd_bs);
         let inside = prefix_xor(quote) ^ in_str;
         in_str = 0u64.wrapping_sub(inside >> 63);
-        let br = (m.br | m.bs) & !inside;
-        flatten(idx, base as u32, br | (m.op & !inside) | quote);
-        flatten(brackets, base as u32, br);
+        let ops = m.open | m.close | m.op | m.bs;
+        flatten(idx, base as u32, (ops & !inside) | quote);
     };
     let (blocks, rest) = buf.as_chunks::<64>();
     for (n, b) in blocks.iter().enumerate() {
-        block(b, n * 64, &mut idx, &mut brackets);
+        block(b, n * 64, &mut idx);
     }
     if !rest.is_empty() {
         // Spaces classify as nothing, so the padding adds no positions.
         let mut pad = [b' '; 64];
         pad[..rest.len()].copy_from_slice(rest);
-        block(&pad, blocks.len() * 64, &mut idx, &mut brackets);
+        block(&pad, blocks.len() * 64, &mut idx);
     }
-    Structurals { idx, brackets }
+    Structurals { idx }
 }
 
 #[inline(always)]
@@ -178,11 +264,17 @@ mod neon {
         ])
     }
 
+    /// Bytes equal to `c` once `| 0x20` has turned `[` into `{` and `]` into `}` (and nothing
+    /// else into either).
     #[target_feature(enable = "neon")]
-    fn br(x: uint8x16_t) -> uint8x16_t {
-        // `| 0x20` turns `[` into `{` and `]` into `}` and nothing else into either.
-        let l = vorrq_u8(x, vdupq_n_u8(0x20));
-        vorrq_u8(vceqq_u8(l, vdupq_n_u8(b'{')), vceqq_u8(l, vdupq_n_u8(b'}')))
+    fn bracket(v: &[uint8x16_t; 4], c: u8) -> u64 {
+        let (l, c) = (vdupq_n_u8(0x20), vdupq_n_u8(c));
+        bits([
+            vceqq_u8(vorrq_u8(v[0], l), c),
+            vceqq_u8(vorrq_u8(v[1], l), c),
+            vceqq_u8(vorrq_u8(v[2], l), c),
+            vceqq_u8(vorrq_u8(v[3], l), c),
+        ])
     }
 
     #[target_feature(enable = "neon")]
@@ -208,7 +300,8 @@ mod neon {
         Masks {
             quote: eq(&v, b'"'),
             bs: eq(&v, b'\\'),
-            br: bits([br(v[0]), br(v[1]), br(v[2]), br(v[3])]),
+            open: bracket(&v, b'{'),
+            close: bracket(&v, b'}'),
             op: bits([op(v[0]), op(v[1]), op(v[2]), op(v[3])]),
         }
     }
@@ -216,7 +309,7 @@ mod neon {
 
 #[cfg(target_arch = "x86_64")]
 mod x86 {
-    use super::{Masks, Structurals, scan};
+    use super::{Masks, Structurals, scan, skip_with};
     use std::arch::x86_64::*;
 
     #[target_feature(enable = "sse2")]
@@ -238,14 +331,17 @@ mod x86 {
         ])
     }
 
+    /// Bytes equal to `c` once `| 0x20` has turned `[` into `{` and `]` into `}` (and nothing
+    /// else into either).
     #[target_feature(enable = "sse2")]
-    fn br_sse2(x: __m128i) -> __m128i {
-        // `| 0x20` turns `[` into `{` and `]` into `}` and nothing else into either.
-        let l = _mm_or_si128(x, _mm_set1_epi8(0x20));
-        _mm_or_si128(
-            _mm_cmpeq_epi8(l, _mm_set1_epi8(b'{' as i8)),
-            _mm_cmpeq_epi8(l, _mm_set1_epi8(b'}' as i8)),
-        )
+    fn bracket_sse2(v: &[__m128i; 4], c: u8) -> u64 {
+        let (l, c) = (_mm_set1_epi8(0x20), _mm_set1_epi8(c as i8));
+        bits_sse2([
+            _mm_cmpeq_epi8(_mm_or_si128(v[0], l), c),
+            _mm_cmpeq_epi8(_mm_or_si128(v[1], l), c),
+            _mm_cmpeq_epi8(_mm_or_si128(v[2], l), c),
+            _mm_cmpeq_epi8(_mm_or_si128(v[3], l), c),
+        ])
     }
 
     #[target_feature(enable = "sse2")]
@@ -274,7 +370,8 @@ mod x86 {
         Masks {
             quote: eq_sse2(&v, b'"'),
             bs: eq_sse2(&v, b'\\'),
-            br: bits_sse2([br_sse2(v[0]), br_sse2(v[1]), br_sse2(v[2]), br_sse2(v[3])]),
+            open: bracket_sse2(&v, b'{'),
+            close: bracket_sse2(&v, b'}'),
             op: bits_sse2([op_sse2(v[0]), op_sse2(v[1]), op_sse2(v[2]), op_sse2(v[3])]),
         }
     }
@@ -290,13 +387,14 @@ mod x86 {
         bits_avx2(_mm256_cmpeq_epi8(lo, c), _mm256_cmpeq_epi8(hi, c))
     }
 
+    /// Bytes equal to `c` once `| 0x20` has turned `[` into `{` and `]` into `}` (and nothing
+    /// else into either).
     #[target_feature(enable = "avx2")]
-    fn br_avx2(x: __m256i) -> __m256i {
-        // `| 0x20` turns `[` into `{` and `]` into `}` and nothing else into either.
-        let l = _mm256_or_si256(x, _mm256_set1_epi8(0x20));
-        _mm256_or_si256(
-            _mm256_cmpeq_epi8(l, _mm256_set1_epi8(b'{' as i8)),
-            _mm256_cmpeq_epi8(l, _mm256_set1_epi8(b'}' as i8)),
+    fn bracket_avx2(lo: __m256i, hi: __m256i, c: u8) -> u64 {
+        let (l, c) = (_mm256_set1_epi8(0x20), _mm256_set1_epi8(c as i8));
+        bits_avx2(
+            _mm256_cmpeq_epi8(_mm256_or_si256(lo, l), c),
+            _mm256_cmpeq_epi8(_mm256_or_si256(hi, l), c),
         )
     }
 
@@ -321,7 +419,8 @@ mod x86 {
         Masks {
             quote: eq_avx2(lo, hi, b'"'),
             bs: eq_avx2(lo, hi, b'\\'),
-            br: bits_avx2(br_avx2(lo), br_avx2(hi)),
+            open: bracket_avx2(lo, hi, b'{'),
+            close: bracket_avx2(lo, hi, b'}'),
             op: bits_avx2(op_avx2(lo), op_avx2(hi)),
         }
     }
@@ -332,5 +431,13 @@ mod x86 {
     pub(super) unsafe fn structurals_avx2(buf: &[u8]) -> Structurals {
         // SAFETY: this function only runs on CPUs with AVX2 (its own contract).
         scan(buf, |b| unsafe { classify_avx2(b) })
+    }
+
+    /// # Safety
+    /// The CPU must support AVX2.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn skip_avx2(buf: &[u8], start: usize) -> Option<usize> {
+        // SAFETY: this function only runs on CPUs with AVX2 (its own contract).
+        skip_with(buf, start, |b| unsafe { classify_avx2(b) })
     }
 }
