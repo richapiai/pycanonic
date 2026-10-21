@@ -219,3 +219,15 @@ def test_cast_of_an_integer_string_past_2_53_goes_through_a_double():
     a = _core.compile(spec, canonical, None)
     out = a.map('{"n":9007199254740993,"s":"9007199254740993"}')
     assert out == {"n": 9007199254740993, "s": 9007199254740992}
+
+
+def test_load_plan_checks_the_format_stamp():
+    acme = _core.compile(SPEC, CANONICAL, None)
+    plan = json.loads(acme.plan_json())
+    assert plan["format"] == 1
+    del plan["format"]
+    with pytest.raises(ValueError, match="missing field `format`"):
+        _core.load_plan(json.dumps(plan), None)
+    plan["format"] = 2
+    with pytest.raises(ValueError, match="plan format 2 is not supported"):
+        _core.load_plan(json.dumps(plan), None)

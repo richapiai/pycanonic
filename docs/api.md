@@ -94,7 +94,7 @@ class Artifact:
 - `view(src)` returns a lazy canonical object. Each field is mapped the first time you read it and then kept. It counts no stats.
 - `extract(raw)` reads the routing fields from JSON text without parsing the whole body. The result is flat and keyed by spec field (`{"company.domain": "acme.com"}`).
 - `stream()` returns a new incremental reader for the same fields. Use one per response.
-- `plan_json()` returns the compiled plan as JSON, for `load`.
+- `plan_json()` returns the compiled plan as JSON, for `load`. The JSON carries `"format": 1`. `load` raises `ValueError` for a plan without it or with another value: rebuild the plan from its spec.
 
 ### `View`
 

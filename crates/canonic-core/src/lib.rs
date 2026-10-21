@@ -27,7 +27,10 @@ pub use drift::{
 pub use exec::{Program, execute, execute_field};
 pub use extract::ExtractStream;
 pub use json::{Filter, ParseError, parse, unescape};
-pub use plan::{CompileError, Field, ListKind, Meta, Named, Plan, RoutingField, Scalar, TxRef};
+pub use plan::{
+    CompileError, Field, Format, ListKind, Meta, Named, PLAN_FORMAT, Plan, RoutingField, Scalar,
+    TxRef,
+};
 pub use resolve::compile;
 pub use shadow::{
     FieldDiff, GateOptions, GateResult, ShadowDiff, ShadowReport, merge_gate, to_out_bounded,

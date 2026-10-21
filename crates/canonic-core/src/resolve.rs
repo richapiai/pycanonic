@@ -3,7 +3,9 @@
 //! and the compile entry point of artifact.ts.
 
 use crate::canonical::{Kind, Node, load_schema};
-use crate::plan::{CompileError, Field, ListKind, Meta, Named, Plan, RoutingField, Scalar, TxRef};
+use crate::plan::{
+    CompileError, Field, Format, ListKind, Meta, Named, Plan, RoutingField, Scalar, TxRef,
+};
 use crate::spec::{ArrayRule, FieldMap, Rule, ScalarRule, Source, Step, TransformRef, parse_spec};
 use crate::transforms::{ArgError, builtin};
 use serde_json::Value;
@@ -300,6 +302,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
     let (fields, routing, anchors) =
         resolved.map_err(|m| fail(format!("{} {} v{}: {m}", s.provider, s.endpoint, s.version)))?;
     Ok(Plan {
+        format: Format,
         meta: Meta {
             provider: s.provider,
             endpoint: s.endpoint,

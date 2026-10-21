@@ -82,8 +82,37 @@ pub struct RoutingField {
     pub anchor: Option<String>,
 }
 
+/// The plan JSON layout this build writes and reads, serialized as `"format": 1`.
+pub const PLAN_FORMAT: u32 = 1;
+
+/// The `format` stamp of a serialized plan: always writes [`PLAN_FORMAT`], and reading any other
+/// value (or none: serde's "missing field `format`") is an error, so an old or newer plan fails
+/// to load instead of mapping wrongly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Format;
+
+impl Serialize for Format {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u32(PLAN_FORMAT)
+    }
+}
+
+impl<'de> Deserialize<'de> for Format {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Format, D::Error> {
+        let v = Value::deserialize(d)?;
+        if v == PLAN_FORMAT {
+            Ok(Format)
+        } else {
+            Err(serde::de::Error::custom(format!(
+                "plan format {v} is not supported, this build reads format {PLAN_FORMAT}: rebuild the plan"
+            )))
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
+    pub format: Format,
     pub meta: Meta,
     /// Every canonical field, in schema order.
     pub fields: Vec<Named<Field>>,
