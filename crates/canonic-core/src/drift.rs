@@ -16,43 +16,55 @@ fn quoted(k: &str) -> String {
     String::from_utf8(buf).expect("escaping keeps UTF-8")
 }
 
-/// Most path text `shape` writes. Every path repeats its prefix, so a host object that shares its
-/// children (`d["a"] = d["b"] = d`) costs its depth per node; `MAX_NODES` alone lets that run to gigabytes.
+/// Most new path text `shape_bounded` writes. A host object that shares its children
+/// (`d["a"] = d["b"] = d`) has a new, longer path at every node.
 const MAX_PATH_BYTES: usize = 64 << 20;
 
-/// What `shape` may still walk. Past `MAX_DEPTH` levels, `MAX_NODES` values or `MAX_PATH_BYTES`, a
-/// subtree counts as a scalar: its path is kept and nothing under it. Bounds a host object that
-/// contains itself; a parsed document stays far inside all three.
+/// The walk behind `shape`. With `limits`, more than `MAX_DEPTH` levels, `MAX_NODES` containers or
+/// `MAX_PATH_BYTES` of distinct paths sets `over` and stops it.
 struct Walk {
+    limits: bool,
+    over: bool,
     nodes: usize,
     bytes: usize,
     out: HashSet<String>,
 }
 
 impl Walk {
-    fn deeper(&self, depth: usize) -> bool {
-        depth < MAX_DEPTH && self.nodes > 0 && self.bytes > 0
+    /// Whether to walk into a container at `depth`; counts it.
+    fn enter(&mut self, depth: usize) -> bool {
+        if self.limits && (depth >= MAX_DEPTH || self.nodes == 0 || self.bytes == 0) {
+            self.over = true;
+        }
+        self.nodes = self.nodes.saturating_sub(1);
+        !self.over
     }
 
     fn add(&mut self, path: String) {
-        self.bytes = self.bytes.saturating_sub(path.len());
-        self.out.insert(path);
+        let len = path.len();
+        if self.out.insert(path) {
+            self.bytes = self.bytes.saturating_sub(len);
+        }
     }
 
     fn members<D: Doc>(&mut self, members: Vec<(Cow<'_, str>, D)>, prefix: &str, depth: usize) {
         for (k, x) in members {
+            if self.over {
+                return;
+            }
             if x.is_null() {
                 continue;
             }
-            self.nodes = self.nodes.saturating_sub(1);
             let path = format!("{prefix}{}", quoted(&k));
             if let Some(n) = x.len() {
-                if self.deeper(depth) {
+                if self.enter(depth) {
                     self.elements(&x, n, &format!("{path}[]."), depth + 1);
                 }
                 self.add(path + "[]");
             } else {
-                if let Some(m) = x.members().filter(|_| self.deeper(depth)) {
+                if let Some(m) = x.members()
+                    && self.enter(depth)
+                {
                     self.members(m, &format!("{path}."), depth + 1);
                 }
                 self.add(path);
@@ -62,22 +74,22 @@ impl Walk {
 
     fn elements<D: Doc>(&mut self, arr: &D, n: usize, prefix: &str, depth: usize) {
         for i in 0..n {
-            if !self.deeper(depth) {
+            if self.over {
                 return;
             }
-            self.nodes -= 1;
-            if let Some(m) = arr.item(i).as_ref().and_then(Doc::members) {
+            if let Some(m) = arr.item(i).as_ref().and_then(Doc::members)
+                && self.enter(depth)
+            {
                 self.members(m, prefix, depth + 1);
             }
         }
     }
 }
 
-/// Sorted key paths of a parsed response. A null value counts as absent, and an array is one path
-/// ending in `[]` whatever its length, with the keys of its object elements merged under it. Keys
-/// are written as `JSON.stringify` writes them, and sorted by UTF-16 code units as JavaScript sorts.
-pub fn shape<D: Doc>(doc: &D) -> Vec<String> {
+fn walk<D: Doc>(doc: &D, limits: bool) -> Option<Vec<String>> {
     let mut w = Walk {
+        limits,
+        over: false,
         nodes: MAX_NODES,
         bytes: MAX_PATH_BYTES,
         out: HashSet::new(),
@@ -88,16 +100,39 @@ pub fn shape<D: Doc>(doc: &D) -> Vec<String> {
         w.add("[]".to_string());
         w.elements(doc, n, "[].", 1);
     }
+    if w.over {
+        return None;
+    }
     let mut out: Vec<String> = w.out.into_iter().collect();
     out.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
-    out
+    Some(out)
+}
+
+/// Sorted key paths of a parsed response. A null value counts as absent, and an array is one path
+/// ending in `[]` whatever its length, with the keys of its object elements merged under it. Keys
+/// are written as `JSON.stringify` writes them, and sorted by UTF-16 code units as JavaScript sorts.
+/// Unbounded: for a finite document such as a parsed `Node`; see `shape_bounded` for host objects.
+pub fn shape<D: Doc>(doc: &D) -> Vec<String> {
+    walk(doc, false).expect("an unbounded walk never stops early")
+}
+
+/// `shape`, or `None` past `MAX_DEPTH` levels, `MAX_NODES` containers or 64 MiB of distinct paths:
+/// for a host object that may contain itself or share its children, where a cut shape would
+/// give a wrong fingerprint.
+pub fn shape_bounded<D: Doc>(doc: &D) -> Option<Vec<String>> {
+    walk(doc, true)
 }
 
 /// 32-bit FNV-1a over the UTF-16 code units of each `shape` path, each followed by `\n`, as 8 hex
 /// digits. Equal for responses with the same shape, and equal to drift.ts's for the same document.
 pub fn fingerprint<D: Doc>(doc: &D) -> String {
+    hash_shape(&shape(doc))
+}
+
+/// The fingerprint of a shape `shape` or `shape_bounded` returned.
+pub fn hash_shape(paths: &[String]) -> String {
     let mut h: u32 = 0x811c9dc5;
-    for path in shape(doc) {
+    for path in paths {
         for c in path.encode_utf16().chain([10]) {
             h = (h ^ u32::from(c)).wrapping_mul(0x01000193);
         }

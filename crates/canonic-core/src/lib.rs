@@ -19,7 +19,10 @@ pub mod write;
 pub use artifact::{Artifact, filter_for};
 pub use canonical::{Kind, Node, Schema, Semantic, load_schema, validate_canonical};
 pub use doc::{Doc, Key};
-pub use drift::{AlertKind, FieldAlert, FillMonitor, FillMonitorOptions, fingerprint, shape};
+pub use drift::{
+    AlertKind, FieldAlert, FillMonitor, FillMonitorOptions, fingerprint, hash_shape, shape,
+    shape_bounded,
+};
 pub use exec::{Program, execute, execute_field};
 pub use extract::ExtractStream;
 pub use json::{Filter, ParseError, parse, unescape};

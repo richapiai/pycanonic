@@ -117,11 +117,31 @@ impl Doc for PyDoc<'_, '_> {
 
     fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>> {
         let d = self.obj.cast::<PyDict>().ok()?;
-        let key = |k: &Bound<'_, PyAny>| match k.cast::<PyString>() {
-            Ok(s) => text(s).into_owned(),
-            Err(_) => k
-                .str()
-                .map_or_else(|_| String::new(), |s| text(&s).into_owned()),
+        // Keys as `json.dumps` writes them; a key it can't encode (a tuple) falls back to `str(k)`.
+        let key = |k: &Bound<'_, PyAny>| {
+            if let Ok(s) = k.cast::<PyString>() {
+                return text(s).into_owned();
+            }
+            if let Ok(b) = k.cast::<PyBool>() {
+                return b.is_true().to_string();
+            }
+            if k.is_none() {
+                return "null".to_string();
+            }
+            if let Ok(f) = k.cast::<PyFloat>() {
+                let f = f.value();
+                if f.is_nan() {
+                    return "NaN".to_string();
+                }
+                if f.is_infinite() {
+                    return if f > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
+                }
+                return k
+                    .repr()
+                    .map_or_else(|_| f.to_string(), |r| text(&r).into_owned());
+            }
+            k.str()
+                .map_or_else(|_| String::new(), |s| text(&s).into_owned())
         };
         Some(
             d.iter()

@@ -4,7 +4,7 @@
 use canonic_core::json::Node;
 use canonic_core::{
     AlertKind, Artifact, FieldAlert, FieldStats, FillMonitor, FillMonitorOptions, Filter,
-    StatsSnapshot, compile, fingerprint, parse, shape,
+    StatsSnapshot, compile, fingerprint, hash_shape, parse, shape, shape_bounded,
 };
 use proptest::prelude::*;
 use serde_json::{Value as J, json};
@@ -369,4 +369,23 @@ fn plucked_array_errors_are_counted_per_element_so_a_rate_above_1_still_alerts()
 #[test]
 fn the_first_window_only_sets_the_baseline() {
     assert_eq!(monitor().check(&snap(1000, &[("f", 0, 1000)])), []);
+}
+
+#[test]
+fn a_large_parsed_document_is_never_cut_and_the_bounded_walk_agrees() {
+    let mut items: Vec<J> = (0..600_000).map(|i| json!({ "id": i, "v": "x" })).collect();
+    items.push(json!({ "late": 1 }));
+    let v = json!({ "a": items });
+    let expected = [
+        r#""a"[]"#,
+        r#""a"[]."id""#,
+        r#""a"[]."late""#,
+        r#""a"[]."v""#,
+    ];
+    assert_eq!(shape_of(&v), expected);
+    with(&v, |d| {
+        let bounded = shape_bounded(d).unwrap();
+        assert_eq!(bounded, expected);
+        assert_eq!(hash_shape(&bounded), fingerprint(d));
+    });
 }

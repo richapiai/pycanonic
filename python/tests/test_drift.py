@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import time
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -49,19 +50,41 @@ def test_non_json_values_are_scalars() -> None:
     assert shape({"a": object(), "s": {1, 2}, "t": ({"b": 1},)}) == ['"a"', '"s"', '"t"[]', '"t"[]."b"']
 
 
-def test_a_cyclic_dict_stops_at_the_depth_cap() -> None:
+def test_a_cyclic_or_shared_object_raises_instead_of_a_cut_shape() -> None:
     cyclic: dict[str, Any] = {}
     cyclic["a"] = cyclic
-    paths = shape(cyclic)
-    assert len(paths) == 512
-    assert paths[0] == '"a"' and paths[-1] == ".".join(['"a"'] * 512)
-    assert len(fingerprint(cyclic)) == 8
-    # Shared children: exponentially many paths, cut at the node and path-text budgets.
+    with pytest.raises(ValueError, match="too large or cyclic"):
+        shape(cyclic)
+    with pytest.raises(ValueError, match="too large or cyclic"):
+        fingerprint(cyclic)
     shared: dict[str, Any] = {}
     shared["a"] = shared["b"] = shared
     started = time.monotonic()
-    assert 0 < len(shape(shared)) <= 1_000_000
+    with pytest.raises(ValueError, match="too large or cyclic"):
+        shape(shared)
     assert time.monotonic() - started < 5
+
+
+def test_a_large_response_is_never_cut() -> None:
+    doc = {"a": [{"id": i, "v": "x"} for i in range(600_000)] + [{"late": 1}]}
+    raw = json.dumps(doc).encode()
+    expected = ['"a"[]', '"a"[]."id"', '"a"[]."late"', '"a"[]."v"']
+    assert shape(raw) == shape(doc) == expected
+    assert fingerprint(raw) == fingerprint(doc)
+
+
+def test_non_str_keys_are_written_as_json_dumps_writes_them() -> None:
+    doc = {True: 1, None: 2, 3: 3, 1.5: 4, float("inf"): 5}
+    assert shape(doc) == shape(json.dumps(doc).encode())
+    assert shape(doc) == ['"1.5"', '"3"', '"Infinity"', '"null"', '"true"']
+
+
+def test_check_accepts_any_mapping() -> None:
+    m = FillMonitor()
+    window = MappingProxyType({"responses": 1000, "fields": MappingProxyType({"f": MappingProxyType({"fill": 900, "errors": 0})})})
+    for _ in range(3):
+        assert m.check(window) == []
+    assert m.check(snap(1000, {"f": (0, 0)}))[0].baseline == 0.9
 
 
 def test_total_none_means_absent() -> None:
