@@ -1,6 +1,6 @@
 //! Stage 1: one pass that finds every structural byte, the simdjson way.
 //!
-//! Each 64-byte block is classified into three bitmasks (quotes, backslashes, `{ } [ ] : ,`) by a
+//! Each 64-byte block is classified into four bitmasks (quotes, backslashes, `{ } [ ]`, `: ,`) by a
 //! backend: NEON on aarch64, AVX2 or SSE2 on x86_64, plain bytes elsewhere. The rest is shared
 //! integer code: backslash runs of odd length escape the byte after them, a prefix-XOR over the
 //! unescaped quotes gives the in-string mask, and both carry from one block to the next.
@@ -16,12 +16,15 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Structurals {
     pub idx: Vec<u32>,
+    /// The entries of `idx` that are `{ } [ ]` or `\`: what a skip has to look at.
+    pub brackets: Vec<u32>,
 }
 
-/// One block classified: bit `i` is byte `i`.
+/// One block classified: bit `i` is byte `i`. `br` is `{ } [ ]`, `op` is `: ,`.
 struct Masks {
     quote: u64,
     bs: u64,
+    br: u64,
     op: u64,
 }
 
@@ -61,6 +64,7 @@ pub fn structurals_portable(buf: &[u8]) -> Structurals {
         let mut m = Masks {
             quote: 0,
             bs: 0,
+            br: 0,
             op: 0,
         };
         for (i, &c) in b.iter().enumerate() {
@@ -68,7 +72,8 @@ pub fn structurals_portable(buf: &[u8]) -> Structurals {
             match c {
                 b'"' => m.quote |= bit,
                 b'\\' => m.bs |= bit,
-                b'{' | b'}' | b'[' | b']' | b':' | b',' => m.op |= bit,
+                b'{' | b'}' | b'[' | b']' => m.br |= bit,
+                b':' | b',' => m.op |= bit,
                 _ => {}
             }
         }
@@ -79,25 +84,28 @@ pub fn structurals_portable(buf: &[u8]) -> Structurals {
 #[inline(always)]
 fn scan(buf: &[u8], classify: impl Fn(&[u8; 64]) -> Masks) -> Structurals {
     let mut idx = Vec::with_capacity(buf.len() / 4 + 64);
+    let mut brackets = Vec::with_capacity(buf.len() / 32 + 64);
     let (mut odd_bs, mut in_str) = (0u64, 0u64);
-    let mut block = |b: &[u8; 64], base: usize, idx: &mut Vec<u32>| {
+    let mut block = |b: &[u8; 64], base: usize, idx: &mut Vec<u32>, brackets: &mut Vec<u32>| {
         let m = classify(b);
         let quote = m.quote & !escaped(m.bs, &mut odd_bs);
         let inside = prefix_xor(quote) ^ in_str;
         in_str = 0u64.wrapping_sub(inside >> 63);
-        flatten(idx, base as u32, ((m.op | m.bs) & !inside) | quote);
+        let br = (m.br | m.bs) & !inside;
+        flatten(idx, base as u32, br | (m.op & !inside) | quote);
+        flatten(brackets, base as u32, br);
     };
     let (blocks, rest) = buf.as_chunks::<64>();
     for (n, b) in blocks.iter().enumerate() {
-        block(b, n * 64, &mut idx);
+        block(b, n * 64, &mut idx, &mut brackets);
     }
     if !rest.is_empty() {
         // Spaces classify as nothing, so the padding adds no positions.
         let mut pad = [b' '; 64];
         pad[..rest.len()].copy_from_slice(rest);
-        block(&pad, blocks.len() * 64, &mut idx);
+        block(&pad, blocks.len() * 64, &mut idx, &mut brackets);
     }
-    Structurals { idx }
+    Structurals { idx, brackets }
 }
 
 #[inline(always)]
@@ -171,12 +179,15 @@ mod neon {
     }
 
     #[target_feature(enable = "neon")]
-    fn op(x: uint8x16_t) -> uint8x16_t {
+    fn br(x: uint8x16_t) -> uint8x16_t {
         // `| 0x20` turns `[` into `{` and `]` into `}` and nothing else into either.
         let l = vorrq_u8(x, vdupq_n_u8(0x20));
-        let br = vorrq_u8(vceqq_u8(l, vdupq_n_u8(b'{')), vceqq_u8(l, vdupq_n_u8(b'}')));
-        let pu = vorrq_u8(vceqq_u8(x, vdupq_n_u8(b':')), vceqq_u8(x, vdupq_n_u8(b',')));
-        vorrq_u8(br, pu)
+        vorrq_u8(vceqq_u8(l, vdupq_n_u8(b'{')), vceqq_u8(l, vdupq_n_u8(b'}')))
+    }
+
+    #[target_feature(enable = "neon")]
+    fn op(x: uint8x16_t) -> uint8x16_t {
+        vorrq_u8(vceqq_u8(x, vdupq_n_u8(b':')), vceqq_u8(x, vdupq_n_u8(b',')))
     }
 
     /// # Safety
@@ -197,6 +208,7 @@ mod neon {
         Masks {
             quote: eq(&v, b'"'),
             bs: eq(&v, b'\\'),
+            br: bits([br(v[0]), br(v[1]), br(v[2]), br(v[3])]),
             op: bits([op(v[0]), op(v[1]), op(v[2]), op(v[3])]),
         }
     }
@@ -227,18 +239,21 @@ mod x86 {
     }
 
     #[target_feature(enable = "sse2")]
-    fn op_sse2(x: __m128i) -> __m128i {
+    fn br_sse2(x: __m128i) -> __m128i {
         // `| 0x20` turns `[` into `{` and `]` into `}` and nothing else into either.
         let l = _mm_or_si128(x, _mm_set1_epi8(0x20));
-        let br = _mm_or_si128(
+        _mm_or_si128(
             _mm_cmpeq_epi8(l, _mm_set1_epi8(b'{' as i8)),
             _mm_cmpeq_epi8(l, _mm_set1_epi8(b'}' as i8)),
-        );
-        let pu = _mm_or_si128(
+        )
+    }
+
+    #[target_feature(enable = "sse2")]
+    fn op_sse2(x: __m128i) -> __m128i {
+        _mm_or_si128(
             _mm_cmpeq_epi8(x, _mm_set1_epi8(b':' as i8)),
             _mm_cmpeq_epi8(x, _mm_set1_epi8(b',' as i8)),
-        );
-        _mm_or_si128(br, pu)
+        )
     }
 
     /// # Safety
@@ -259,6 +274,7 @@ mod x86 {
         Masks {
             quote: eq_sse2(&v, b'"'),
             bs: eq_sse2(&v, b'\\'),
+            br: bits_sse2([br_sse2(v[0]), br_sse2(v[1]), br_sse2(v[2]), br_sse2(v[3])]),
             op: bits_sse2([op_sse2(v[0]), op_sse2(v[1]), op_sse2(v[2]), op_sse2(v[3])]),
         }
     }
@@ -275,18 +291,21 @@ mod x86 {
     }
 
     #[target_feature(enable = "avx2")]
-    fn op_avx2(x: __m256i) -> __m256i {
+    fn br_avx2(x: __m256i) -> __m256i {
         // `| 0x20` turns `[` into `{` and `]` into `}` and nothing else into either.
         let l = _mm256_or_si256(x, _mm256_set1_epi8(0x20));
-        let br = _mm256_or_si256(
+        _mm256_or_si256(
             _mm256_cmpeq_epi8(l, _mm256_set1_epi8(b'{' as i8)),
             _mm256_cmpeq_epi8(l, _mm256_set1_epi8(b'}' as i8)),
-        );
-        let pu = _mm256_or_si256(
+        )
+    }
+
+    #[target_feature(enable = "avx2")]
+    fn op_avx2(x: __m256i) -> __m256i {
+        _mm256_or_si256(
             _mm256_cmpeq_epi8(x, _mm256_set1_epi8(b':' as i8)),
             _mm256_cmpeq_epi8(x, _mm256_set1_epi8(b',' as i8)),
-        );
-        _mm256_or_si256(br, pu)
+        )
     }
 
     /// # Safety
@@ -302,6 +321,7 @@ mod x86 {
         Masks {
             quote: eq_avx2(lo, hi, b'"'),
             bs: eq_avx2(lo, hi, b'\\'),
+            br: bits_avx2(br_avx2(lo), br_avx2(hi)),
             op: bits_avx2(op_avx2(lo), op_avx2(hi)),
         }
     }

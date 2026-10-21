@@ -36,6 +36,27 @@ fn check(buf: &[u8]) {
     let want = reference(buf);
     assert_eq!(structurals_portable(buf).idx, want, "portable on {buf:?}");
     assert_eq!(structurals(buf).idx, want, "dispatched on {buf:?}");
+    let brackets: Vec<u32> = want
+        .iter()
+        .copied()
+        .filter(|&i| matches!(buf[i as usize], b'{' | b'}' | b'[' | b']' | b'\\'))
+        .collect();
+    assert_eq!(
+        structurals_portable(buf).brackets,
+        brackets,
+        "portable brackets on {buf:?}"
+    );
+    assert_eq!(
+        structurals(buf).brackets,
+        brackets,
+        "dispatched brackets on {buf:?}"
+    );
+    #[cfg(target_arch = "x86_64")]
+    assert_eq!(
+        canonic_core::json::simd::structurals_sse2(buf).brackets,
+        brackets,
+        "sse2 brackets on {buf:?}"
+    );
     #[cfg(target_arch = "x86_64")]
     assert_eq!(
         canonic_core::json::simd::structurals_sse2(buf).idx,

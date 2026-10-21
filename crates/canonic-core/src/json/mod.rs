@@ -83,16 +83,21 @@ fn parse_in<'a>(buf: &'a [u8], filter: &Filter, indexed: bool) -> Result<Node<'a
     } else {
         0
     };
-    let idx = if indexed {
-        simd::structurals(buf).idx
+    let s = if indexed {
+        simd::structurals(buf)
     } else {
-        Vec::new()
+        simd::Structurals {
+            idx: Vec::new(),
+            brackets: Vec::new(),
+        }
     };
     let mut p = Parser {
         buf,
         pos,
-        idx,
+        idx: s.idx,
         k: 0,
+        brackets: s.brackets,
+        kb: 0,
     };
     p.ws();
     // Trailing content is ignored on purpose (JSON.parse would reject it; see module doc).
@@ -113,6 +118,10 @@ struct Parser<'a> {
     idx: Vec<u32>,
     /// First entry of `idx` not yet passed. Only moves forward, like `pos`.
     k: usize,
+    /// The bracket and backslash entries of `idx`, which a skip walks instead of all of them.
+    brackets: Vec<u32>,
+    /// First entry of `brackets` not yet passed. Only moves forward.
+    kb: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -323,6 +332,8 @@ impl<'a> Parser<'a> {
     fn fallback(&mut self) {
         self.idx = Vec::new();
         self.k = 0;
+        self.brackets = Vec::new();
+        self.kb = 0;
     }
 
     /// Offset just past the closing quote of the string opening at `open`. Inside a string the
@@ -342,31 +353,40 @@ impl<'a> Parser<'a> {
     }
 
     /// Offset just past the container opening at `start`: the brackets in the index are counted
-    /// with a plain integer, not matched or validated, so any depth is fine.
+    /// with a plain integer, not matched or validated, so any depth is fine. Only the bracket
+    /// entries are walked; `k` then jumps past the close with a binary search.
     fn skip_container(&mut self, start: usize) -> Result<usize, ParseError> {
-        let Some(k) = self.entry_at(start) else {
+        if self.entry_at(start).is_none() {
             return scan_container(self.buf, start);
-        };
+        }
+        while self
+            .brackets
+            .get(self.kb)
+            .is_some_and(|&i| (i as usize) < start)
+        {
+            self.kb += 1;
+        }
         let mut depth = 0usize;
-        for (j, &i) in self.idx.iter().enumerate().skip(k) {
+        for (j, &i) in self.brackets.iter().enumerate().skip(self.kb) {
             let i = i as usize;
             match self.buf[i] {
                 b'{' | b'[' => depth += 1,
                 b'}' | b']' => {
                     depth -= 1;
                     if depth == 0 {
-                        self.k = j + 1;
+                        self.kb = j + 1;
+                        self.k += self.idx[self.k..].partition_point(|&x| (x as usize) <= i);
                         return Ok(i + 1);
                     }
                 }
-                b'\\' => {
+                _ => {
                     self.fallback();
                     return scan_container(self.buf, start);
                 }
-                _ => {}
             }
         }
         self.k = self.idx.len();
+        self.kb = self.brackets.len();
         Err(ParseError::Syntax(self.buf.len()))
     }
 }
