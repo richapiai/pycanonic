@@ -3,10 +3,12 @@
 //! Port of canonic/packages/canonic/src/canonical.ts.
 
 use crate::spec::Issue;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 /// The value's kind; exactly the semantics that have a routing validator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Semantic {
     Email,
     Phone,
@@ -18,6 +20,19 @@ pub enum Semantic {
 }
 
 impl Semantic {
+    /// The tag as written in the schema.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Email => "email",
+            Self::Phone => "phone",
+            Self::Domain => "domain",
+            Self::LinkedinUrl => "linkedin_url",
+            Self::Url => "url",
+            Self::IsoDate => "iso_date",
+            Self::Money => "money",
+        }
+    }
+
     /// Unknown tags are not a load error in canonic; they carry no semantic, and the routing check rejects them later.
     fn parse(tag: &str) -> Option<Self> {
         Some(match tag {

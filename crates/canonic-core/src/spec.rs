@@ -1,18 +1,20 @@
 //! Spec types, the path grammar, and the hand-written validator for spec.schema.json.
 //! The validator must accept and reject exactly what the JSON Schema does (tests/validate.rs).
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Step {
     Key(String),
     Idx(usize),
 }
 pub type Path = Vec<Step>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Status {
     Draft,
     Shadow,
@@ -26,7 +28,7 @@ pub struct TransformRef {
     pub arg: Option<Value>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Source {
     From(Path),
     FromMany(Vec<Path>),
