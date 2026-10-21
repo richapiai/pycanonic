@@ -135,7 +135,8 @@ def ask_with(command: str) -> Ask:
 
     def run(q: Question) -> str | None:
         try:
-            done = subprocess.run(command, shell=True, input=js_json(q), capture_output=True, text=True, encoding="utf-8")
+            done = subprocess.run(command, shell=True, input=js_json(q), capture_output=True, text=True, encoding="utf-8", errors="replace")
+            # Lossy, as node decodes: a stray byte makes the answer unknown, not the run fail.
         except OSError as e:
             print(f"--ask failed for {q['field']}: {e}", file=sys.stderr)
             return None

@@ -362,8 +362,11 @@ def infer(
     `known` is the canonical output per sample (None where unknown); `learn` takes approved specs to
     learn synonyms from (`synonyms` wins on conflicts); `ask` is a shell command asked about each
     doubtful scalar field; `raws` is each sample's raw text, needed to propose anchors."""
-    from .ask import LOW, ask_low_confidence, ask_with
+    from .ask import LOW, ask_low_confidence, ask_with  # here, not at the top: ask.py imports FieldReport from this module
 
+    for i, s in enumerate(learn or []):
+        if not (isinstance(s, dict) and isinstance(s.get("fields"), dict)):
+            raise ValueError(f"learn[{i}]: an approved spec needs a fields object")
     learned = learn_synonyms([s["fields"] for s in learn], schema) if learn else {}
     merged = {**learned, **(synonyms or {})}
     r = infer_draft(schema, samples, provider=provider, endpoint=endpoint, synonyms=merged, known=known, raws=raws, min_score=min_score)

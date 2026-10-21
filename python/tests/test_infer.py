@@ -340,6 +340,19 @@ def test_an_ask_answer_is_used_and_a_failing_command_skips_the_field(capsys: pyt
     assert code == 0 and "--ask failed for title: nope" in err
 
 
+@pytest.mark.parametrize("command", ["printf '\\377\\n'", "echo '{not json'", "echo 42", "echo '[\"zq7\"]'", "exit 1", "true"])
+def test_any_ask_reply_that_is_not_a_known_path_skips_the_field(capsys: pytest.CaptureFixture[str], command: str) -> None:
+    # A non-UTF-8 byte, text that isn't JSON, JSON that isn't a string, a failing or silent command.
+    plain = run(capsys, *infer_args(str(CLI / "odd")))
+    code, out, _ = run(capsys, *infer_args(str(CLI / "odd"), "--ask", command))
+    assert (code, out) == (0, plain[1])
+
+
+def test_learn_specs_without_fields_are_named(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match=r"learn\[0\]: an approved spec needs a fields object"):
+        infer([{"a": 1}], CANONICAL, provider="acme", endpoint="person.enrich", learn=[{"provider": "old"}])
+
+
 def test_learn_picks_up_a_synonym_from_an_approved_spec(capsys: pytest.CaptureFixture[str]) -> None:
     args = infer_args(str(CLI / "learn"))
     assert "company.industry" not in json.loads(run(capsys, *args)[1])["fields"]

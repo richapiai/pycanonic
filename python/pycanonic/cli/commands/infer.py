@@ -6,7 +6,6 @@ import os
 import sys
 from typing import Any
 
-from ..infer.ask import LOW
 from ..infer.infer import FieldReport, infer, to_fixed
 from ..infer.learn import learn_synonyms
 from ..io import Transforms, UsageError, is_obj, js_json, js_number, json_files, pad, parse_json, parser, read_json, read_text
