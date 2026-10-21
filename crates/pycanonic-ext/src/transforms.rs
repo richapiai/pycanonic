@@ -1,12 +1,26 @@
-//! Python callables as custom transforms, called `(value, arg)` with the GIL. A result that isn't
-//! `str`, `int`, `float`, `bool` or `None`, or an exception, is null, which the executor counts.
+//! Python callables as custom transforms, called with the GIL: `f(value)`, or `f(value, arg)` when
+//! the spec gives an argument. A result that isn't `str`, `int`, `float`, `bool` or `None`, or an
+//! `Exception`, is null, which the executor counts. Any other `BaseException` (KeyboardInterrupt,
+//! SystemExit) is held for the thread and raised from `map` once it returns; see `take_pending`.
 
 use crate::pydoc::leaf;
 use crate::pysink::value;
 use canonic_core::{Transform, Value};
+use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use serde_json::Value as J;
+use std::cell::RefCell;
+
+thread_local! {
+    /// A `BaseException` a transform raised during the current map call on this thread.
+    static PENDING: RefCell<Option<PyErr>> = const { RefCell::new(None) };
+}
+
+/// The `BaseException` to raise from the map call that just returned, if a transform raised one.
+pub fn take_pending() -> Option<PyErr> {
+    PENDING.take()
+}
 
 pub struct PyTransform(pub Py<PyAny>);
 
@@ -37,14 +51,26 @@ pub fn json_to_py<'py>(py: Python<'py>, v: &J) -> Bound<'py, PyAny> {
 
 impl PyTransform {
     fn call(&self, py: Python<'_>, v: Bound<'_, PyAny>, arg: Option<&J>) -> Value<'static> {
-        let arg = arg.map_or_else(|| py.None().into_bound(py), |a| json_to_py(py, a));
-        // An exception is dropped here, which clears it: counted as an error, never printed.
-        match self.0.bind(py).call1((v, arg)) {
+        // After a KeyboardInterrupt or the like, the rest of this map call calls no more Python.
+        if PENDING.with_borrow(Option::is_some) {
+            return Value::Null;
+        }
+        let f = self.0.bind(py);
+        let r = match arg {
+            None => f.call1((v,)),
+            Some(a) => f.call1((v, json_to_py(py, a))),
+        };
+        match r {
             Ok(r) => match leaf(&r) {
                 Value::Container => Value::Null,
                 v => v.into_owned(),
             },
-            Err(_) => Value::Null,
+            // An Exception is dropped here, which clears it: counted as an error, never printed.
+            Err(e) if e.is_instance_of::<PyException>(py) => Value::Null,
+            Err(e) => {
+                PENDING.set(Some(e));
+                Value::Null
+            }
         }
     }
 }

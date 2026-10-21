@@ -42,9 +42,17 @@ pub fn leaf<'o>(o: &'o Bound<'_, PyAny>) -> Value<'o> {
     } else if o.is_instance_of::<PyInt>() {
         match o.extract::<i64>() {
             Ok(i) => Value::Int(i),
-            Err(_) => o.str().map_or(Value::Null, |s| {
-                Value::BigInt(Cow::Owned(text(&s).into_owned()))
-            }),
+            Err(_) => match o.str() {
+                Ok(s) => Value::BigInt(Cow::Owned(text(&s).into_owned())),
+                // CPython refuses `str(int)` past 4300 digits; JSON.parse reads that as a double.
+                Err(_) => Value::Float(o.extract::<f64>().unwrap_or_else(|_| {
+                    if o.gt(0).unwrap_or(false) {
+                        f64::INFINITY
+                    } else {
+                        f64::NEG_INFINITY
+                    }
+                })),
+            },
         }
     } else if let Ok(f) = o.cast::<PyFloat>() {
         Value::Float(f.value())

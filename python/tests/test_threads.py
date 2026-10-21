@@ -28,6 +28,7 @@ def test_concurrent_maps_count_every_response():
 
     done = threading.Event()
     seen = []
+    failures = []
 
     def work():
         for i in range(CALLS):
@@ -37,7 +38,8 @@ def test_concurrent_maps_count_every_response():
         while not done.is_set():
             s = a.stats_snapshot()
             seen.append(s["responses"])
-            assert all(f["fill"] <= f.get("total", s["responses"]) for f in s["fields"].values())
+            # An assert here would only reach threading.excepthook; collect and check after join.
+            failures.extend(n for n, f in s["fields"].items() if f["fill"] > f.get("total", s["responses"]))
             # A spinning Python thread holds the GIL for a whole switch interval at a time.
             time.sleep(0.001)
 
@@ -55,3 +57,4 @@ def test_concurrent_maps_count_every_response():
     assert snap["responses"] == THREADS * CALLS
     assert snap["fields"] == want
     assert seen and seen == sorted(seen)
+    assert failures == []

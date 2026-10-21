@@ -14,6 +14,7 @@
 
 use crate::canonical::Semantic;
 use crate::doc::{Doc, Key};
+use crate::json::MAX_DEPTH;
 use crate::plan::{CompileError, Field, ListKind, Named, Plan, Scalar, TxRef};
 use crate::sink::Sink;
 use crate::spec::{self, Source};
@@ -219,30 +220,30 @@ fn json_value(v: &serde_json::Value) -> Value<'_> {
     }
 }
 
-/// A document value as JSON, for a custom transform's container input.
-fn json<D: Doc>(d: &D) -> J {
+/// A document value as JSON, for a custom transform's container input. `None` past `MAX_DEPTH`,
+/// which a host object that contains itself would otherwise recurse through without end.
+fn json<D: Doc>(d: &D, depth: usize) -> Option<J> {
+    if depth > MAX_DEPTH {
+        return None;
+    }
     if let Some(n) = d.len() {
-        return J::Array(
-            (0..n)
-                .map(|i| d.item(i).map_or(J::Null, |x| json(&x)))
-                .collect(),
-        );
+        let items = (0..n).map(|i| d.item(i).map_or(Some(J::Null), |x| json(&x, depth + 1)));
+        return items.collect::<Option<_>>().map(J::Array);
     }
     if let Some(m) = d.members() {
-        return J::Object(
-            m.into_iter()
-                .map(|(k, v)| (k.into_owned(), json(&v)))
-                .collect(),
-        );
+        let members = m
+            .into_iter()
+            .map(|(k, v)| Some((k.into_owned(), json(&v, depth + 1)?)));
+        return members.collect::<Option<_>>().map(J::Object);
     }
-    match d.leaf() {
+    Some(match d.leaf() {
         Value::Bool(b) => J::Bool(b),
         Value::Int(i) => J::from(i),
         Value::BigInt(s) => s.parse::<f64>().map_or(J::Null, J::from),
         Value::Float(f) => J::from(f),
         Value::Str(s) => J::String(s.into_owned()),
         Value::Null | Value::Container => J::Null,
-    }
+    })
 }
 
 /// Runs `program` over `doc` (`None` reads as absent everywhere) and counts one response in `stats`.
@@ -302,19 +303,20 @@ impl<S: Sink> Exec<'_, S> {
     fn pipe_doc<'d, D: Doc>(&self, tx: &[TxRef], d: &'d D) -> Value<'d> {
         match (d.leaf(), tx.split_first()) {
             (Value::Container, Some((first @ TxRef::Custom { .. }, rest))) => {
-                self.pipe(rest, self.container(first, &json(d)))
+                self.pipe(rest, self.container(first, json(d, 0)))
             }
             (v, _) => self.pipe(tx, v),
         }
     }
 
-    /// A custom transform over a container input; callers handle a default transform first.
-    fn container(&self, t: &TxRef, v: &J) -> Value<'static> {
-        let TxRef::Custom { index, arg, .. } = t else {
+    /// A custom transform over a container input (`None`: too deep, null); callers handle a default
+    /// transform first.
+    fn container(&self, t: &TxRef, v: Option<J>) -> Value<'static> {
+        let (TxRef::Custom { index, arg, .. }, Some(v)) = (t, v) else {
             return Value::Null;
         };
         match self.custom.get(*index) {
-            Some(f) => catch_unwind(AssertUnwindSafe(|| f.apply_container(v, arg.as_ref())))
+            Some(f) => catch_unwind(AssertUnwindSafe(|| f.apply_container(&v, arg.as_ref())))
                 .unwrap_or(Value::Null),
             None => Value::Null,
         }
@@ -403,8 +405,11 @@ impl<S: Sink> Exec<'_, S> {
             None => Value::Null, // a routing validator alone rejects a list
             Some((TxRef::Builtin(b), rest)) => self.pipe(rest, b.apply_list(&vals)),
             Some((first, rest)) => {
-                let items = docs.iter().map(|d| d.as_ref().map_or(J::Null, json));
-                self.pipe(rest, self.container(first, &J::Array(items.collect())))
+                let items = docs
+                    .iter()
+                    .map(|d| d.as_ref().map_or(Some(J::Null), |d| json(d, 1)));
+                let items = items.collect::<Option<_>>().map(J::Array);
+                self.pipe(rest, self.container(first, items))
             }
         };
         let v = Self::check(l.validator, v);

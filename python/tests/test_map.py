@@ -157,3 +157,11 @@ def test_default_transform_and_validator():
     assert _core.validator("email", "nope") is None
     with pytest.raises(ValueError):
         _core.validator("colour", "x")
+
+
+def test_a_lone_surrogate_in_a_dict_str_maps_like_the_escape_in_bytes(bench):
+    a, _, _ = bench
+    from_dict = a.map({"profile": {"fullName": "a\udc00b"}})
+    from_bytes = a.map(b'{"profile":{"fullName":"a\\udc00b"}}')
+    assert from_dict["full_name"] == from_bytes["full_name"] == "a\ufffdb"
+    assert from_dict == from_bytes

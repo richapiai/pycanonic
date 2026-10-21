@@ -2,7 +2,7 @@
 
 use crate::pydoc::{PyDoc, text};
 use crate::pysink::{PySink, to_py};
-use crate::transforms::PyTransform;
+use crate::transforms::{PyTransform, take_pending};
 use canonic_core::{CompileError, Plan, Status, Transform};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -114,20 +114,22 @@ impl Artifact {
     }
 
     /// `bytes` or `str` is parsed and mapped with the GIL released; any other object is read as is.
-    fn map<'py>(&self, py: Python<'py>, src: &Bound<'py, PyAny>) -> Bound<'py, PyAny> {
-        if let Some(body) = body_of(src) {
+    fn map<'py>(&self, py: Python<'py>, src: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let out = if let Some(body) = body_of(src) {
             let out = py.detach(|| self.inner.map_bytes(&body));
-            return to_py(py, &out, &self.names);
-        }
-        let doc = PyDoc {
-            obj: src.clone(),
-            keys: &self.keys,
+            to_py(py, &out, &self.names)
+        } else {
+            let doc = PyDoc {
+                obj: src.clone(),
+                keys: &self.keys,
+            };
+            let mut sink = PySink {
+                py,
+                names: &self.names,
+            };
+            self.inner.map_with(Some(&doc), &mut sink)
         };
-        let mut sink = PySink {
-            py,
-            names: &self.names,
-        };
-        self.inner.map_with(Some(&doc), &mut sink)
+        take_pending().map_or(Ok(out), Err)
     }
 
     /// The canonical object as JSON text, without building Python objects; runs with the GIL released.
@@ -139,7 +141,7 @@ impl Artifact {
         let body =
             body_of(raw).ok_or_else(|| PyTypeError::new_err("map_json takes bytes or str"))?;
         let out = py.detach(|| self.inner.map_json(&body));
-        Ok(PyBytes::new(py, &out))
+        take_pending().map_or(Ok(PyBytes::new(py, &out)), Err)
     }
 
     fn stats_snapshot<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
