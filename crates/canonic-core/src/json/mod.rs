@@ -287,6 +287,18 @@ impl<'a> Parser<'a> {
     fn raw_string(&mut self) -> Result<(&'a [u8], bool), ParseError> {
         let start = self.pos + 1;
         let mut i = start;
+        // Eight bytes at a time up to the first quote, backslash or non-ASCII byte, then by byte.
+        while let Some(w) = self.buf.get(i..i + 8) {
+            let x = u64::from_le_bytes(w.try_into().unwrap_or_default());
+            let hit = zero_byte(x ^ (LO * u64::from(b'"')))
+                | zero_byte(x ^ (LO * u64::from(b'\\')))
+                | (x & HI);
+            if hit != 0 {
+                i += hit.trailing_zeros() as usize / 8;
+                break;
+            }
+            i += 8;
+        }
         while let Some(&c) = self.buf.get(i) {
             match c {
                 b'"' => {
@@ -324,6 +336,15 @@ impl<'a> Parser<'a> {
             None => scan_container(self.buf, start),
         }
     }
+}
+
+const LO: u64 = 0x0101_0101_0101_0101;
+const HI: u64 = 0x8080_8080_8080_8080;
+
+/// The high bit of each zero byte of `x`. Exact up to the lowest zero byte; a byte above it may
+/// be flagged falsely, which `trailing_zeros` never reads.
+fn zero_byte(x: u64) -> u64 {
+    x.wrapping_sub(LO) & !x & HI
 }
 
 /// A string's text from its raw bytes; `plain` (see `Parser::raw_string`) bytes are it already.
@@ -438,6 +459,25 @@ mod tests {
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(4096))]
+
+        /// `raw_string`'s fast paths read a string as the plain byte scan plus `unescape` does.
+        #[test]
+        fn string_fast_path_matches_the_byte_scan(
+            body in prop::collection::vec(
+                prop::sample::select(b"ab\"\\u0Ae\xc3\xa9\xff ".to_vec()),
+                0..40,
+            )
+        ) {
+            let mut doc = b"\"".to_vec();
+            doc.extend_from_slice(&body);
+            let mut p = Parser {
+                buf: &doc,
+                pos: 0,
+                simd: true,
+            };
+            let want = scan_string_end(&doc, 1).map(|end| (end, unescape(&doc[1..end - 1])));
+            prop_assert_eq!(p.string().map(|s| (p.pos, s)), want);
+        }
 
         #[test]
         fn index_and_byte_scan_agree(
