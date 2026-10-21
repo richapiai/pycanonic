@@ -11,10 +11,11 @@ def fffd(s: str) -> str:
 
 
 def _num_eq(a, b) -> bool:
-    if isinstance(a, int) and isinstance(b, int):
-        return a == b
-    x, y = float(a), float(b)
-    return x == y or (abs(x) >= TWO_53 and abs(x - y) <= math.ulp(x))
+    """By value; when either side is at least 2^53 in magnitude, integer or not, within one double
+    step of `a` (TypeScript writes a rounded big integer, pycanonic keeps it exact)."""
+    if max(abs(a), abs(b)) >= TWO_53:
+        return abs(float(a) - float(b)) <= math.ulp(float(a))
+    return a == b
 
 
 def diff(got, want, path: str = "") -> str | None:

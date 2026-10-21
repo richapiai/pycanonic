@@ -5,7 +5,7 @@
 - `crates/canonic-core/tests/conformance.rs` (`cargo test`): `map_bytes` written with `write_json`, `map_json`, `extract` and the stats snapshot.
 - `python/tests/test_conformance.py` (`pytest python/tests`): `map(bytes)`, `map(parsed)` and `map_json`, one test per case.
 
-`SOURCE_COMMIT` holds the TypeScript commit the copy came from and that commit's date. CI fails once that date is more than 30 days old. To refresh, with `canonic` checked out next to this repo:
+`SOURCE_COMMIT` holds three lines: the TypeScript commit the copy came from, that commit's date, and the date of the sync. CI fails once the sync date is more than 30 days old. To refresh, with `canonic` checked out next to this repo:
 
 ```sh
 conformance/sync.sh
@@ -25,4 +25,4 @@ Both runners apply the same rule (`compare` in `conformance.rs`, `compare.py` fo
 
 ## Exclusions
 
-`EXCLUDED.md` lists cases where the TypeScript reference itself is wrong, checked against the TypeScript source, one line each with the reason. Both runners skip those names.
+`EXCLUDED.md` has two sections, one line per case with the reason. "TypeScript bugs" lists cases where the TypeScript reference is wrong, checked against the TypeScript source. "Documented divergences" lists cases where pycanonic differs by design, such as two lone-surrogate keys that both become U+FFFD. Both runners skip every name in either section.

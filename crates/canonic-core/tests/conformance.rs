@@ -34,13 +34,17 @@ mod compare {
         }
     }
 
-    /// By value; beyond 2^53 within one double step of `a`.
+    /// By value; when either side is at least 2^53 in magnitude, integer or not, within one
+    /// double step of `a` (TypeScript writes a rounded big integer, pycanonic keeps it exact).
     fn num_eq(a: &serde_json::Number, b: &serde_json::Number) -> bool {
-        if let (Some(x), Some(y)) = (a.as_i128(), b.as_i128()) {
-            return x == y;
-        }
         let (x, y) = (a.as_f64().unwrap(), b.as_f64().unwrap());
-        x == y || (x.abs() >= 9007199254740992.0 && (x - y).abs() <= x.abs().next_up() - x.abs())
+        if x.abs().max(y.abs()) >= 9007199254740992.0 {
+            return (x - y).abs() <= x.abs().next_up() - x.abs();
+        }
+        match (a.as_i128(), b.as_i128()) {
+            (Some(i), Some(j)) => i == j,
+            _ => x == y,
+        }
     }
 
     /// Case text with every lone surrogate escape (`\ud800`) rewritten to the U+FFFD escape, which is what
@@ -103,10 +107,13 @@ fn excluded() -> Vec<String> {
         .collect()
 }
 
-/// What the TypeScript artifact maps a body it never parsed to: canonical objects of nulls.
-fn blank(v: &J) -> J {
-    match v {
-        J::Object(m) => J::Object(m.iter().map(|(k, x)| (k.clone(), blank(x))).collect()),
+/// What the TypeScript artifact maps a body it never parsed to: the canonical schema's objects,
+/// every other field null.
+fn blank(schema: &J) -> J {
+    match schema["properties"].as_object() {
+        Some(ps) if schema["type"] == "object" => {
+            J::Object(ps.iter().map(|(k, x)| (k.clone(), blank(x))).collect())
+        }
         _ => J::Null,
     }
 }
@@ -133,34 +140,42 @@ fn stats(a: &Artifact) -> J {
     json!({ "responses": s.responses, "fields": fields })
 }
 
-/// Every divergence of one case, empty when it conforms.
-fn run(case: &J) -> Vec<String> {
+/// Every divergence of one case, empty when it conforms; `Err` for a case that is malformed.
+fn run(case: &J) -> Result<Vec<String>, String> {
     let compiled = compile(&case["spec"], &case["canonical"], &[]);
     if let Some(want) = case["error"].as_str() {
-        return match compiled {
+        return Ok(match compiled {
             Err(e) if e.message == want => vec![],
             Err(e) => vec![format!("error {:?}, want {want:?}", e.message)],
             Ok(_) => vec![format!("compiled, want error {want:?}")],
-        };
+        });
     }
     let a = match compiled.map(|p| Artifact::new(p, HashMap::new())) {
         Ok(Ok(a)) => a,
-        Ok(Err(e)) | Err(e) => return vec![format!("compile: {}", e.message)],
+        Ok(Err(e)) | Err(e) => return Ok(vec![format!("compile: {}", e.message)]),
     };
     let ex = &case["expected"];
-    let maps = ex["map"].as_array().unwrap();
-    let shape = blank(maps.iter().find(|m| !m.is_null()).unwrap_or(&J::Null));
+    let maps = ex["map"].as_array().ok_or("expected.map is not an array")?;
+    let inputs = case["inputs"].as_array().ok_or("inputs is not an array")?;
+    if inputs.len() != maps.len() {
+        return Err(format!("{} inputs, {} maps", inputs.len(), maps.len()));
+    }
+    let shape = blank(&case["canonical"]);
     let mut fails = vec![];
     let mut unparsed = vec![];
     let mut texts = vec![];
-    for (i, input) in case["inputs"].as_array().unwrap().iter().enumerate() {
-        let body = input.as_str().unwrap().as_bytes();
+    for (i, input) in inputs.iter().enumerate() {
+        let body = input
+            .as_str()
+            .ok_or(format!("inputs[{i}] is not a string"))?
+            .as_bytes();
         if maps[i].is_null() {
             unparsed.push((i, body));
         } else {
             let mut text = Vec::new();
             write_json(&a.plan, &a.map_bytes(body), &mut text);
-            let got: J = serde_json::from_slice(&text).unwrap();
+            let got: J = serde_json::from_slice(&text)
+                .map_err(|e| format!("map[{i}]: write_json wrote invalid JSON: {e}"))?;
             fails.extend(compare::diff(&format!("map[{i}]"), &got, &maps[i]));
             texts.push((i, body, text));
         }
@@ -199,7 +214,7 @@ fn run(case: &J) -> Vec<String> {
             &shape,
         ));
     }
-    fails
+    Ok(fails)
 }
 
 #[test]
@@ -211,13 +226,19 @@ fn every_corpus_case_conforms() {
     let skip = excluded();
     let mut failed = vec![];
     for p in &paths {
-        let text = compare::fffd(&fs::read_to_string(p).unwrap());
-        let case: J = serde_json::from_str(&text).unwrap();
-        let name = case["name"].as_str().unwrap();
-        if skip.iter().any(|s| s == name) {
+        let case: Result<J, String> = fs::read_to_string(p)
+            .map_err(|e| e.to_string())
+            .and_then(|t| serde_json::from_str(&compare::fffd(&t)).map_err(|e| e.to_string()));
+        let name = match &case {
+            Ok(c) => c["name"].as_str().unwrap_or("(no name)").to_string(),
+            Err(_) => p.display().to_string(),
+        };
+        if skip.contains(&name) {
             continue;
         }
-        let fails = run(&case);
+        let fails = case
+            .and_then(|c| run(&c))
+            .unwrap_or_else(|e| vec![format!("malformed: {e}")]);
         if !fails.is_empty() {
             failed.push(format!("{name}:\n  {}", fails.join("\n  ")));
         }
@@ -241,7 +262,9 @@ fn lone_surrogate_escapes_become_fffd_and_pairs_stay() {
     assert_eq!(compare::fffd(&pair), pair);
     let escaped_backslash = ["\\\\", "ud800"].concat();
     assert_eq!(compare::fffd(&escaped_backslash), escaped_backslash);
-    assert!(compare::diff("", &json!(9007199254740993u64), &json!(9007199254740992.0)).is_none());
+    let (exact, rounded) = (json!(9007199254740993u64), json!(9007199254740992u64));
+    assert!(compare::diff("", &exact, &rounded).is_none());
+    assert!(compare::diff("", &json!(9007199254740996u64), &rounded).is_some());
     assert!(compare::diff("", &json!(1), &json!(1.0)).is_none());
     assert!(compare::diff("", &json!({"a":1,"b":2}), &json!({"b":2,"a":1})).is_some());
 }

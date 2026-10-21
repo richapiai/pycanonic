@@ -50,7 +50,7 @@ fn number(raw: &str) -> Value<'_> {
 }
 
 impl<'a, 'b> Doc for &'a Node<'b> {
-    /// A duplicated key reads its last value, as `JSON.parse` does (`extract` keeps the first).
+    /// A duplicated key reads its last value, as `JSON.parse` does; see `members`.
     fn get(&self, key: &Key) -> Option<Self> {
         match self {
             Node::Obj(m) => m.iter().rfind(|(k, _)| *k == key.s).map(|(_, v)| v),
@@ -91,8 +91,8 @@ impl<'a, 'b> Doc for &'a Node<'b> {
         self.idx(i)
     }
 
-    /// Like `JSON.parse`, a repeated key keeps its first position and its last value. Path reads
-    /// through `get` stay first-wins (the parser's rule); the two differ only on duplicate keys.
+    /// Like `JSON.parse`, a repeated key keeps its first position and its last value, the value
+    /// `get` reads too. Only `extract` keeps the first value (known-limits.md, "Duplicate keys").
     fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>> {
         let Node::Obj(m) = self else { return None };
         let mut out: Vec<(Cow<'_, str>, Self)> = Vec::with_capacity(m.len());

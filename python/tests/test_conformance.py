@@ -20,9 +20,13 @@ CASES = sorted((CONFORMANCE / "cases").glob("**/*.json"))
 EXCLUDED = set(re.findall(r"^- `([^`]+)`", (CONFORMANCE / "EXCLUDED.md").read_text(), re.M))
 
 
-def blank(v):
-    """What the TypeScript artifact maps a body it never parsed to: canonical objects of nulls."""
-    return {k: blank(x) for k, x in v.items()} if isinstance(v, dict) else None
+def blank(schema):
+    """What the TypeScript artifact maps a body it never parsed to: the canonical schema's objects,
+    every other field null."""
+    props = schema.get("properties")
+    if schema.get("type") == "object" and isinstance(props, dict):
+        return {k: blank(x) for k, x in props.items()}
+    return None
 
 
 def test_the_corpus_is_vendored():
@@ -30,7 +34,8 @@ def test_the_corpus_is_vendored():
 
 
 def test_compare_rule():
-    assert diff(2**53 + 1, float(2**53)) is None
+    assert diff(2**53 + 1, 2**53) is None
+    assert diff(2**53 + 4, 2**53) is not None
     assert diff(1, 1.0) is None
     assert diff(True, 1) is not None
     assert diff({"a": 1, "b": 2}, {"b": 2, "a": 1}) is not None
@@ -53,13 +58,13 @@ def test_case(path):
     if "error" in case:
         with pytest.raises(pycanonic.SpecError) as e:
             pycanonic.compile_spec(case["spec"], case["canonical"])
-        assert str(e.value) == case["error"]
+        assert fffd(str(e.value)) == fffd(case["error"])
         return
 
     a = pycanonic.compile_spec(case["spec"], case["canonical"])
     maps, want_stats = case["expected"]["map"], case["expected"]["stats"]
     bodies = [fffd(s).encode() for s in case["inputs"]]
-    shape = blank(next((m for m in maps if m is not None), None))
+    shape = blank(case["canonical"])
     fails = []
     for name, map_one in _paths(a, bodies):
         a.stats.reset()

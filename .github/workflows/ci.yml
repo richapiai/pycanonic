@@ -51,9 +51,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       # The corpus runners live in `cargo test` and `pytest python/tests`; this fails once the
-      # vendored corpus is more than 30 days behind, so conformance/sync.sh gets run again.
+      # last conformance/sync.sh run (line 3 of SOURCE_COMMIT) is more than 30 days old.
       - run: |
-          committed=$(sed -n 2p conformance/SOURCE_COMMIT)
-          age=$(( ($(date +%s) - $(date -d "$committed" +%s)) / 86400 ))
-          echo "corpus $(head -1 conformance/SOURCE_COMMIT) from $committed, $age days old"
+          synced=$(sed -n 3p conformance/SOURCE_COMMIT)
+          age=$(( ($(date +%s) - $(date -d "$synced" +%s)) / 86400 ))
+          echo "corpus $(head -1 conformance/SOURCE_COMMIT) synced $synced, $age days ago"
           test "$age" -le 30
