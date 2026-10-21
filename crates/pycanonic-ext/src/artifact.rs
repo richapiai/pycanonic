@@ -1,4 +1,5 @@
-//! The `Artifact` class: a compiled plan with its stats, mapping Python objects, `bytes` or `str`.
+//! The `Artifact` class: a compiled plan with its stats, mapping Python objects or JSON text
+//! (`bytes`, `str`, `bytearray`, `memoryview`).
 
 use crate::pydoc::{PyDoc, text};
 use crate::pysink::{PySink, value};
@@ -7,7 +8,10 @@ use crate::view::{Level, View, levels};
 use canonic_core::{CompileError, Plan, Status, Transform, Value};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyString};
+use pyo3::types::{
+    PyByteArray, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView, PyString,
+    PyTuple,
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -46,17 +50,49 @@ pub fn value_error(e: CompileError) -> PyErr {
     PyValueError::new_err(e.message)
 }
 
-/// The UTF-8 bytes of a `bytes` or `str` input; `None` for any other object.
-pub(crate) fn body_of<'s>(src: &'s Bound<'_, PyAny>) -> Option<Cow<'s, [u8]>> {
-    if let Ok(b) = src.cast::<PyBytes>() {
+/// The JSON text of a `bytes`, `str`, `bytearray` or `memoryview` input; `None` for any other
+/// object. A `bytearray` or `memoryview` is copied: another thread may change it while the GIL is
+/// released.
+pub(crate) fn body_of<'s>(src: &'s Bound<'_, PyAny>) -> PyResult<Option<Cow<'s, [u8]>>> {
+    Ok(if let Ok(b) = src.cast::<PyBytes>() {
         Some(Cow::Borrowed(b.as_bytes()))
     } else if let Ok(s) = src.cast::<PyString>() {
         Some(match text(s) {
             Cow::Borrowed(t) => Cow::Borrowed(t.as_bytes()),
             Cow::Owned(t) => Cow::Owned(t.into_bytes()),
         })
+    } else if let Ok(b) = src.cast::<PyByteArray>() {
+        Some(Cow::Owned(b.to_vec()))
+    } else if src.is_instance_of::<PyMemoryView>() {
+        let b = src.call_method0("tobytes")?;
+        Some(Cow::Owned(b.cast::<PyBytes>()?.as_bytes().to_vec()))
     } else {
         None
+    })
+}
+
+/// The root `map` and `view` read as a Python object tree: what `json.loads` returns (`dict`,
+/// `list`, `None`, `bool`, `int`, `float`) or a `tuple` as is, any other `Mapping` copied one level
+/// into a `dict`. Anything else is a `TypeError`, not an all-`None` result.
+pub(crate) fn object_root<'py>(src: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    if src.is_instance_of::<PyDict>()
+        || src.is_instance_of::<PyList>()
+        || src.is_instance_of::<PyTuple>()
+        || src.is_none()
+        || src.is_instance_of::<PyInt>()
+        || src.is_instance_of::<PyFloat>()
+    {
+        Ok(src.clone())
+    } else if let Ok(m) = src.cast::<PyMapping>() {
+        let d = PyDict::new(src.py());
+        d.update(m)?;
+        Ok(d.into_any())
+    } else {
+        Err(PyTypeError::new_err(format!(
+            "expected JSON text (bytes, str, bytearray, memoryview) or a parsed value (dict, \
+             list, tuple, Mapping, None, bool, int, float), not {}",
+            src.get_type().name()?
+        )))
     }
 }
 
@@ -120,10 +156,10 @@ impl Artifact {
         self.inner.plan.source()
     }
 
-    /// `bytes` or `str` is parsed with the GIL released, then mapped straight into Python objects;
-    /// any other object is read as is.
+    /// JSON text (`bytes`, `str`, `bytearray`, `memoryview`) is parsed with the GIL released, then
+    /// mapped straight into Python objects; a `dict`, `list`, `tuple` or `Mapping` is read as is.
     fn map<'py>(&self, py: Python<'py>, src: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-        let out = if let Some(body) = body_of(src) {
+        let out = if let Some(body) = body_of(src)? {
             let node = py.detach(|| self.inner.parse(&body));
             let mut sink = PySink {
                 py,
@@ -132,7 +168,7 @@ impl Artifact {
             self.inner.map_with(node.as_ref().as_ref(), &mut sink)
         } else {
             let doc = PyDoc {
-                obj: src.clone(),
+                obj: object_root(src)?,
                 keys: &self.keys,
             };
             let mut sink = PySink {
@@ -150,26 +186,28 @@ impl Artifact {
         py: Python<'py>,
         raw: &Bound<'py, PyAny>,
     ) -> PyResult<Bound<'py, PyBytes>> {
-        let body =
-            body_of(raw).ok_or_else(|| PyTypeError::new_err("map_json takes bytes or str"))?;
+        let body = body_of(raw)?.ok_or_else(|| {
+            PyTypeError::new_err("map_json takes bytes, str, bytearray or memoryview")
+        })?;
         let out = py.detach(|| self.inner.map_json(&body));
         take_pending().map_or(Ok(PyBytes::new(py, &out)), Err)
     }
 
-    /// The routing fields read straight from `bytes` or `str`, keyed by spec field; GIL released.
+    /// The routing fields read straight from JSON text, keyed by spec field; GIL released.
     fn extract<'py>(
         &self,
         py: Python<'py>,
         raw: &Bound<'py, PyAny>,
     ) -> PyResult<Bound<'py, PyDict>> {
-        let body =
-            body_of(raw).ok_or_else(|| PyTypeError::new_err("extract takes bytes or str"))?;
+        let body = body_of(raw)?.ok_or_else(|| {
+            PyTypeError::new_err("extract takes bytes, str, bytearray or memoryview")
+        })?;
         let out = py.detach(|| self.inner.extract(&body));
         take_pending().map_or_else(|| routing_dict(py, &self.routing, &out), Err)
     }
 
     /// A lazy canonical object over `src` (as `map` takes it): each field is mapped on first read.
-    fn view(slf: Py<Self>, py: Python<'_>, src: &Bound<'_, PyAny>) -> View {
+    fn view(slf: Py<Self>, py: Python<'_>, src: &Bound<'_, PyAny>) -> PyResult<View> {
         View::new(py, slf, src)
     }
 
@@ -260,9 +298,12 @@ fn finished() -> PyErr {
 
 #[pymethods]
 impl ExtractStream {
-    /// Feeds `bytes` or `str`; `True` once every routing field is available. GIL released.
+    /// Feeds `bytes`, `str`, `bytearray` or `memoryview`; `True` once every routing field is
+    /// available. GIL released.
     fn push(&self, py: Python<'_>, chunk: &Bound<'_, PyAny>) -> PyResult<bool> {
-        let body = body_of(chunk).ok_or_else(|| PyTypeError::new_err("push takes bytes or str"))?;
+        let body = body_of(chunk)?.ok_or_else(|| {
+            PyTypeError::new_err("push takes bytes, str, bytearray or memoryview")
+        })?;
         let done = py.detach(|| {
             let mut g = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
             g.as_mut().map(|s| s.push(&body))

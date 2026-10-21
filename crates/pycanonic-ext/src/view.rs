@@ -1,7 +1,7 @@
 //! `artifact.view(src)`: each canonical field is mapped on its first read and kept, nested objects
 //! are views, and nothing counts stats; codegen.ts's View classes. `to_dict()` maps the whole level.
 
-use crate::artifact::{Artifact, body_of};
+use crate::artifact::{Artifact, body_of, object_root};
 use crate::pydoc::PyDoc;
 use crate::pysink::PySink;
 use crate::transforms::take_pending;
@@ -116,22 +116,22 @@ fn slots(n: usize) -> Box<[PyOnceLock<Py<PyAny>>]> {
 }
 
 impl View {
-    pub fn new(py: Python<'_>, artifact: Py<Artifact>, src: &Bound<'_, PyAny>) -> View {
+    pub fn new(py: Python<'_>, artifact: Py<Artifact>, src: &Bound<'_, PyAny>) -> PyResult<View> {
         let a = artifact.get();
-        let doc = match body_of(src) {
+        let doc = match body_of(src)? {
             Some(body) => {
                 let body = body.into_owned();
                 Source::Parsed(py.detach(|| Parsed::new(body, |b| a.inner.parse(b))))
             }
-            None => Source::Object(src.clone().unbind()),
+            None => Source::Object(object_root(src)?.unbind()),
         };
         let n = a.levels[0].fields.len();
-        View {
+        Ok(View {
             artifact,
             doc: Arc::new(doc),
             level: 0,
             cache: slots(n),
-        }
+        })
     }
 
     fn fields(&self) -> &[LevelField] {

@@ -165,3 +165,36 @@ def test_a_lone_surrogate_in_a_dict_str_maps_like_the_escape_in_bytes(bench):
     from_bytes = a.map(b'{"profile":{"fullName":"a\\udc00b"}}')
     assert from_dict["full_name"] == from_bytes["full_name"] == "a\ufffdb"
     assert from_dict == from_bytes
+
+
+def test_buffers_map_like_bytes():
+    from types import MappingProxyType
+
+    acme = _core.compile(SPEC, CANONICAL, None)
+    routed = acme.extract(BODY)
+    for src in (bytearray(BODY.encode()), memoryview(BODY.encode())):
+        assert acme.map(src) == WANT
+        assert json.loads(acme.map_json(src)) == WANT
+        assert acme.view(src).to_dict() == WANT
+        assert acme.extract(src) == routed
+        s = acme.stream()
+        s.push(src)
+        assert s.result() == routed
+    proxy = MappingProxyType(json.loads(BODY))
+    assert acme.map(proxy) == WANT
+    assert acme.view(proxy).to_dict() == WANT
+
+
+@pytest.mark.parametrize("root", [7, None, True, 1.5])
+def test_a_scalar_root_maps_like_its_json_text(root):
+    acme = _core.compile(SPEC, CANONICAL, None)
+    assert acme.map(root) == acme.map(json.dumps(root))
+
+
+@pytest.mark.parametrize("root", [object(), {1, 2}, frozenset(), range(3)])
+def test_a_root_that_is_not_json_raises(root):
+    acme = _core.compile(SPEC, CANONICAL, None)
+    with pytest.raises(TypeError, match="expected JSON text"):
+        acme.map(root)
+    with pytest.raises(TypeError, match="expected JSON text"):
+        acme.view(root)

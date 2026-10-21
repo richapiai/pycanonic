@@ -77,17 +77,19 @@ class Artifact:
     source: str                       # the plan listing, one line per field
     stats: Stats
 
-    def map(self, src: object) -> dict[str, Any]: ...
-    def map_json(self, raw: bytes | str) -> bytes: ...
-    def view(self, src: object) -> View: ...
-    def extract(self, raw: bytes | str) -> dict[str, Any]: ...
+    def map(self, src: Json | Parsed) -> dict[str, Any]: ...
+    def map_json(self, raw: Json) -> bytes: ...
+    def view(self, src: Json | Parsed) -> View: ...
+    def extract(self, raw: Json) -> dict[str, Any]: ...
     def stream(self) -> ExtractStream: ...
     def plan_json(self) -> str: ...
     def stats_snapshot(self) -> dict: ...   # the same as stats.snapshot()
     def stats_reset(self) -> None: ...      # the same as stats.reset()
 ```
 
-- `map(src)` returns the full canonical object as nested dicts. `src` is a parsed object, or `bytes` or `str` of JSON text. It never raises on bad data, and it counts stats.
+`Json` is JSON text: `bytes | str | bytearray | memoryview`. A `bytearray` or `memoryview` is copied before parsing. `Parsed` is what `json.loads` returns (`dict`, `list`, `int`, `float`, `bool`, `None`), a `tuple`, or any other `Mapping` at the root, which is copied one level into a `dict`. Below the root only `dict`, `list` and `tuple` have members.
+
+- `map(src)` returns the full canonical object as nested dicts. It never raises on bad data, and it counts stats. A root that is neither `Json` nor `Parsed` (a `set`, an arbitrary object) raises `TypeError`.
 - `map_json(raw)` takes JSON text and returns the canonical object as JSON `bytes`. It builds no Python objects and counts stats. The bytes equal what `JSON.stringify` writes for the same value in the TypeScript package.
 - `view(src)` returns a lazy canonical object. Each field is mapped the first time you read it and then kept. It counts no stats.
 - `extract(raw)` reads the routing fields from JSON text without parsing the whole body. The result is flat and keyed by spec field (`{"company.domain": "acme.com"}`).
@@ -110,7 +112,7 @@ A nested canonical object is a view too, so `view.company.domain` works. `view.n
 
 ```python
 class ExtractStream:
-    def push(self, chunk: bytes | str) -> bool: ...   # True once every routing field is read
+    def push(self, chunk: Json) -> bool: ...          # True once every routing field is read
     def result(self) -> dict[str, Any]: ...           # ends the input, fields not found are None
 ```
 
