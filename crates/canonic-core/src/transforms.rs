@@ -293,7 +293,8 @@ fn js_number(s: &str) -> Option<f64> {
 
 /// `js_number` without the finiteness check: `"1e400"` is `Some(inf)`, as `Number()` gives Infinity.
 fn js_number_unbounded(s: &str) -> Option<f64> {
-    let t = js_trim(s).as_bytes();
+    let trimmed = js_trim(s);
+    let t = trimmed.as_bytes();
     let body = match t.first() {
         Some(b'+' | b'-') => &t[1..],
         _ => t,
@@ -326,7 +327,12 @@ fn js_number_unbounded(s: &str) -> Option<f64> {
     if end != body.len() {
         return None; // trailing text, or a 0x/0b/0o literal
     }
-    std::str::from_utf8(t).ok()?.parse().ok()
+    // Up to 15 digits and nothing else is exact in an f64: no float parse needed.
+    if end == int_end && int_end <= 15 {
+        let n = body.iter().fold(0u64, |n, c| n * 10 + u64::from(c - b'0')) as f64;
+        return Some(if t[0] == b'-' { -n } else { n });
+    }
+    trimmed.parse().ok()
 }
 
 fn to_number(v: &Value) -> Option<f64> {
