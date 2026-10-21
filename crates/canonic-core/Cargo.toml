@@ -25,3 +25,7 @@ harness = false
 [[bench]]
 name = "hot"
 harness = false
+
+[[bench]]
+name = "wide"
+harness = false
