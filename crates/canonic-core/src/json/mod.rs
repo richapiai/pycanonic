@@ -157,22 +157,20 @@ impl<'a> Parser<'a> {
             if self.buf.get(self.pos) != Some(&b'"') {
                 return self.err();
             }
-            let end = scan_string_end(self.buf, self.pos + 1)?;
-            let raw = &self.buf[self.pos + 1..end - 1];
-            self.pos = end;
+            let (raw, plain) = self.raw_string()?;
             self.ws();
             self.expect(b':')?;
             self.ws();
             let child = if f.all {
                 Some(&ALL)
             } else {
-                wanted(&f.keys, raw)
+                wanted(&f.keys, raw, plain)
             };
             // An unlisted member is skipped and not kept: no path reads it, so its key is never decoded.
             match child {
                 Some(c) => {
                     let v = self.value(c, depth)?;
-                    members.push((unescape(raw), v));
+                    members.push((decode(raw, plain), v));
                 }
                 None => _ = self.skip()?,
             }
@@ -257,10 +255,10 @@ impl<'a> Parser<'a> {
             }
             self.required_digits()?;
         }
-        // Only ASCII was consumed, so this cannot fail.
-        std::str::from_utf8(&self.buf[start..self.pos])
-            .map(Node::Num)
-            .or_else(|_| self.err())
+        // SAFETY: only the ASCII bytes matched above were consumed, and ASCII is UTF-8.
+        Ok(Node::Num(unsafe {
+            std::str::from_utf8_unchecked(&self.buf[start..self.pos])
+        }))
     }
 
     fn digits(&mut self) {
@@ -279,10 +277,29 @@ impl<'a> Parser<'a> {
 
     /// Reads a string; `pos` is on the opening quote and ends after the closing one.
     fn string(&mut self) -> Result<Cow<'a, str>, ParseError> {
-        let end = scan_string_end(self.buf, self.pos + 1)?;
-        let raw = &self.buf[self.pos + 1..end - 1];
+        let (raw, plain) = self.raw_string()?;
+        Ok(decode(raw, plain))
+    }
+
+    /// The bytes between the quotes of the string at `pos`, which ends past it, and whether they
+    /// are plain: no backslash and all ASCII, so they are their own decoded text. Short plain
+    /// strings, most keys and values, are settled in one byte loop.
+    fn raw_string(&mut self) -> Result<(&'a [u8], bool), ParseError> {
+        let start = self.pos + 1;
+        let mut i = start;
+        while let Some(&c) = self.buf.get(i) {
+            match c {
+                b'"' => {
+                    self.pos = i + 1;
+                    return Ok((&self.buf[start..i], true));
+                }
+                b'\\' | 0x80.. => break,
+                _ => i += 1,
+            }
+        }
+        let end = scan_string_end(self.buf, i)?;
         self.pos = end;
-        Ok(unescape(raw))
+        Ok((&self.buf[start..end - 1], false))
     }
 
     /// Skips the value at `pos` without building it.
@@ -309,15 +326,23 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// The filter entry for the member whose key has the raw (still escaped) bytes `raw`. Filter keys
-/// are decoded UTF-8, so raw bytes with no backslash that are valid UTF-8 are compared as they are
-/// and only an escaped or broken key is decoded.
-fn wanted<'f>(keys: &'f [(Box<[u8]>, Filter)], raw: &[u8]) -> Option<&'f Filter> {
-    let find = |key: &[u8]| keys.iter().find(|(k, _)| **k == *key).map(|(_, c)| c);
-    if !raw.contains(&b'\\') && (raw.is_ascii() || std::str::from_utf8(raw).is_ok()) {
-        return find(raw);
+/// A string's text from its raw bytes; `plain` (see `Parser::raw_string`) bytes are it already.
+fn decode(raw: &[u8], plain: bool) -> Cow<'_, str> {
+    match plain {
+        // SAFETY: `raw_string` saw every plain byte below 0x80, and ASCII is UTF-8.
+        true => Cow::Borrowed(unsafe { std::str::from_utf8_unchecked(raw) }),
+        false => unescape(raw),
     }
-    find(unescape(raw).as_bytes())
+}
+
+/// The filter entry for the member whose key has the raw (still escaped) bytes `raw`. Filter keys
+/// are decoded UTF-8: plain bytes are compared as they are, anything else is decoded first.
+fn wanted<'f>(keys: &'f [(Box<[u8]>, Filter)], raw: &[u8], plain: bool) -> Option<&'f Filter> {
+    let find = |key: &[u8]| keys.iter().find(|(k, _)| **k == *key).map(|(_, c)| c);
+    match plain {
+        true => find(raw),
+        false => find(unescape(raw).as_bytes()),
+    }
 }
 
 // The byte scans: the reference for `simd::skip`, and the fallback where it gives up.
