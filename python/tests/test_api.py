@@ -166,8 +166,9 @@ def test_this_file_passes_mypy_strict() -> None:
     cli = str(Path(__file__).with_name("test_cli_test_build.py"))
     infer = str(Path(__file__).with_name("test_infer.py"))
     diff = str(Path(__file__).with_name("test_diff.py"))
+    bench = str(Path(__file__).with_name("test_bench_cmd.py"))
     done = subprocess.run(
-        [sys.executable, "-m", "mypy", "--strict", "--no-incremental", __file__, drift, shadow, cli, infer, diff],
+        [sys.executable, "-m", "mypy", "--strict", "--no-incremental", __file__, drift, shadow, cli, infer, diff, bench],
         capture_output=True,
         text=True,
     )

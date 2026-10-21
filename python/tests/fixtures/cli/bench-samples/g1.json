@@ -1,0 +1,42 @@
+{
+  "person_id": 1,
+  "fname": "Alan",
+  "lname": "Knuth",
+  "e_mail": "alan.knuth@globex1.com",
+  "tel": "+1-415-555-0101",
+  "li_url": "linkedin.com/in/alan-knuth-1",
+  "job_title": "Head of Data",
+  "org_name": "Globex Inc",
+  "org_url": "http://globex1.com",
+  "num_employees": 47,
+  "sector": "Energy",
+  "city": "Toronto",
+  "country_code": "CA",
+  "jobs": [
+    {
+      "job_title": "Head of Data",
+      "employer": "Initech Ltd",
+      "start_date": "2010-01",
+      "end_date": "2012-10"
+    },
+    {
+      "job_title": "Staff Engineer",
+      "employer": "Umbrella Ltd",
+      "start_date": "2011-02",
+      "end_date": "2013-11"
+    }
+  ],
+  "skill_list": [
+    "GO",
+    "PYTHON"
+  ],
+  "last_updated": 1700086400000,
+  "attr_0": 31,
+  "attr_1": 32,
+  "attr_2": 33,
+  "attr_3": 34,
+  "attr_4": 35,
+  "attr_5": 36,
+  "attr_6": 37,
+  "attr_7": 38
+}

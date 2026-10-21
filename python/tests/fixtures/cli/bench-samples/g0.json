@@ -1,0 +1,36 @@
+{
+  "person_id": 0,
+  "fname": "Ada",
+  "lname": "Lovelace",
+  "e_mail": "ada.lovelace@acme0.com",
+  "tel": "+1-415-555-0100",
+  "li_url": "linkedin.com/in/ada-lovelace-0",
+  "job_title": "VP Engineering",
+  "org_name": "Acme Inc",
+  "org_url": "http://acme0.com",
+  "num_employees": 10,
+  "sector": "Software",
+  "city": "London",
+  "country_code": "GB",
+  "jobs": [
+    {
+      "job_title": "VP Engineering",
+      "employer": "Globex Ltd",
+      "start_date": "2010-01",
+      "end_date": "2012-10"
+    }
+  ],
+  "skill_list": [
+    "SQL",
+    "SALES"
+  ],
+  "last_updated": 1700000000000,
+  "attr_0": 0,
+  "attr_1": 1,
+  "attr_2": 2,
+  "attr_3": 3,
+  "attr_4": 4,
+  "attr_5": 5,
+  "attr_6": 6,
+  "attr_7": 7
+}

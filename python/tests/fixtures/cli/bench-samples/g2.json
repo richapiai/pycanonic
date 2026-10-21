@@ -1,0 +1,42 @@
+{
+  "person_id": 7,
+  "fname": "John",
+  "lname": "Berners-Lee",
+  "e_mail": "john.berners-lee@globex7.com",
+  "tel": "+1-415-555-0107",
+  "li_url": "linkedin.com/in/john-berners-lee-7",
+  "job_title": "Head of Data",
+  "org_name": "Globex Inc",
+  "org_url": "http://globex7.com",
+  "num_employees": 269,
+  "sector": "Energy",
+  "city": "Toronto",
+  "country_code": "CA",
+  "jobs": [
+    {
+      "job_title": "Head of Data",
+      "employer": "Initech Ltd",
+      "start_date": "2010-01",
+      "end_date": "2012-10"
+    },
+    {
+      "job_title": "Staff Engineer",
+      "employer": "Umbrella Ltd",
+      "start_date": "2011-02",
+      "end_date": "2013-11"
+    }
+  ],
+  "skill_list": [
+    "KOTLIN",
+    "RUST"
+  ],
+  "last_updated": 1700604800000,
+  "attr_0": 217,
+  "attr_1": 218,
+  "attr_2": 219,
+  "attr_3": 220,
+  "attr_4": 221,
+  "attr_5": 222,
+  "attr_6": 223,
+  "attr_7": 224
+}
