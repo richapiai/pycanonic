@@ -1,0 +1,95 @@
+{
+  "type": "object",
+  "properties": {
+    "first_name": {
+      "type": "string"
+    },
+    "last_name": {
+      "type": "string"
+    },
+    "full_name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "semantic": "email",
+      "routing": true
+    },
+    "phone": {
+      "type": "string",
+      "semantic": "phone",
+      "routing": true
+    },
+    "title": {
+      "type": "string"
+    },
+    "seniority": {
+      "type": "string"
+    },
+    "linkedin_url": {
+      "type": "string"
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": "string"
+        },
+        "country": {
+          "type": "string"
+        }
+      }
+    },
+    "company": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string",
+          "semantic": "domain",
+          "routing": true
+        },
+        "headcount": {
+          "type": "integer"
+        },
+        "industry": {
+          "type": "string"
+        },
+        "founded": {
+          "type": "string"
+        }
+      }
+    },
+    "experiences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "updated_at": {
+      "type": "string"
+    }
+  }
+}
