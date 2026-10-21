@@ -1,0 +1,280 @@
+{
+  "cases": [
+    {
+      "payload": {
+        "id": "n_0",
+        "profile": {
+          "fullName": "Ada Lovelace",
+          "headline": " VP Engineering ",
+          "level": "vp"
+        },
+        "contact": {
+          "workEmail": null,
+          "emails": [
+            {
+              "address": "ada.lovelace@acme0.com",
+              "type": "work"
+            }
+          ],
+          "mobile": "+1 415 555 0100"
+        },
+        "social": {
+          "li": "https://www.linkedin.com/in/ada-lovelace-0/"
+        },
+        "geo": {
+          "city": "London",
+          "countryCode": "GB"
+        },
+        "org": {
+          "name": "Acme Inc",
+          "website": "https://www.acme0.com/about",
+          "size": "10",
+          "industry": "Software",
+          "foundedOn": "1990-01-10"
+        },
+        "workHistory": [
+          {
+            "role": "VP Engineering",
+            "orgName": "Globex Ltd",
+            "from": "2010-01",
+            "to": "2012-10"
+          }
+        ],
+        "tags": [
+          {
+            "label": "SQL"
+          },
+          {
+            "label": "SALES"
+          }
+        ],
+        "_meta": {
+          "updated": 1700000000
+        },
+        "stats": {
+          "s0": 0,
+          "s1": 1,
+          "s2": 2,
+          "s3": 3,
+          "s4": 4,
+          "s5": 5,
+          "s6": 6,
+          "s7": 7,
+          "s8": 8,
+          "s9": 9
+        }
+      },
+      "expected": {
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "full_name": "Ada Lovelace",
+        "email": "ada.lovelace@acme0.com",
+        "phone": "+14155550100",
+        "title": "VP Engineering",
+        "linkedin_url": "https://www.linkedin.com/in/ada-lovelace-0",
+        "location": {
+          "city": "London",
+          "country": "GB"
+        },
+        "company": {
+          "name": "Acme Inc",
+          "domain": "acme0.com",
+          "headcount": 10,
+          "industry": "Software"
+        },
+        "skills": [
+          "sql",
+          "sales"
+        ]
+      }
+    },
+    {
+      "payload": {
+        "id": "n_1",
+        "profile": {
+          "fullName": "Alan Knuth",
+          "headline": " Head of Data ",
+          "level": "head"
+        },
+        "contact": {
+          "workEmail": "alan.knuth@globex1.com",
+          "emails": [
+            {
+              "address": "alan.knuth@globex1.com",
+              "type": "work"
+            }
+          ],
+          "mobile": "+1 415 555 0101"
+        },
+        "social": {
+          "li": "https://www.linkedin.com/in/alan-knuth-1/"
+        },
+        "geo": {
+          "city": "Toronto",
+          "countryCode": "CA"
+        },
+        "org": {
+          "name": "Globex Inc",
+          "website": "https://www.globex1.com/about",
+          "size": "47",
+          "industry": "Energy",
+          "foundedOn": "1991-02-11"
+        },
+        "workHistory": [
+          {
+            "role": "Head of Data",
+            "orgName": "Initech Ltd",
+            "from": "2010-01",
+            "to": "2012-10"
+          },
+          {
+            "role": "Staff Engineer",
+            "orgName": "Umbrella Ltd",
+            "from": "2011-02",
+            "to": "2013-11"
+          }
+        ],
+        "tags": [
+          {
+            "label": "GO"
+          },
+          {
+            "label": "PYTHON"
+          }
+        ],
+        "_meta": {
+          "updated": 1700086400
+        },
+        "stats": {
+          "s0": 31,
+          "s1": 32,
+          "s2": 33,
+          "s3": 34,
+          "s4": 35,
+          "s5": 36,
+          "s6": 37,
+          "s7": 38,
+          "s8": 39,
+          "s9": 40
+        }
+      },
+      "expected": {
+        "first_name": "Alan",
+        "last_name": "Knuth",
+        "full_name": "Alan Knuth",
+        "email": "alan.knuth@globex1.com",
+        "phone": "+14155550101",
+        "title": "Head of Data",
+        "linkedin_url": "https://www.linkedin.com/in/alan-knuth-1",
+        "location": {
+          "city": "Toronto",
+          "country": "CA"
+        },
+        "company": {
+          "name": "Globex Inc",
+          "domain": "globex1.com",
+          "headcount": 47,
+          "industry": "Energy"
+        },
+        "skills": [
+          "go",
+          "python"
+        ]
+      }
+    },
+    {
+      "payload": {
+        "id": "n_7",
+        "profile": {
+          "fullName": "John Berners-Lee",
+          "headline": " Head of Data ",
+          "level": "head"
+        },
+        "contact": {
+          "workEmail": "john.berners-lee@globex7.com",
+          "emails": [
+            {
+              "address": "john.berners-lee@globex7.com",
+              "type": "work"
+            }
+          ],
+          "mobile": "+1 415 555 0107"
+        },
+        "social": {
+          "li": "https://www.linkedin.com/in/john-berners-lee-7/"
+        },
+        "geo": {
+          "city": "Toronto",
+          "countryCode": "CA"
+        },
+        "org": {
+          "name": "Globex Inc",
+          "website": "https://www.globex7.com/about",
+          "size": "269",
+          "industry": "Energy",
+          "foundedOn": "1997-08-17"
+        },
+        "workHistory": [
+          {
+            "role": "Head of Data",
+            "orgName": "Initech Ltd",
+            "from": "2010-01",
+            "to": "2012-10"
+          },
+          {
+            "role": "Staff Engineer",
+            "orgName": "Umbrella Ltd",
+            "from": "2011-02",
+            "to": "2013-11"
+          }
+        ],
+        "tags": [
+          {
+            "label": "KOTLIN"
+          },
+          {
+            "label": "RUST"
+          }
+        ],
+        "_meta": {
+          "updated": 1700604800
+        },
+        "stats": {
+          "s0": 217,
+          "s1": 218,
+          "s2": 219,
+          "s3": 220,
+          "s4": 221,
+          "s5": 222,
+          "s6": 223,
+          "s7": 224,
+          "s8": 225,
+          "s9": 226
+        }
+      },
+      "expected": {
+        "first_name": "John",
+        "last_name": "Berners-Lee",
+        "full_name": "John Berners-Lee",
+        "email": "john.berners-lee@globex7.com",
+        "phone": "+14155550107",
+        "title": "Head of Data",
+        "linkedin_url": "https://www.linkedin.com/in/john-berners-lee-7",
+        "location": {
+          "city": "Toronto",
+          "country": "CA"
+        },
+        "company": {
+          "name": "Globex Inc",
+          "domain": "globex7.com",
+          "headcount": 269,
+          "industry": "Energy"
+        },
+        "skills": [
+          "kotlin",
+          "rust"
+        ]
+      }
+    }
+  ]
+}

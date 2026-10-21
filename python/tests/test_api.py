@@ -163,8 +163,9 @@ def test_the_package_ships_stubs_and_the_typed_marker() -> None:
 def test_this_file_passes_mypy_strict() -> None:
     drift = str(Path(__file__).with_name("test_drift.py"))
     shadow = str(Path(__file__).with_name("test_shadow.py"))
+    cli = str(Path(__file__).with_name("test_cli_test_build.py"))
     done = subprocess.run(
-        [sys.executable, "-m", "mypy", "--strict", "--no-incremental", __file__, drift, shadow],
+        [sys.executable, "-m", "mypy", "--strict", "--no-incremental", __file__, drift, shadow, cli],
         capture_output=True,
         text=True,
     )

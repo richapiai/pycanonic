@@ -1,0 +1,69 @@
+{
+  "$schema": "../spec.schema.json",
+  "provider": "globex",
+  "endpoint": "person.enrich",
+  "version": 1,
+  "status": "promoted",
+  "anchors": {
+    "email": "\"e_mail\":"
+  },
+  "fields": {
+    "first_name": "fname",
+    "last_name": "lname",
+    "full_name": {
+      "from": [
+        "fname",
+        "lname"
+      ],
+      "transform": "join"
+    },
+    "email": {
+      "from": "e_mail",
+      "transform": [
+        "trim",
+        "lower"
+      ]
+    },
+    "phone": {
+      "from": "tel",
+      "transform": "normalize_phone"
+    },
+    "title": "job_title",
+    "linkedin_url": {
+      "from": "li_url",
+      "transform": "normalize_linkedin"
+    },
+    "location.city": "city",
+    "location.country": "country_code",
+    "company.name": "org_name",
+    "company.domain": {
+      "from": "org_url",
+      "transform": "to_domain"
+    },
+    "company.headcount": "num_employees",
+    "company.industry": "sector",
+    "experiences[]": {
+      "from": "jobs",
+      "item": {
+        "title": "job_title",
+        "company": "employer",
+        "start": {
+          "from": "start_date",
+          "transform": "parse_date"
+        },
+        "end": {
+          "from": "end_date",
+          "transform": "parse_date"
+        }
+      }
+    },
+    "skills[]": {
+      "from": "skill_list",
+      "transform": "lower"
+    },
+    "updated_at": {
+      "from": "last_updated",
+      "transform": "parse_date"
+    }
+  }
+}
