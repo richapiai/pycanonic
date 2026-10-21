@@ -4,7 +4,7 @@ pub mod artifact;
 pub mod canonical;
 pub mod doc;
 pub mod exec;
-pub mod extract;
+mod extract;
 pub mod json;
 pub mod plan;
 pub mod resolve;

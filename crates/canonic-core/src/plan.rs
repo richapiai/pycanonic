@@ -89,6 +89,10 @@ pub struct Plan {
     pub fields: Vec<Named<Field>>,
     /// Routing fields in schema order.
     pub routing: Vec<RoutingField>,
+    /// Indexes into `routing` of the anchored fields, in the spec's `anchors` order: a provider
+    /// that keeps its key order then costs `extract` one pass.
+    #[serde(default)]
+    pub anchors: Vec<usize>,
     /// Stat slot names in spec order, as codegen.ts names them: "company.domain", "jobs[]", "jobs[].title".
     pub stat_names: Vec<String>,
     /// The custom transform names given to `compile`; `TxRef::Custom::index` points here.

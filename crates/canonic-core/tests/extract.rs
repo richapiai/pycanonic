@@ -168,6 +168,19 @@ fn a_token_after_an_escaped_quote_is_not_the_anchor() {
 }
 
 #[test]
+fn anchors_are_searched_in_the_order_the_spec_lists_them() {
+    let mut spec = bench_spec(true);
+    spec["anchors"] = json!({ "company.domain": "\"website\":", "email": "\"workEmail\":", "phone": "\"mobile\":" });
+    let plan = compile(&spec, &fixture("specs/canonical/bench.json"), &[]).unwrap();
+    let names: Vec<&str> = plan
+        .anchors
+        .iter()
+        .map(|&i| plan.routing[i].name.as_str())
+        .collect();
+    assert_eq!(names, ["company.domain", "email", "phone"]);
+}
+
+#[test]
 fn anchors_out_of_document_order_are_still_found() {
     let raw =
         br#"{"org":{"website":"acme.com"},"contact":{"mobile":"4155550100","workEmail":"A@b.co"}}"#;
@@ -507,23 +520,71 @@ fn a_routing_value_split_inside_a_unicode_escape_streams_like_extract() {
     assert_eq!(keyed(&BENCH, &r), map_routing(&BENCH, raw));
 }
 
-#[test]
-fn one_byte_pushes_stay_linear() {
-    // Long unwanted container, long key, long captured string: every resumable state stretched.
+/// The fastest of `n` runs of `f`, so one slow run (a context switch) can't decide a ratio.
+fn fastest(n: usize, mut f: impl FnMut()) -> Duration {
+    (0..n)
+        .map(|_| {
+            let t = Instant::now();
+            f();
+            t.elapsed()
+        })
+        .min()
+        .unwrap()
+}
+
+/// A bench body behind `scale` copies of every resumable state stretched: a long unwanted
+/// container, a long key, a long value and a long captured email.
+fn padded(scale: usize) -> Vec<u8> {
     let body = std::str::from_utf8(raws()[0]).unwrap();
     let pad = format!(
         r#"{{"pad":{{"s":"{}","n":[{}0]}},"{}":"{}","contact":{{"workEmail":"{}@x.com"}},"#,
-        "x".repeat(20_000),
-        "1,".repeat(5_000),
-        "k".repeat(10_000),
-        "v".repeat(10_000),
-        "a".repeat(10_000),
+        "x".repeat(2_000 * scale),
+        "1,".repeat(500 * scale),
+        "k".repeat(1_000 * scale),
+        "v".repeat(1_000 * scale),
+        "a".repeat(1_000 * scale),
     );
-    let raw = format!("{pad}{}", &body[1..]);
-    let t = Instant::now();
-    let got = bytewise(&BENCH, raw.as_bytes());
-    assert!(t.elapsed() < Duration::from_secs(1), "{:?}", t.elapsed());
-    assert_eq!(got, ex(&BENCH, raw.as_bytes()));
+    format!("{pad}{}", &body[1..]).into_bytes()
+}
+
+#[test]
+fn one_byte_pushes_stay_linear() {
+    // Four times the input must cost about four times as much; a rescan per push would cost 16.
+    let (small, big) = (padded(4), padded(16));
+    assert_eq!(bytewise(&BENCH, &big), ex(&BENCH, &big));
+    let t_small = fastest(3, || _ = bytewise(&BENCH, &small));
+    let t_big = fastest(3, || _ = bytewise(&BENCH, &big));
+    let ratio = t_big.as_secs_f64() / t_small.as_secs_f64();
+    assert!(
+        ratio < 8.0,
+        "{ratio:.1}x for 4x the input ({t_small:?} -> {t_big:?})"
+    );
+}
+
+#[test]
+fn extract_stops_reading_at_the_last_routing_field() {
+    // All three routing fields in the first 200 bytes, behind one small unwanted object.
+    let prefix = br#"{"x":{"a":[1,2]},"contact":{"workEmail":"a@b.co","mobile":"4155550100"},"org":{"website":"acme.com"}"#;
+    let mut big = prefix.to_vec();
+    big.extend_from_slice(br#","pad":["#);
+    while big.len() < 1 << 20 {
+        big.extend_from_slice(br#"{"k":"[{\"x\":1}]","n":[1,{"m":null}]},"#);
+    }
+    big.extend_from_slice(b"0]}");
+    for a in [&*BENCH, &*BENCH_ANCHORED] {
+        assert_eq!(ex(a, &big), ex(a, prefix));
+        assert_eq!(
+            ex(a, prefix),
+            json!({ "email": "a@b.co", "phone": "4155550100", "company.domain": "acme.com" })
+        );
+        let t_prefix = fastest(50, || _ = a.extract(prefix));
+        let t_big = fastest(50, || _ = a.extract(&big));
+        let ratio = t_big.as_secs_f64() / t_prefix.as_secs_f64();
+        assert!(
+            ratio < 10.0,
+            "{ratio:.1}x the prefix's time ({t_prefix:?} -> {t_big:?})"
+        );
+    }
 }
 
 // Generated documents (fuzz/gen.ts, reduced to the keys the acme spec reads)

@@ -7,16 +7,16 @@
 //! keys: the first occurrence wins.
 //!
 //! `extract` tries anchors first (a `memmem` search for the key token, skipping a hit preceded by
-//! an odd run of backslashes), then scans for whatever they missed; its container skips walk the
-//! stage-1 structural index. `stream` always scans, over bytes: the index's in-string and backslash
-//! carries would have to survive chunk boundaries, and a stream's pace is set by its input anyway.
+//! an odd run of backslashes), then scans for whatever they missed. `stream` always scans. Skips
+//! walk bytes, never past the last wanted value: a stage-1 index of the whole input would read the
+//! whole body, however early the fields sit.
 //!
 //! Captured values are decoded like the parser does (`unescape`, the `Node::Num` rule) and go
 //! through the field's transforms and validator with the executor's own functions, so `extract`
 //! equals the routing fields of `map`.
 
 use crate::exec::{transform, transform_many};
-use crate::json::{ALL, Filter, MAX_BYTES, Node, parse, simd, unescape};
+use crate::json::{ALL, Filter, Node, parse, unescape};
 use crate::plan::{Plan, Scalar, TxRef};
 use crate::spec::{Source, Step};
 use crate::transforms::Transform;
@@ -110,18 +110,18 @@ fn child(nodes: &mut Vec<TNode>, n: usize, step: &Step) -> usize {
 
 /// What `Artifact` builds once from the plan: the trie, the path slots of each routing field, the
 /// anchor finders, and what the routing values go through.
-pub struct Extractor {
+pub(crate) struct Extractor {
     trie: Trie,
     routing: Vec<Scalar>,
     /// Per routing field, the slot of each source path.
     slots: Vec<Vec<usize>>,
-    /// Slot and finder of each anchored field, in routing order.
+    /// Slot and finder of each anchored field, in the spec's `anchors` order.
     anchors: Vec<(usize, Finder<'static>)>,
     custom: Vec<Arc<dyn Transform>>,
 }
 
 impl Extractor {
-    pub fn new<'p>(plan: &'p Plan, custom: &[Arc<dyn Transform>]) -> Extractor {
+    pub(crate) fn new<'p>(plan: &'p Plan, custom: &[Arc<dyn Transform>]) -> Extractor {
         let mut paths: Vec<&[Step]> = Vec::new();
         let mut slot = |p: &'p [Step]| match paths.iter().position(|q| *q == p) {
             Some(i) => i,
@@ -136,8 +136,11 @@ impl Extractor {
                 Source::FromMany(ps) | Source::Coalesce(ps) => ps.iter().map(|p| slot(p)).collect(),
             })
             .collect();
-        let anchors = (plan.routing.iter().zip(&slots))
-            .filter_map(|(r, s)| Some((s[0], Finder::new(r.anchor.as_ref()?).into_owned())))
+        let anchors = (plan.anchors.iter())
+            .filter_map(|&i| {
+                let token = plan.routing.get(i)?.anchor.as_ref()?;
+                Some((slots[i][0], Finder::new(token).into_owned()))
+            })
             .collect();
         Extractor {
             trie: Trie::new(&paths),
@@ -148,9 +151,9 @@ impl Extractor {
         }
     }
 
-    /// Anchors first, then one scan over the structural index for what they missed.
-    pub fn extract(&self, raw: &[u8]) -> Vec<Option<Value<'static>>> {
-        let mut s = State::new(self.trie.len, raw.len() <= MAX_BYTES);
+    /// Anchors first, then one scan for what they missed.
+    pub(crate) fn extract(&self, raw: &[u8]) -> Vec<Option<Value<'static>>> {
+        let mut s = State::new(self.trie.len);
         let mut r = Run {
             s: &mut s,
             t: &self.trie,
@@ -164,23 +167,28 @@ impl Extractor {
         r.s.pos = 0;
         r.s.mode = Mode::None;
         r.end();
-        self.results(&s.values)
+        self.results(|i| match s.slots[i] {
+            Slot::Found(a, b) => Some(&raw[a..b]),
+            _ => None,
+        })
     }
 
     /// A routing field's value: `None` when absent (every source path missing or null), `Null`
     /// when its transforms or validator reject what was found.
-    fn results(&self, values: &[Option<Vec<u8>>]) -> Vec<Option<Value<'static>>> {
+    /// `text(slot)` is the raw text captured for a path slot.
+    fn results<'b>(&self, text: impl Fn(usize) -> Option<&'b [u8]>) -> Vec<Option<Value<'static>>> {
         let fields = self.routing.iter().zip(&self.slots);
         fields
             .map(|(s, slots)| {
                 // A custom transform first in line gets a container whole; nothing else reads one.
                 let full = matches!(s.tx.first(), Some(TxRef::Custom { .. }));
-                let docs: Vec<Option<Node>> = (slots.iter())
-                    .map(|&i| values[i].as_deref().and_then(|v| node(v, full)))
-                    .map(|n| n.filter(|n| !matches!(n, Node::Null)))
-                    .collect();
+                let found = |&i: &usize| {
+                    let n = text(i).and_then(|v| node(v, full));
+                    n.filter(|n| !matches!(n, Node::Null))
+                };
                 let v = match s.source {
                     Source::FromMany(_) => {
+                        let docs: Vec<Option<Node>> = slots.iter().map(found).collect();
                         if docs.iter().all(Option::is_none) {
                             return None;
                         }
@@ -189,8 +197,8 @@ impl Extractor {
                     }
                     // `coalesce` takes the first present value and does not retry after a rejection.
                     _ => {
-                        let d = docs.iter().flatten().next()?;
-                        transform(&self.custom, &s.tx, s.validator, &d).into_owned()
+                        let d = slots.iter().find_map(found)?;
+                        transform(&self.custom, &s.tx, s.validator, &&d).into_owned()
                     }
                 };
                 Some(v)
@@ -223,12 +231,15 @@ pub struct ExtractStream {
     ex: Arc<Extractor>,
     buf: Vec<u8>,
     s: State,
+    /// Captured text, copied out of `buf` before it is compacted (`Slot::Kept`).
+    kept: Vec<Option<Vec<u8>>>,
 }
 
 impl ExtractStream {
     pub(crate) fn new(ex: Arc<Extractor>) -> ExtractStream {
-        let s = State::new(ex.trie.len, false);
+        let s = State::new(ex.trie.len);
         ExtractStream {
+            kept: vec![None; ex.trie.len],
             ex,
             buf: Vec::new(),
             s,
@@ -250,7 +261,12 @@ impl ExtractStream {
     /// Ends the input; unresolved fields are `None`.
     pub fn result(mut self) -> Vec<Option<Value<'static>>> {
         self.run().end();
-        self.ex.results(&self.s.values)
+        let (s, buf, kept) = (&self.s, &self.buf, &self.kept);
+        self.ex.results(|i| match s.slots[i] {
+            Slot::Found(a, b) => Some(&buf[a..b]),
+            Slot::Kept => kept[i].as_deref(),
+            Slot::Pending | Slot::Missing => None,
+        })
     }
 
     fn run(&mut self) -> Run<'_> {
@@ -264,6 +280,12 @@ impl ExtractStream {
     /// Drops consumed input, keeping a captured value's start and any partial token.
     fn compact(&mut self) {
         let s = &mut self.s;
+        for (slot, kept) in s.slots.iter_mut().zip(&mut self.kept) {
+            if let Slot::Found(a, b) = *slot {
+                *kept = Some(self.buf[a..b].to_vec());
+                *slot = Slot::Kept;
+            }
+        }
         if s.st == St::Done {
             self.buf = Vec::new();
             return;
@@ -305,11 +327,20 @@ struct Frame {
     idx: usize,
 }
 
+/// A path's value as the scanner knows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Slot {
+    Pending,
+    Missing,
+    /// The value's text is `start..end` of the input.
+    Found(usize, usize),
+    /// Found, and copied out of a stream's buffer.
+    Kept,
+}
+
 /// The scanner state that survives between pushes. Positions index the buffer it runs over.
 struct State {
-    /// Raw text of each path's value, `None` when missing.
-    values: Vec<Option<Vec<u8>>>,
-    resolved: Vec<bool>,
+    slots: Vec<Slot>,
     remaining: usize,
     pos: usize,
     /// No more input will come.
@@ -325,16 +356,12 @@ struct State {
     cap_node: usize,
     /// Where the closing-quote search of an unfinished key resumes.
     key_scan: usize,
-    /// Container skips may walk the structural index (whole input only), built on first use.
-    indexed: bool,
-    idx: Option<Vec<u32>>,
 }
 
 impl State {
-    fn new(len: usize, indexed: bool) -> State {
+    fn new(len: usize) -> State {
         State {
-            values: vec![None; len],
-            resolved: vec![false; len],
+            slots: vec![Slot::Pending; len],
             remaining: len,
             pos: 0,
             fin: false,
@@ -348,8 +375,6 @@ impl State {
             cap_start: 0,
             cap_node: 0,
             key_scan: 0,
-            indexed,
-            idx: None,
         }
     }
 }
@@ -560,12 +585,7 @@ impl Run<'_> {
             if self.s.v_depth == 0 {
                 return true;
             }
-            let done = if self.s.indexed && self.s.v_depth == 1 {
-                self.skip_indexed()
-            } else {
-                self.skip_bytes()
-            };
-            if !done {
+            if !self.skip_bytes() {
                 return false;
             }
         }
@@ -603,55 +623,29 @@ impl Run<'_> {
         depth == 0
     }
 
-    /// `skip_bytes` from just inside a container over the whole input's structural index: the
-    /// brackets are counted, strings are already folded out. A backslash outside a string means
-    /// stage 1 and this scanner disagree from there (see `json::simd`), so it falls back to bytes.
-    fn skip_indexed(&mut self) -> bool {
-        let (b, s) = (self.b, &mut *self.s);
-        let idx = s.idx.get_or_insert_with(|| simd::structurals(b).idx);
-        let from = idx.partition_point(|&i| (i as usize) < s.pos);
-        let mut depth = 1usize;
-        for &i in &idx[from..] {
-            match b[i as usize] {
-                b'{' | b'[' => depth += 1,
-                b'}' | b']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        s.pos = i as usize + 1;
-                        s.v_depth = 0;
-                        return true;
-                    }
-                }
-                b'\\' => {
-                    s.indexed = false;
-                    return self.skip_bytes();
-                }
-                _ => {}
-            }
-        }
-        s.pos = b.len();
-        false
-    }
-
     fn captured(&mut self) {
         let (t, b) = (self.t, self.b);
         let n = &t.nodes[self.s.cap_node];
-        let (start, text) = (self.s.cap_start, &b[self.s.cap_start..self.s.pos]);
+        let (start, end) = (self.s.cap_start, self.s.pos);
         for &id in &n.leaves {
-            self.set(id, Some(text.to_vec()));
+            self.set(id, Slot::Found(start, end));
         }
         let Some(sub) = &n.sub else { return };
         if !self.pending(self.s.cap_node) {
             return;
         }
-        let mut inner = State::new(sub.trie.len, false);
+        let mut inner = State::new(sub.trie.len);
         Run {
             s: &mut inner,
             t: &sub.trie,
-            b: &b[start..self.s.pos],
+            b: &b[start..end],
         }
         .end();
-        for (&id, v) in sub.ids.iter().zip(inner.values) {
+        for (&id, v) in sub.ids.iter().zip(inner.slots) {
+            let v = match v {
+                Slot::Found(a, z) => Slot::Found(start + a, start + z),
+                _ => Slot::Missing,
+            };
             self.set(id, v);
         }
     }
@@ -758,23 +752,27 @@ impl Run<'_> {
     }
 
     fn pending(&self, n: usize) -> bool {
-        self.t.nodes[n].paths.iter().any(|&id| !self.s.resolved[id])
+        let slots = &self.s.slots;
+        self.t.nodes[n]
+            .paths
+            .iter()
+            .any(|&id| slots[id] == Slot::Pending)
     }
 
-    fn set(&mut self, id: usize, v: Option<Vec<u8>>) {
+    /// Resolves path `id` to `v` (`Found` or `Missing`) unless it already is.
+    fn set(&mut self, id: usize, v: Slot) {
         let s = &mut *self.s;
-        if s.resolved[id] {
+        if s.slots[id] != Slot::Pending {
             return;
         }
-        s.resolved[id] = true;
-        s.values[id] = v;
+        s.slots[id] = v;
         s.remaining -= 1;
     }
 
     fn miss(&mut self, n: usize) {
         let t = self.t;
         for &id in &t.nodes[n].paths {
-            self.set(id, None);
+            self.set(id, Slot::Missing);
         }
     }
 
@@ -820,8 +818,7 @@ impl Run<'_> {
             self.skip_body()
         };
         if done {
-            let text = self.b[self.s.cap_start..self.s.pos].to_vec();
-            self.set(id, Some(text));
+            self.set(id, Slot::Found(self.s.cap_start, self.s.pos));
         }
         self.s.pos
     }

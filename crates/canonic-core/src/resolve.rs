@@ -280,6 +280,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
         let fields = r.object(&canonical.root, &s.fields, None, "fields")?;
         let mut routed = Vec::new();
         routing(&fields, &r.stat_names, &mut routed);
+        let mut order = Vec::new();
         // In the spec's own key order, so the first error is the one canonic reports.
         let anchors = spec
             .get("anchors")
@@ -289,13 +290,14 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
         for (key, token) in anchors {
             let token = token.as_str().unwrap_or_default();
             check_anchor(r.top.get(key), key, token)?;
-            if let Some(f) = routed.iter_mut().find(|f| f.name == *key) {
-                f.anchor = Some(token.to_string());
+            if let Some(i) = routed.iter().position(|f| f.name == *key) {
+                routed[i].anchor = Some(token.to_string());
+                order.push(i);
             }
         }
-        Ok::<_, String>((fields, routed))
+        Ok::<_, String>((fields, routed, order))
     })();
-    let (fields, routing) =
+    let (fields, routing, anchors) =
         resolved.map_err(|m| fail(format!("{} {} v{}: {m}", s.provider, s.endpoint, s.version)))?;
     Ok(Plan {
         meta: Meta {
@@ -306,6 +308,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
         },
         fields,
         routing,
+        anchors,
         stat_names: r.stat_names,
         custom_names: custom.to_vec(),
         names: r.names,
