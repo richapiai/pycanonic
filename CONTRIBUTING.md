@@ -33,6 +33,7 @@ The repo has two crates and one Python package:
 | `cargo +nightly fuzz run <target>` | in `crates/canonic-core`, runs one fuzz target: `extract`, `stream` or `map_bytes` |
 | `cargo audit` | checks `Cargo.lock` against the RustSec advisory database |
 | `scripts/leak-scan.sh` | fails on any tracked or untracked file with a word from `scripts/forbidden-words.txt` |
+| `scripts/leak-scan.sh --history` | the same check over every commit message and diff on the current branch |
 | `conformance/sync.sh` | refreshes the conformance corpus from a `canonic` checkout next to this repo |
 | `.venv/bin/python bench/run.py` | the benchmark table. `--gate`, `--selftest` and `--vs-ts` are in [bench/README.md](bench/README.md). |
 | `.venv/bin/python bench/interpreters.py` | pycanonic against the Python mapping libraries |
@@ -90,7 +91,7 @@ To cut a release:
    .venv/bin/python bench/interpreters.py --gate
    ```
 
-3. Run the local checks: `cargo test --workspace`, `.venv/bin/pytest python/tests -q`, `cargo audit` and `scripts/leak-scan.sh`.
+3. Run the local checks: `cargo test --workspace`, `.venv/bin/pytest python/tests -q`, `cargo audit`, `scripts/leak-scan.sh` and `scripts/leak-scan.sh --history`.
 4. Tag and push:
 
    ```sh

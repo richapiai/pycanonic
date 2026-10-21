@@ -3,6 +3,9 @@
 # (scripts/forbidden-words.txt, case-insensitive) outside an allowed fixed string
 # (scripts/allowed-patterns.txt). Skips LICENSE and the two lists. Fails closed on any git grep
 # error.
+#
+# --history scans every commit message and `git log -p` of the current branch instead of the
+# working tree (needs a full clone: fetch-depth 0 in CI).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -10,12 +13,19 @@ words=scripts/forbidden-words.txt
 allowed=scripts/allowed-patterns.txt
 
 set +e
-raw=$(git grep --untracked -n -i -I -F -f "$words" -- \
-    ':!LICENSE' ":!$words" ":!$allowed")
+if [ "${1:-}" = "--history" ]; then
+    log=$( { git log --format='%H %B' &&
+        git log -p --format='commit %H' -- . ':!LICENSE' ":!$words" ":!$allowed"; } ) ||
+        { echo "leak-scan: git log failed" >&2; exit 2; }
+    raw=$(grep -i -F -f "$words" <<<"$log")
+else
+    raw=$(git grep --untracked -n -i -I -F -f "$words" -- \
+        ':!LICENSE' ":!$words" ":!$allowed")
+fi
 rc=$?
 set -e
 if [ "$rc" -gt 1 ]; then
-    echo "leak-scan: git grep failed (exit $rc)" >&2
+    echo "leak-scan: scan failed (exit $rc)" >&2
     exit "$rc"
 fi
 

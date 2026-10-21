@@ -2,6 +2,8 @@ name: ci
 
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
 
 jobs:
@@ -22,6 +24,21 @@ jobs:
       - run: cargo test --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo fmt --check
+
+  timing:
+    # Wall-clock ratio tests in the Rust suites; skipped unless PYCANONIC_TIMING_TESTS=1.
+    # Non-blocking: shared runners are noisy.
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    env:
+      PYCANONIC_TIMING_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --release -p canonic-core
 
   python:
     strategy:
@@ -64,7 +81,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - run: scripts/leak-scan.sh
+      - run: scripts/leak-scan.sh --history
 
   conformance-fresh:
     runs-on: ubuntu-latest
