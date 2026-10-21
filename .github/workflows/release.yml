@@ -1,0 +1,201 @@
+name: release
+
+# A v* tag builds the wheels and the sdist, installs each wheel in a clean venv and runs the README
+# quick start, then publishes to PyPI (trusted publishing) and canonic-core to crates.io.
+# The nightly schedule runs cargo audit and the fuzz targets only.
+#
+# Bench: the blocking gate is not here. Shared runners are too noisy to gate on timing. Before you
+# push a tag, run `bench/run.py --gate` and `bench/run.py --vs-ts ../canonic` on the Hetzner bench
+# box and keep the output (CONTRIBUTING.md, "Releasing").
+
+on:
+  push:
+    tags: ["v*"]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+
+  fuzz:
+    if: github.event_name != 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [extract, stream, map_bytes]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # libFuzzer needs nightly; nothing else in CI uses it.
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - working-directory: crates/canonic-core
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=600
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: crates/canonic-core/fuzz/artifacts/
+
+  version:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # The tag, the extension crate, canonic-core and __version__ must name the same version.
+      - run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ext=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/pycanonic-ext/Cargo.toml | head -1)
+          core=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/canonic-core/Cargo.toml | head -1)
+          py=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' python/pycanonic/__init__.py)
+          echo "tag $tag, pycanonic-ext $ext, canonic-core $core, __version__ $py"
+          test "$tag" = "$ext" && test "$tag" = "$core" && test "$tag" = "$py"
+
+  wheels:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: manylinux-x86_64
+            os: ubuntu-latest
+            target: x86_64
+            manylinux: auto
+          - name: manylinux-aarch64
+            os: ubuntu-latest
+            target: aarch64
+            manylinux: auto
+          - name: musllinux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            manylinux: musllinux_1_2
+          - name: macos-universal2
+            os: macos-latest
+            target: universal2-apple-darwin
+            manylinux: ""
+          - name: windows-x86_64
+            os: windows-latest
+            target: x64
+            manylinux: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # pyo3's abi3-py310 feature makes every wheel cp310-abi3: one wheel per platform.
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.name }}
+          path: dist/*.whl
+
+  sdist:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  smoke:
+    needs: wheels
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - wheel: manylinux-x86_64
+            os: ubuntu-latest
+          - wheel: manylinux-aarch64
+            os: ubuntu-24.04-arm
+          - wheel: musllinux-x86_64
+            os: ubuntu-latest
+            alpine: true
+          # Runs the arm64 half of the universal2 wheel; the x86_64 half is built, not run.
+          - wheel: macos-universal2
+            os: macos-latest
+          - wheel: windows-x86_64
+            os: windows-latest
+        python: ["3.10", "3.14"]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: README.md
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel-${{ matrix.wheel }}
+          path: dist
+      # The first ```python block of the README is the quick start.
+      - run: |
+          mkdir -p smoke
+          awk '/^```python/{f=1;next} /^```/{if(f)exit} f' README.md > smoke/quickstart.py
+          test -s smoke/quickstart.py
+          cp dist/*.whl smoke/
+      - if: ${{ !matrix.alpine }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - if: ${{ !matrix.alpine }}
+        working-directory: smoke
+        run: |
+          python -m venv venv
+          if [ -d venv/Scripts ]; then bin=venv/Scripts; else bin=venv/bin; fi
+          "$bin/python" -m pip install --no-index --find-links . pycanonic
+          "$bin/python" quickstart.py
+          "$bin/canonic" --help
+      - if: ${{ matrix.alpine }}
+        run: |
+          docker run --rm -v "$PWD/smoke:/smoke" -w /smoke "python:${{ matrix.python }}-alpine" sh -ec '
+            python -m venv /venv
+            /venv/bin/python -m pip install --no-index --find-links . pycanonic
+            /venv/bin/python quickstart.py
+            /venv/bin/canonic --help'
+
+  pypi:
+    needs: [audit, wheels, sdist, smoke]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  crates:
+    needs: pypi
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo publish -p canonic-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

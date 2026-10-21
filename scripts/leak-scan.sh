@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fails if any tracked or untracked (non-ignored) file contains a forbidden word
 # (scripts/forbidden-words.txt, case-insensitive) outside an allowed fixed string
-# (scripts/allowed-patterns.txt). Skips LICENSE, the two lists and the internal
-# design/plan docs under docs/superpowers/. Fails closed on any git grep error.
+# (scripts/allowed-patterns.txt). Skips LICENSE and the two lists. Fails closed on any git grep
+# error.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -11,7 +11,7 @@ allowed=scripts/allowed-patterns.txt
 
 set +e
 raw=$(git grep --untracked -n -i -I -F -f "$words" -- \
-    ':!LICENSE' ":!$words" ":!$allowed" ':!docs/superpowers/')
+    ':!LICENSE' ":!$words" ":!$allowed")
 rc=$?
 set -e
 if [ "$rc" -gt 1 ]; then

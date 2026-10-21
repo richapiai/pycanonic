@@ -4,10 +4,30 @@ build-backend = "maturin"
 
 [project]
 name = "pycanonic"
+description = "Compile JSON mapping specs into fast mappers from provider responses to your canonical schema. Rust core."
+readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "RichAPI AI (TexAu OÜ)" }]
+keywords = ["json", "mapping", "schema", "etl", "normalization", "rust"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
+]
 dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/richapiai/pycanonic"
+Documentation = "https://github.com/richapiai/pycanonic/tree/main/docs"
+Changelog = "https://github.com/richapiai/pycanonic/blob/main/CHANGELOG.md"
+Issues = "https://github.com/richapiai/pycanonic/issues"
 
 [project.optional-dependencies]
 dev = ["maturin>=1.15,<2", "mypy", "pytest"]
