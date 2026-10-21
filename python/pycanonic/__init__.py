@@ -1,6 +1,8 @@
 """Compile declarative field-mapping specs into fast mappers from provider JSON to your canonical schema."""
 
 from ._api import (
+    FieldAlert,
+    FillMonitor,
     Issue,
     SpecError,
     Transform,
@@ -11,13 +13,15 @@ from ._api import (
     validate_spec,
     validators,
 )
-from ._core import Artifact, Stats
+from ._core import Artifact, Stats, fingerprint, shape
 from .registry import Registry
 
 __version__ = "0.1.0"
 
 __all__ = [
     "Artifact",
+    "FieldAlert",
+    "FillMonitor",
     "Issue",
     "Registry",
     "SpecError",
@@ -25,7 +29,9 @@ __all__ = [
     "Transform",
     "compile_spec",
     "default_transforms",
+    "fingerprint",
     "load",
+    "shape",
     "validate_canonical",
     "validate_spec",
     "validators",

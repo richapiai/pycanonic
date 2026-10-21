@@ -8,11 +8,14 @@ from typing_extensions import NotRequired, TypedDict
 __all__ = [
     "Artifact",
     "ExtractStream",
+    "FillMonitor",
     "Stats",
     "View",
     "compile",
     "default_transform",
+    "fingerprint",
     "load_plan",
+    "shape",
     "validate_canonical",
     "validate_spec",
     "validator",
@@ -41,6 +44,26 @@ class Stats:
 class ExtractStream:
     def push(self, chunk: bytes | str) -> bool: ...
     def result(self) -> dict[str, Any]: ...
+
+class _FieldAlert(TypedDict):
+    field: str
+    kind: Literal["fill", "errors"]
+    rate: float
+    baseline: float
+    responses: int
+
+@final
+class FillMonitor:
+    def __init__(
+        self,
+        *,
+        min_responses: int = 200,
+        history: int = 24,
+        sigmas: float = 4.0,
+        min_drop: float = 0.25,
+        min_rise: float = 0.01,
+    ) -> None: ...
+    def check(self, window: _StatsSnapshot) -> list[_FieldAlert]: ...
 
 @final
 class View:
@@ -88,3 +111,5 @@ def validate_spec(spec: _Document) -> list[tuple[str, str]]: ...
 def validate_canonical(schema: _Document) -> list[tuple[str, str]]: ...
 def default_transform(name: str, value: object, arg: object = None) -> Any: ...
 def validator(semantic: str, value: _T) -> _T | None: ...
+def shape(value: object) -> list[str]: ...
+def fingerprint(value: object) -> str: ...

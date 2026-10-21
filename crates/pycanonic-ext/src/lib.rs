@@ -1,4 +1,5 @@
 mod artifact;
+mod drift;
 mod pydoc;
 mod pysink;
 mod transforms;
@@ -19,6 +20,8 @@ mod _core {
     #[pymodule_export]
     use crate::artifact::{Artifact, ExtractStream, Stats};
     #[pymodule_export]
+    use crate::drift::{FillMonitor, fingerprint, shape};
+    #[pymodule_export]
     use crate::view::View;
 
     #[pyfunction]
@@ -30,7 +33,7 @@ mod _core {
     const MAX_DEPTH: usize = 256;
 
     /// A Python value as JSON, `dict` key order kept.
-    fn json(o: &Bound<'_, PyAny>, depth: usize) -> PyResult<J> {
+    pub(crate) fn json(o: &Bound<'_, PyAny>, depth: usize) -> PyResult<J> {
         if depth > MAX_DEPTH {
             return Err(PyValueError::new_err("nested too deeply (or cyclic)"));
         }

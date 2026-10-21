@@ -89,7 +89,7 @@ const ESCAPE: [u8; 256] = {
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
-fn write_str(s: &str, buf: &mut Vec<u8>) {
+pub(crate) fn write_str(s: &str, buf: &mut Vec<u8>) {
     let bytes = s.as_bytes();
     buf.push(b'"');
     let mut start = 0;

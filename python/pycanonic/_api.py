@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from . import _core
 from ._core import Artifact
@@ -97,3 +97,47 @@ default_transforms: dict[str, Transform] = {
 
 validators: dict[str, Transform] = {s: partial(_core.validator, s) for s in _SEMANTICS}
 """The routing validators by semantic: `validators["email"](v)` returns `v` or `None`."""
+
+
+@dataclass(frozen=True)
+class FieldAlert:
+    """A field whose fill fell (`kind="fill"`) or whose errors rose (`kind="errors"`).
+
+    `responses` is what `rate` is out of: responses, or elements for a field inside an item
+    (`"jobs[].title"`).
+    """
+
+    field: str
+    kind: Literal["fill", "errors"]
+    rate: float
+    baseline: float
+    responses: int
+
+
+class FillMonitor:
+    """Compares each `stats.snapshot()` window (then `reset()`, once per period) with the trailing windows.
+
+    A window under `min_responses` is merged with the next. A field that alerts keeps its old
+    baseline, so the alert repeats every window until the spec is fixed.
+    """
+
+    def __init__(
+        self,
+        *,
+        min_responses: int = 200,
+        history: int = 24,
+        sigmas: float = 4.0,
+        min_drop: float = 0.25,
+        min_rise: float = 0.01,
+    ) -> None:
+        self._core = _core.FillMonitor(
+            min_responses=min_responses,
+            history=history,
+            sigmas=sigmas,
+            min_drop=min_drop,
+            min_rise=min_rise,
+        )
+
+    def check(self, window: _core._StatsSnapshot) -> list[FieldAlert]:
+        """Feeds one window; the fields whose fill fell or whose errors rose, once it is big enough."""
+        return [FieldAlert(**a) for a in self._core.check(window)]
