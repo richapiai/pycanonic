@@ -3,7 +3,7 @@
 use crate::pydoc::{PyDoc, text};
 use crate::pysink::{PySink, to_py, value};
 use crate::transforms::{PyTransform, take_pending};
-use crate::view::View;
+use crate::view::{Level, View, levels};
 use canonic_core::{CompileError, Plan, Status, Transform, Value};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -19,6 +19,8 @@ pub struct Artifact {
     pub(crate) keys: Vec<Py<PyString>>,
     /// Interned canonical field names, indexed like `Plan::names`.
     pub(crate) names: Vec<Py<PyString>>,
+    /// The canonical object levels a `View` walks; see `view::levels`.
+    pub(crate) levels: Vec<Level>,
 }
 
 /// Python callables by transform name.
@@ -67,6 +69,7 @@ impl Artifact {
         Ok(Artifact {
             keys: inner.keys().iter().map(intern).collect(),
             names: inner.plan.names.iter().map(intern).collect(),
+            levels: levels(py, &inner.plan.names, &inner.plan.fields),
             inner,
         })
     }
@@ -158,8 +161,8 @@ impl Artifact {
     }
 
     /// A lazy canonical object over `src` (as `map` takes it): each field is mapped on first read.
-    fn view(slf: Py<Self>, src: &Bound<'_, PyAny>) -> View {
-        View::new(slf, src)
+    fn view(slf: Py<Self>, py: Python<'_>, src: &Bound<'_, PyAny>) -> View {
+        View::new(py, slf, src)
     }
 
     /// A fresh incremental reader of the routing fields; one per response.

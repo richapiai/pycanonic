@@ -113,3 +113,46 @@ def test_a_base_exception_from_a_transform_raises_from_the_read(bench_spec):
     with pytest.raises(KeyboardInterrupt):
         v.email
     assert v.full_name == json.loads(raw)["profile"]["fullName"]
+
+
+def test_a_list_field_is_built_once(bench):
+    a, schema, bodies = bench
+    v = a.view(bodies["raws"][0].encode())
+    assert v.experiences is v.experiences
+    assert v["skills"] is v.skills
+
+
+def test_reads_of_parsed_input_do_not_touch_stats(bench):
+    a, schema, bodies = bench
+    a.stats_reset()
+    before = a.stats_snapshot()
+    for raw in bodies["raws"]:
+        v = a.view(json.loads(raw))
+        for name in v:
+            v[name]
+        v.company.domain
+        v.to_dict()
+    assert a.stats_snapshot() == before
+
+
+def test_methods_win_attribute_access_and_getitem_reads_the_field():
+    schema = {
+        "type": "object",
+        "properties": {"to_dict": {"type": "string"}, "__class__": {"type": "string"}, "x": {"type": "string"}},
+    }
+    spec = {
+        "provider": "p",
+        "endpoint": "e",
+        "version": 1,
+        "status": "promoted",
+        "fields": {"to_dict": "a", "__class__": "b", "x": "c"},
+    }
+    a = _core.compile(spec, schema, None)
+    v = a.view({"a": "A", "b": "B", "c": "C"})
+    assert v.to_dict() == {"to_dict": "A", "__class__": "B", "x": "C"}
+    assert v.__class__ is _core.View
+    assert (v["to_dict"], v["__class__"], v["x"], v.x) == ("A", "B", "C", "C")
+    with pytest.raises(KeyError):
+        v["nope"]
+    with pytest.raises(KeyError):
+        v[0]

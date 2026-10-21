@@ -44,11 +44,17 @@ class ExtractStream:
 
 @final
 class View:
-    """A lazy canonical object: each field is mapped on its first read and kept; no stats."""
+    """A lazy canonical object: each field is mapped on its first read and kept; no stats.
+
+    `view.name` reads a field unless `View` has an attribute of that name (`to_dict`, a dunder),
+    which wins; `view["name"]` always reads the field and raises `KeyError` for an unknown one.
+    """
 
     def __getattr__(self, field: str) -> Any: ...
+    def __getitem__(self, field: str) -> Any: ...
     def to_dict(self) -> dict[str, Any]: ...
     def __iter__(self) -> Iterator[str]: ...
+    def __dir__(self) -> list[str]: ...
 
 @final
 class Artifact:
