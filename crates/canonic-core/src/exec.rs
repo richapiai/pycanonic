@@ -21,6 +21,7 @@ use crate::stats::Stats;
 use crate::transforms::{Transform, validate};
 use crate::value::Value;
 use serde_json::Value as J;
+use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
@@ -31,10 +32,92 @@ enum Step {
 
 type Path = Vec<Step>;
 
+/// A path read in one `Scope`: the number of its node in the scope's prefix tree.
+type At = usize;
+
+/// Every path read against one document, the root (with the objects nested in it, which read the
+/// same document) or one list element, as a prefix tree: node 0 is the document itself and node
+/// `n > 0` is `nodes[n - 1]`, a step from its parent node. A prefix that several reads share is
+/// resolved once per document (`Frame`) instead of once per read.
+#[derive(Default)]
+struct Scope {
+    nodes: Vec<(At, Step)>,
+    /// Per node, its slot in `Frame::cache` when it is a prefix of two or more reads, `NONE`
+    /// otherwise: only those are worth keeping.
+    slot: Vec<u32>,
+    /// How many nodes have a slot.
+    slots: usize,
+}
+
+const NONE: u32 = u32::MAX;
+
+/// A `Scope` while the plan is compiled.
+#[derive(Default)]
+struct ScopeBuilder {
+    nodes: Vec<(At, Step)>,
+    index: HashMap<(At, StepId), At>,
+    /// Reads that pass through each node as a strict prefix.
+    through: Vec<u32>,
+}
+
+#[derive(PartialEq, Eq, Hash)]
+enum StepId {
+    Key(u64),
+    Idx(usize),
+}
+
+impl ScopeBuilder {
+    fn at(&mut self, steps: Path) -> At {
+        let mut node = 0;
+        let last = steps.len();
+        for (i, step) in steps.into_iter().enumerate() {
+            if node > 0 && i < last {
+                self.through[node - 1] += 1;
+            }
+            let id = match &step {
+                Step::Key(k) => StepId::Key(k.tag),
+                Step::Idx(i) => StepId::Idx(*i),
+            };
+            node = match self.index.get(&(node, id)) {
+                Some(&n) => n,
+                None => {
+                    let id = match &step {
+                        Step::Key(k) => StepId::Key(k.tag),
+                        Step::Idx(i) => StepId::Idx(*i),
+                    };
+                    self.nodes.push((node, step));
+                    self.through.push(0);
+                    self.index.insert((node, id), self.nodes.len());
+                    self.nodes.len()
+                }
+            };
+        }
+        node
+    }
+
+    fn finish(self) -> Scope {
+        let mut slots = 0;
+        let slot = (self.through.iter())
+            .map(|&n| {
+                if n < 2 {
+                    return NONE;
+                }
+                slots += 1;
+                slots as u32 - 1
+            })
+            .collect();
+        Scope {
+            nodes: self.nodes,
+            slot,
+            slots,
+        }
+    }
+}
+
 enum Src {
-    From(Path),
-    Many(Vec<Path>),
-    Coalesce(Vec<Path>),
+    From(At),
+    Many(Vec<At>),
+    Coalesce(Vec<At>),
 }
 
 struct Leaf {
@@ -59,26 +142,29 @@ enum Op {
     /// An item list maps each element with `Item`; otherwise each element is read at `Elems.0`
     /// (empty for a plain list) and transformed.
     List {
-        from: Path,
+        from: At,
         kind: Kind,
         stat: usize,
     },
 }
 
 enum Kind {
-    Item(Vec<(usize, Op)>),
+    /// The item's fields, read in their own scope (one element).
+    Item(Vec<(usize, Op)>, Scope),
     Elems(Path, Vec<TxRef>),
 }
 
 /// A `Plan` compiled for execution: path keys become `Key`s, every index is range-checked.
 pub struct Program {
     root: Vec<(usize, Op)>,
+    scope: Scope,
     keys: Vec<String>,
 }
 
 struct Builder<'p> {
     plan: &'p Plan,
     keys: Vec<String>,
+    scope: ScopeBuilder,
 }
 
 impl Builder<'_> {
@@ -129,11 +215,17 @@ impl Builder<'_> {
             .collect()
     }
 
+    /// `p` as a node of the current scope.
+    fn at(&mut self, p: &spec::Path) -> At {
+        let steps = self.path(p);
+        self.scope.at(steps)
+    }
+
     fn leaf(&mut self, s: &Scalar) -> Result<Leaf, CompileError> {
         let src = match &s.source {
-            Source::From(p) => Src::From(self.path(p)),
-            Source::FromMany(ps) => Src::Many(ps.iter().map(|p| self.path(p)).collect()),
-            Source::Coalesce(ps) => Src::Coalesce(ps.iter().map(|p| self.path(p)).collect()),
+            Source::From(p) => Src::From(self.at(p)),
+            Source::FromMany(ps) => Src::Many(ps.iter().map(|p| self.at(p)).collect()),
+            Source::Coalesce(ps) => Src::Coalesce(ps.iter().map(|p| self.at(p)).collect()),
         };
         Ok(Leaf {
             src,
@@ -156,9 +248,14 @@ impl Builder<'_> {
                     Field::Scalar(s) => Op::Scalar(self.leaf(s)?),
                     Field::Object(c) => Op::Object(self.fields(c)?),
                     Field::List { from, kind, stat } => Op::List {
-                        from: self.path(from),
+                        from: self.at(from),
                         kind: match kind {
-                            ListKind::Item(c) => Kind::Item(self.fields(c)?),
+                            ListKind::Item(c) => {
+                                let outer = std::mem::take(&mut self.scope);
+                                let fields = self.fields(c);
+                                let inner = std::mem::replace(&mut self.scope, outer);
+                                Kind::Item(fields?, inner.finish())
+                            }
                             ListKind::Pluck(p, tx) => Kind::Elems(self.path(p), self.tx(tx)?),
                             ListKind::Plain(tx) => Kind::Elems(Vec::new(), self.tx(tx)?),
                         },
@@ -177,12 +274,19 @@ impl Program {
         let mut b = Builder {
             plan,
             keys: Vec::new(),
+            scope: ScopeBuilder::default(),
         };
         let root = b.fields(&plan.fields)?;
+        let scope = std::mem::take(&mut b.scope).finish();
+        // Routing fields are only checked here (`extract` reads them); their paths join no scope.
         for r in &plan.routing {
             b.leaf(&r.scalar)?;
         }
-        Ok(Program { root, keys: b.keys })
+        Ok(Program {
+            root,
+            scope,
+            keys: b.keys,
+        })
     }
 
     /// Distinct path keys; a `Key`'s `tag` is its index here.
@@ -201,6 +305,63 @@ fn read<D: Doc>(doc: Option<&D>, path: &[Step]) -> Option<D> {
         };
     }
     (!cur.is_null()).then_some(cur)
+}
+
+/// One document being read in its scope, with the prefixes resolved so far.
+struct Frame<'s, D> {
+    doc: Option<D>,
+    scope: &'s Scope,
+    /// Per `Scope::slot`: `None` not resolved yet, `Some(v)` resolved. Empty for a one-field read
+    /// (`execute_field`), where it would not pay.
+    cache: Vec<Option<Option<D>>>,
+}
+
+impl<'s, D: Doc> Frame<'s, D> {
+    fn new(doc: Option<D>, scope: &'s Scope, cache: bool) -> Self {
+        let cache = match cache {
+            true => vec![None; scope.slots],
+            false => Vec::new(),
+        };
+        Frame { doc, scope, cache }
+    }
+
+    /// The value at prefix node `n`, null or not; resolved once when cached.
+    fn prefix(&mut self, n: At) -> Option<D> {
+        if n == 0 {
+            return self.doc.clone();
+        }
+        let scope = self.scope;
+        let slot = scope.slot[n - 1] as usize;
+        if let Some(Some(v)) = self.cache.get(slot) {
+            return v.clone();
+        }
+        let (parent, step) = &scope.nodes[n - 1];
+        let v = self.prefix(*parent).and_then(|p| step_of(&p, step));
+        if let Some(c) = self.cache.get_mut(slot) {
+            *c = Some(v.clone());
+        }
+        v
+    }
+
+    /// The value read at node `n`, `None` when it or any step is missing or null, as `read`.
+    fn read(&mut self, n: At) -> Option<D> {
+        let v = match n {
+            0 => self.doc.clone(),
+            n => {
+                let scope = self.scope;
+                let (parent, step) = &scope.nodes[n - 1];
+                self.prefix(*parent).and_then(|p| step_of(&p, step))
+            }
+        };
+        v.filter(|d| !d.is_null())
+    }
+}
+
+fn step_of<D: Doc>(d: &D, s: &Step) -> Option<D> {
+    match s {
+        Step::Key(k) => d.get(k),
+        Step::Idx(i) => d.idx(*i),
+    }
 }
 
 /// A `default` as a borrowed `Value`.
@@ -347,12 +508,13 @@ pub fn execute<D: Doc, S: Sink>(
     custom: &[Arc<dyn Transform>],
 ) -> S::Out {
     stats.response();
+    let mut f = Frame::new(doc.cloned(), &program.scope, true);
     Exec {
         sink,
         stats,
         custom,
     }
-    .object(&program.root, doc)
+    .object(&program.root, &mut f)
 }
 
 /// One field of `program` over `doc`, as `execute` would map it, counting no stats. `path` is the
@@ -371,8 +533,9 @@ pub fn execute_field<D: Doc, S: Sink>(
         stats: &quiet,
         custom,
     };
+    let mut f = Frame::new(doc.cloned(), &program.scope, false);
     let Some((&last, parents)) = path.split_last() else {
-        return Some(e.object(&program.root, doc));
+        return Some(e.object(&program.root, &mut f));
     };
     let mut level = &program.root;
     for &i in parents {
@@ -381,7 +544,7 @@ pub fn execute_field<D: Doc, S: Sink>(
             _ => return None,
         }
     }
-    Some(e.op(&level.get(last)?.1, doc))
+    Some(e.op(&level.get(last)?.1, &mut f))
 }
 
 struct Exec<'e, S> {
@@ -391,35 +554,35 @@ struct Exec<'e, S> {
 }
 
 impl<S: Sink> Exec<'_, S> {
-    fn object<D: Doc>(&mut self, fields: &[(usize, Op)], doc: Option<&D>) -> S::Out {
+    fn object<D: Doc>(&mut self, fields: &[(usize, Op)], f: &mut Frame<'_, D>) -> S::Out {
         self.sink.open(true);
         let members = (fields.iter().enumerate())
             .map(|(n, (name, op))| {
                 self.sink.next(Some(*name), n == 0);
-                (*name, self.op(op, doc))
+                (*name, self.op(op, f))
             })
             .collect();
         self.sink.object(members)
     }
 
-    fn op<D: Doc>(&mut self, op: &Op, doc: Option<&D>) -> S::Out {
+    fn op<D: Doc>(&mut self, op: &Op, f: &mut Frame<'_, D>) -> S::Out {
         match op {
             Op::Null => self.sink.scalar(Value::Null),
-            Op::Object(c) => self.object(c, doc),
-            Op::Scalar(l) => self.scalar(l, doc),
-            Op::List { from, kind, stat } => self.list(from, kind, *stat, doc),
+            Op::Object(c) => self.object(c, f),
+            Op::Scalar(l) => self.scalar(l, f),
+            Op::List { from, kind, stat } => self.list(*from, kind, *stat, f),
         }
     }
 
-    fn scalar<D: Doc>(&mut self, l: &Leaf, doc: Option<&D>) -> S::Out {
+    fn scalar<D: Doc>(&mut self, l: &Leaf, f: &mut Frame<'_, D>) -> S::Out {
         // None: absent. Some(None): rejected.
         let out = match &l.src {
-            Src::From(p) => read(doc, p).map(|d| self.single(l, &d)),
+            Src::From(p) => f.read(*p).map(|d| self.single(l, &d)),
             Src::Coalesce(ps) => ps
                 .iter()
-                .find_map(|p| read(doc, p))
+                .find_map(|p| f.read(*p))
                 .map(|d| self.single(l, &d)),
-            Src::Many(ps) => self.many(l, doc, ps),
+            Src::Many(ps) => self.many(l, f, ps),
         };
         match out {
             Some(Some(o)) => o,
@@ -461,9 +624,14 @@ impl<S: Sink> Exec<'_, S> {
         self.sink.list(items)
     }
 
-    fn many<D: Doc>(&mut self, l: &Leaf, doc: Option<&D>, ps: &[Path]) -> Option<Option<S::Out>> {
+    fn many<D: Doc>(
+        &mut self,
+        l: &Leaf,
+        f: &mut Frame<'_, D>,
+        ps: &[At],
+    ) -> Option<Option<S::Out>> {
         // one Vec per read, as codegen.ts allocates one array; only multi-path `from` pays.
-        let docs: Vec<Option<D>> = ps.iter().map(|p| read(doc, p)).collect();
+        let docs: Vec<Option<D>> = ps.iter().map(|p| f.read(*p)).collect();
         if docs.iter().all(Option::is_none) {
             return None;
         }
@@ -478,8 +646,8 @@ impl<S: Sink> Exec<'_, S> {
         })
     }
 
-    fn list<D: Doc>(&mut self, from: &[Step], kind: &Kind, stat: usize, doc: Option<&D>) -> S::Out {
-        let Some(x) = read(doc, from) else {
+    fn list<D: Doc>(&mut self, from: At, kind: &Kind, stat: usize, f: &mut Frame<'_, D>) -> S::Out {
+        let Some(x) = f.read(from) else {
             self.stats.miss(stat);
             return self.sink.scalar(Value::Null);
         };
@@ -488,7 +656,7 @@ impl<S: Sink> Exec<'_, S> {
             self.stats.miss(stat);
             return self.sink.scalar(Value::Null);
         };
-        if let Kind::Item(_) = kind {
+        if let Kind::Item(..) = kind {
             self.stats.elements(stat, n);
         }
         self.sink.open(false);
@@ -496,7 +664,9 @@ impl<S: Sink> Exec<'_, S> {
             .map(|i| {
                 self.sink.next(None, i == 0);
                 match kind {
-                    Kind::Item(fields) => self.object(fields, x.item(i).as_ref()),
+                    Kind::Item(fields, scope) => {
+                        self.object(fields, &mut Frame::new(x.item(i), scope, true))
+                    }
                     Kind::Elems(path, tx) => self.element(read(x.item(i).as_ref(), path), tx, stat),
                 }
             })
