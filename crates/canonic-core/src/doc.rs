@@ -14,7 +14,7 @@ pub struct Key {
     pub s: String,
     pub tag: u64,
     /// `json::key_hash(s)`, for the parse tree's key tables; `Key::new` sets it.
-    pub hash: u64,
+    pub(crate) hash: u64,
 }
 
 impl Key {

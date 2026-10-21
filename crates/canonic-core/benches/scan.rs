@@ -51,7 +51,7 @@ fn main() {
 #[divan::bench]
 fn structurals(b: Bencher) {
     b.counter(BytesCount::of_slice(&*BODY))
-        .bench(|| canonic_core::json::simd::structurals(black_box(&BODY)));
+        .bench(|| canonic_core::__bench::structurals(black_box(&BODY)));
 }
 
 #[divan::bench]

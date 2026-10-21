@@ -13,11 +13,7 @@ use pyo3::types::{PyBytes, PyDict};
 #[pyfunction]
 pub fn shape(value: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
     if let Ok(b) = value.cast::<PyBytes>() {
-        let all = Filter {
-            all: true,
-            ..Filter::default()
-        };
-        let node = canonic_core::parse(b.as_bytes(), &all)
+        let node = canonic_core::parse(b.as_bytes(), &Filter::all())
             .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e:?}")))?;
         return Ok(canonic_core::shape(&&node));
     }

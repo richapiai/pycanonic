@@ -54,7 +54,7 @@ fn cycle<T>(b: Bencher, f: impl Fn(&[u8]) -> T + Sync) {
 
 #[divan::bench]
 fn structurals_x64(b: Bencher) {
-    cycle(b, canonic_core::json::simd::structurals);
+    cycle(b, canonic_core::__bench::structurals);
 }
 
 #[divan::bench]

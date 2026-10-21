@@ -13,10 +13,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 fn all() -> Filter {
-    Filter {
-        all: true,
-        ..Filter::default()
-    }
+    Filter::all()
 }
 
 /// One response: both sides given as JSON, read as parsed documents.

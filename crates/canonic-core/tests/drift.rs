@@ -11,10 +11,7 @@ use serde_json::{Value as J, json};
 use std::collections::HashMap;
 
 fn all() -> Filter {
-    Filter {
-        all: true,
-        ..Filter::default()
-    }
+    Filter::all()
 }
 
 fn with<T>(v: &J, f: impl FnOnce(&&Node<'_>) -> T) -> T {

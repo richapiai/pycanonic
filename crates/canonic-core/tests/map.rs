@@ -586,8 +586,8 @@ fn an_index_path_and_a_list_over_the_same_array_both_read() {
     assert_eq!(out["email"], "a@b.co");
     assert_eq!(out["skills"], json!(["work", "home"]));
     let f = filter_for(&a.plan);
-    let emails = &f.keys[0].1;
-    assert_eq!(emails.idxs[0].1.keys.len(), 2, "{f:?}");
+    let emails = &f.keys()[0].1;
+    assert_eq!(emails.idxs[0].1.keys().len(), 2, "{f:?}");
 }
 
 fn plan() -> Plan {

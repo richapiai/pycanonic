@@ -12,7 +12,7 @@
 //! A skipped container is matched by [`simd::skip`], 64 bytes at a time; what the filter builds is
 //! read byte by byte, strings with `memchr`.
 
-pub mod simd;
+pub(crate) mod simd;
 mod unescape;
 
 use std::borrow::Cow;
@@ -160,13 +160,33 @@ pub fn key_hash(b: &[u8]) -> u64 {
 /// whole. Scalars are always read. Keys are the decoded UTF-8 bytes.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Filter {
-    pub keys: Vec<(Box<[u8]>, Filter)>,
+    /// Private so it can't change under `index`; set it with [`Filter::with_keys`].
+    pub(crate) keys: Vec<(Box<[u8]>, Filter)>,
     pub idxs: Vec<(usize, Filter)>,
     pub elems: Option<Box<Filter>>,
     pub all: bool,
-    /// A hash table over `keys`, built on the first parse that needs it. Leave it default; it is
-    /// not compared, and `keys` must not change after the filter has been used.
-    pub index: KeyIndex,
+    /// A hash table over `keys`, built on the first parse that needs it; not compared.
+    pub(crate) index: KeyIndex,
+}
+
+impl Filter {
+    /// Builds everything below.
+    pub fn all() -> Filter {
+        ALL.clone()
+    }
+
+    /// An object filter: each listed member (decoded UTF-8 key bytes) with the filter below it.
+    pub fn with_keys(keys: Vec<(Box<[u8]>, Filter)>) -> Filter {
+        Filter {
+            keys,
+            ..Filter::default()
+        }
+    }
+
+    /// The object members this filter builds, in plan order.
+    pub fn keys(&self) -> &[(Box<[u8]>, Filter)] {
+        &self.keys
+    }
 }
 
 /// `Filter::index`: for more than [`INDEXED`] keys, a `KeyTable` and whether any key repeats.

@@ -4,20 +4,15 @@ use proptest::prelude::*;
 use std::borrow::Cow;
 
 fn all() -> Filter {
-    Filter {
-        all: true,
-        ..Filter::default()
-    }
+    Filter::all()
 }
 
 fn keys(ks: Vec<(&str, Filter)>) -> Filter {
-    Filter {
-        keys: ks
-            .into_iter()
+    Filter::with_keys(
+        ks.into_iter()
             .map(|(k, f)| (k.as_bytes().into(), f))
             .collect(),
-        ..Filter::default()
-    }
+    )
 }
 
 fn members<'n, 'a>(n: &'n Node<'a>) -> &'n [(Cow<'a, str>, Node<'a>)] {
@@ -194,20 +189,16 @@ fn filter_with_no_entry_skips_containers_but_reads_scalars() {
     );
     // A keys filter meeting an array, and an array filter meeting an object.
     assert_eq!(parse(b"[1]", &keys(vec![("a", all())])), Ok(Node::Skipped));
-    let elems = Filter {
-        elems: Some(Box::new(all())),
-        ..Filter::default()
-    };
+    let mut elems = Filter::default();
+    elems.elems = Some(Box::new(all()));
     assert_eq!(parse(br#"{"a":1}"#, &elems), Ok(Node::Skipped));
 }
 
 #[test]
 fn array_filters_keep_positions() {
     let doc = br#"[{"t":0},{"t":1},{"t":2}]"#;
-    let idx = Filter {
-        idxs: vec![(1, keys(vec![("t", all())]))],
-        ..Filter::default()
-    };
+    let mut idx = Filter::default();
+    idx.idxs = vec![(1, keys(vec![("t", all())]))];
     let out = parse(doc, &idx).unwrap();
     let Node::Arr(items) = out else {
         panic!("expected Arr")
@@ -217,10 +208,8 @@ fn array_filters_keep_positions() {
     assert_eq!(members(&items[1])[0].1, Node::Num("1"));
     assert_eq!(items[2], Node::Skipped);
 
-    let every = Filter {
-        elems: Some(Box::new(keys(vec![("t", all())]))),
-        ..Filter::default()
-    };
+    let mut every = Filter::default();
+    every.elems = Some(Box::new(keys(vec![("t", all())])));
     let Node::Arr(items) = parse(doc, &every).unwrap() else {
         panic!("expected Arr")
     };
@@ -339,14 +328,12 @@ fn hostile_keys_and_values_round_trip() {
 fn pruned() -> Filter {
     keys(vec![
         ("a", keys(vec![("b", all())])),
-        (
-            "l",
-            Filter {
-                idxs: vec![(0, all())],
-                elems: Some(Box::new(keys(vec![("x", all())]))),
-                ..Filter::default()
-            },
-        ),
+        ("l", {
+            let mut l = Filter::default();
+            l.idxs = vec![(0, all())];
+            l.elems = Some(Box::new(keys(vec![("x", all())])));
+            l
+        }),
     ])
 }
 

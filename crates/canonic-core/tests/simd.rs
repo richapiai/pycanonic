@@ -1,7 +1,7 @@
 // Stage 1: every backend of `structurals` against the portable one, and the portable one against
 // a byte-at-a-time state machine.
 
-use canonic_core::json::simd::{skip, skip_portable, structurals, structurals_portable};
+use canonic_core::__bench::{skip, skip_portable, structurals, structurals_portable};
 use proptest::prelude::*;
 
 /// The definition, one byte at a time: quotes that are not escaped by an odd backslash run, and
@@ -38,7 +38,7 @@ fn check(buf: &[u8]) {
     assert_eq!(structurals(buf).idx, want, "dispatched on {buf:?}");
     #[cfg(target_arch = "x86_64")]
     assert_eq!(
-        canonic_core::json::simd::structurals_sse2(buf).idx,
+        canonic_core::__bench::structurals_sse2(buf).idx,
         want,
         "sse2 on {buf:?}"
     );
