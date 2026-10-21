@@ -36,14 +36,14 @@ def run(args: list[str], transforms: Transforms) -> int:
         return [reduce(lambda o, k: None if o is None else getattr(o, k), path, v) for path in routing]
 
     rows = [
-        ("json.loads", lambda i: json.loads(raws[i % n])),
-        ("map", lambda i: art.map(parsed[i % n])),
-        ("view + routing reads", lambda i: read_routing(art.view(parsed[i % n]))),
-        ("extract (routing, from text)", lambda i: art.extract(raws[i % n])),
-        ("map (bytes in)", lambda i: art.map(raw_bytes[i % n])),
-        ("map_json (bytes in, bytes out)", lambda i: art.map_json(raw_bytes[i % n])),
+        ("json.loads", lambda i: json.loads(raws[i])),
+        ("map", lambda i: art.map(parsed[i])),
+        ("view + routing reads", lambda i: read_routing(art.view(parsed[i]))),
+        ("extract (routing, from text)", lambda i: art.extract(raws[i])),
+        ("map (bytes in)", lambda i: art.map(raw_bytes[i])),
+        ("map_json (bytes in, bytes out)", lambda i: art.map_json(raw_bytes[i])),
     ]
-    times = measure(rows, rounds=15, batch_ns=5_000_000)
+    times = measure(rows, rounds=15, batch_ns=5_000_000, modulus=n)
     kb = sum(len(r) for r in raws) / n / 1024
     print(f"{art.provider} {art.endpoint} v{art.version}: {n} samples, {kb:.1f} KB average, {len(routing)} routing fields\n")
     for (name, _), ns in zip(rows, times):
