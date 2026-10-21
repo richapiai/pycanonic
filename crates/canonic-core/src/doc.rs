@@ -28,7 +28,7 @@ impl Key {
 // `len` is "is this an array, and how long"; an is_empty would add nothing.
 #[allow(clippy::len_without_is_empty)]
 pub trait Doc: Clone {
-    /// The member `key` of an object (not an array); first occurrence wins.
+    /// The member `key` of an object (not an array); the last occurrence wins, as in `JSON.parse`.
     fn get(&self, key: &Key) -> Option<Self>;
     /// Element `i` of an array.
     fn idx(&self, i: usize) -> Option<Self>;

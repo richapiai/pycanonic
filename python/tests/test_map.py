@@ -198,3 +198,24 @@ def test_a_root_that_is_not_json_raises(root):
         acme.map(root)
     with pytest.raises(TypeError, match="expected JSON text"):
         acme.view(root)
+
+
+def test_a_body_too_deep_where_the_plan_reads_maps_to_all_nulls():
+    canonical = {"type": "object", "properties": {"a": {"type": "string"}, "d": {}}}
+    spec = {"provider": "p", "endpoint": "e", "version": 1, "status": "promoted", "fields": {"a": "a", "d": "deep"}}
+    a = _core.compile(spec, canonical, None)
+    deep = "[" * 600 + "]" * 600
+    assert a.map('{"a":"hi","deep":' + deep + "}") == {"a": None, "d": None}
+    assert a.map('{"a":"hi","other":' + deep + "}") == {"a": "hi", "d": None}
+    with pytest.raises(ValueError, match="Depth"):
+        _core.shape(deep.encode())
+
+
+def test_cast_of_an_integer_string_past_2_53_goes_through_a_double():
+    canonical = {"type": "object", "properties": {"n": {"type": "integer"}, "s": {"type": "integer"}}}
+    cast = {"cast": "integer"}
+    fields = {"n": {"from": "n", "transform": cast}, "s": {"from": "s", "transform": cast}}
+    spec = {"provider": "p", "endpoint": "e", "version": 1, "status": "promoted", "fields": fields}
+    a = _core.compile(spec, canonical, None)
+    out = a.map('{"n":9007199254740993,"s":"9007199254740993"}')
+    assert out == {"n": 9007199254740993, "s": 9007199254740992}

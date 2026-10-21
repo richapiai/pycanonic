@@ -181,7 +181,7 @@ class FieldAlert:
     responses: int   # what the rate is out of: elements for a field inside an item map
 ```
 
-On a Python object, `shape` and `fingerprint` raise `ValueError` past 512 levels, 1,000,000 containers or 64 MiB of path text. `bytes` input is parsed and never cut. Only `dict`, `list` and `tuple` have members. Any other value, a `str` included, is a scalar.
+On a Python object, `shape` and `fingerprint` raise `ValueError` past 512 levels, 1,000,000 containers or 64 MiB of path text. `bytes` input is parsed and never truncated; deeper than 512 levels raises `ValueError("invalid JSON: Depth")`. Only `dict`, `list` and `tuple` have members. Any other value, a `str` included, is a scalar.
 
 ## Shadow comparison
 

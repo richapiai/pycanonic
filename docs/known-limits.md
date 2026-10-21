@@ -10,6 +10,8 @@ This page lists the places where pycanonic can give you a wrong or missing value
 
 `map(bytes)` and `map_json` never raise on a bad body. A body that is not JSON maps to the full canonical shape with every leaf `None`. Every field counts as a miss in `artifact.stats`, and nothing counts as an error. So a broken body looks like an empty one, except in the stats. If you need to tell them apart, parse the body yourself first.
 
+The same goes for a body nested deeper than 512 levels in any part the plan reads, a field or a passed-through container: the whole body maps to the all-`None` shape, not just the deep field. A deep part no field reads is skipped and does not count. A parsed object (`map(dict)`) has no such cap, so the same body maps normally once you parse it yourself.
+
 ## Duplicate keys
 
 A JSON object can repeat a key. pycanonic reads such an object in three ways:
@@ -27,6 +29,8 @@ JavaScript puts integer-like keys (`"1"`, `"42"`) first in every object, in nume
 ## Integers beyond 2^53 stay exact
 
 JavaScript numbers are doubles, so the TypeScript package rounds an integer above 2^53. pycanonic keeps it exact. `{"id": 9007199254740993}` maps to `9007199254740993` here and to `9007199254740992` in TypeScript. The conformance runners allow one double step of difference past 2^53 for this reason.
+
+`cast: integer` and `cast: number` on a string go through a double, as in TypeScript: `"9007199254740993"` casts to `9007199254740992`. A JSON number that is already an integer keeps its exact value through either cast, and an untransformed value is always exact.
 
 ## Very long integers become floats
 
@@ -50,7 +54,7 @@ A JSON string can hold an escape such as `\ud800` with no partner. A UTF-8 strin
 
 ## Limits of shape and fingerprint
 
-On a Python object, `shape` and `fingerprint` raise `ValueError` past 512 levels of nesting, 1,000,000 containers or 64 MiB of path text. A cyclic object, or one that shares its children many times, hits these caps. On `bytes` input the response is parsed first, and the result is never cut.
+On a Python object, `shape` and `fingerprint` raise `ValueError` past 512 levels of nesting, 1,000,000 containers or 64 MiB of path text. A cyclic object, or one that shares its children many times, hits these caps. On `bytes` input the response is parsed first, and the result is never truncated; a body deeper than 512 levels raises `ValueError("invalid JSON: Depth")`.
 
 ## A view inside its own source
 
