@@ -288,6 +288,36 @@ fn integral_casts_keep_float_bits_when_not_i64() {
 }
 
 #[test]
+fn int_casts_stay_exact() {
+    for to in ["number", "integer"] {
+        for i in [9007199254740993, i64::MAX, i64::MIN] {
+            assert_eq!(
+                run("cast", arg(to), Value::Int(i)),
+                Value::Int(i),
+                "{to} {i}"
+            );
+        }
+        // A string goes through Number() and rounds, as in TypeScript.
+        assert_eq!(
+            run("cast", arg(to), s("9007199254740993")),
+            Value::Int(9007199254740992)
+        );
+    }
+}
+
+#[test]
+fn money_extremes_match_typescript() {
+    // Number() of 401 digits is Infinity, and TypeScript's `Infinity > 0` passes it.
+    let huge = format!("1{}", "0".repeat(400));
+    assert_eq!(validate(Semantic::Money, s(&huge)), s(&huge));
+    // JSON.parse reads a 401-digit literal as Infinity, which the number branch rejects.
+    assert_eq!(
+        validate(Semantic::Money, Value::BigInt(huge.into())),
+        Value::Null
+    );
+}
+
+#[test]
 fn join_lists() {
     let j =
         |a: Option<serde_json::Value>, items: Vec<Value<'static>>| tx("join", a).apply_list(&items);

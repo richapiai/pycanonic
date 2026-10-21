@@ -108,6 +108,10 @@ impl Transform for Builtin {
     /// The argument is bound in the variant; `_arg` is for custom transforms only.
     fn apply<'a>(&self, v: Value<'a>, _arg: Option<&serde_json::Value>) -> Value<'a> {
         let out = match self {
+            // An Int is already a whole number; keep it exact instead of rounding through f64.
+            Builtin::Cast(CastTo::Number | CastTo::Integer) if matches!(v, Value::Int(_)) => {
+                Some(v)
+            }
             Builtin::Cast(CastTo::Number) => to_number(&v).map(number),
             Builtin::Cast(CastTo::Integer) => to_integer(&v).map(number),
             Builtin::Cast(CastTo::Boolean) => to_boolean(&v).map(Value::Bool),
@@ -257,6 +261,11 @@ fn number<'a>(f: f64) -> Value<'a> {
 
 /// JavaScript `Number(s)` for decimal strings; `""`, blanks and 0x/0b/0o literals are rejected.
 fn js_number(s: &str) -> Option<f64> {
+    js_number_unbounded(s).filter(|n| n.is_finite())
+}
+
+/// `js_number` without the finiteness check: `"1e400"` is `Some(inf)`, as `Number()` gives Infinity.
+fn js_number_unbounded(s: &str) -> Option<f64> {
     let t = js_trim(s).as_bytes();
     let body = match t.first() {
         Some(b'+' | b'-') => &t[1..],
@@ -290,8 +299,7 @@ fn js_number(s: &str) -> Option<f64> {
     if end != body.len() {
         return None; // trailing text, or a 0x/0b/0o literal
     }
-    let n: f64 = std::str::from_utf8(t).ok()?.parse().ok()?;
-    n.is_finite().then_some(n)
+    std::str::from_utf8(t).ok()?.parse().ok()
 }
 
 fn to_number(v: &Value) -> Option<f64> {
@@ -544,7 +552,8 @@ fn bare_amount(v: &str) -> &str {
     s.strip_suffix(['K', 'M', 'B', 'k', 'm', 'b']).unwrap_or(s)
 }
 
-/// Positive only: 0 and negatives are how providers say "unknown".
+/// Positive only: 0 and negatives are how providers say "unknown". A number must be finite, so a
+/// BigInt past f64 range is rejected as JSON.parse's Infinity is in TypeScript.
 fn valid_money(v: &Value) -> bool {
     match v {
         Value::Str(s) => {
@@ -553,9 +562,9 @@ fn valid_money(v: &Value) -> bool {
             b.first().is_some_and(u8::is_ascii_digit)
                 && b.iter()
                     .all(|c| c.is_ascii_digit() || *c == b',' || *c == b'.')
-                && js_number(&s.replace(',', "")).is_some_and(|n| n > 0.0)
+                // Number() of a long digit string is Infinity, and TypeScript's `Infinity > 0` passes it.
+                && js_number_unbounded(&s.replace(',', "")).is_some_and(|n| n > 0.0)
         }
-        Value::BigInt(d) => !d.starts_with('-'),
         v => as_f64(v).is_some_and(|f| f.is_finite() && f > 0.0),
     }
 }
