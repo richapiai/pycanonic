@@ -1,0 +1,19 @@
+{
+  "provider": "acme",
+  "endpoint": "person.enrich",
+  "version": 2,
+  "status": "shadow",
+  "anchors": {
+    "email": "\"mail_addr\":"
+  },
+  "fields": {
+    "title": "posten",
+    "email": {
+      "from": "mail_addr",
+      "transform": [
+        "trim",
+        "lower"
+      ]
+    }
+  }
+}

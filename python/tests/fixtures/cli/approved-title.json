@@ -1,0 +1,9 @@
+{
+  "provider": "old",
+  "endpoint": "person.enrich",
+  "version": 1,
+  "status": "promoted",
+  "fields": {
+    "title": "posten"
+  }
+}

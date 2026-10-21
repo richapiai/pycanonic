@@ -1,0 +1,15 @@
+{
+  "provider": "acme",
+  "endpoint": "jobs",
+  "version": 1,
+  "status": "promoted",
+  "fields": {
+    "jobs[]": {
+      "from": "history",
+      "item": {
+        "title": "role",
+        "company": "org"
+      }
+    }
+  }
+}

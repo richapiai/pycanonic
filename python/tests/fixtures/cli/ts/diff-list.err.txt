@@ -1,0 +1,5 @@
+1 new response shape
+- history[0].role (was in 100%)
++ history[0].title (in 100%)
+field jobs[].title: filled 100% -> 0%
+jobs[].title                "role" -> "title"

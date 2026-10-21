@@ -1,0 +1,22 @@
+{
+  "provider": "acme",
+  "endpoint": "person.enrich",
+  "version": 1,
+  "status": "promoted",
+  "anchors": {
+    "email": "\"e_mail\":"
+  },
+  "fields": {
+    "title": {
+      "from": "t",
+      "transform": "shout"
+    },
+    "email": {
+      "from": "e_mail",
+      "transform": [
+        "trim",
+        "lower"
+      ]
+    }
+  }
+}

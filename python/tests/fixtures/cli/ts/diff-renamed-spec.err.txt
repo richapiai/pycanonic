@@ -1,0 +1,5 @@
+8 new response shapes
+- contact.mobile (was in 100%)
++ contact.phoneNumber (in 100%)
+field phone: filled 100% -> 0%
+phone                       {"from":"contact.mobile","transform":"normalize_phone"} -> {"from":"contact.phoneNumber","transform":"normalize_phone"}

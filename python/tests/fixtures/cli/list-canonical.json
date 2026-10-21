@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "jobs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {},
+          "company": {},
+          "start": {}
+        }
+      }
+    }
+  }
+}

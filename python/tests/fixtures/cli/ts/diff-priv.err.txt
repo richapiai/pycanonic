@@ -1,0 +1,9 @@
+1 new response shape
+- t (was in 100%)
+- e_mail (was in 100%)
++ posten (in 100%)
++ mail_addr (in 100%)
+field title: filled 100% -> 0%
+field email: filled 100% -> 0%
+title                       {"from":"t","transform":"shout"} -> "posten"
+email                       {"from":"e_mail","transform":["trim","lower"]} -> {"from":"mail_addr","transform":["trim","lower"]}
