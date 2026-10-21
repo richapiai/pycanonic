@@ -2,6 +2,7 @@
 name = "canonic-core"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
 authors = ["RichAPI AI (TexAu OÜ)"]
 license = "MIT"
 description = "Compile JSON mapping specs into plans that map provider responses to a canonical schema. The core of pycanonic."
