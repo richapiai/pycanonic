@@ -9,6 +9,7 @@ license = "MIT"
 crate-type = ["rlib"]
 
 [dependencies]
+memchr = "2.8.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
 

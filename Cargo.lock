@@ -130,6 +130,7 @@ name = "canonic-core"
 version = "0.1.0"
 dependencies = [
  "jsonschema",
+ "memchr",
  "proptest",
  "serde",
  "serde_json",

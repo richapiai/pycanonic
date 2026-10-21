@@ -1,6 +1,7 @@
 #![deny(unconditional_recursion)]
 
 pub mod canonical;
+pub mod json;
 pub mod plan;
 pub mod resolve;
 pub mod spec;
@@ -8,6 +9,7 @@ pub mod transforms;
 pub mod value;
 
 pub use canonical::{Kind, Node, Schema, Semantic, load_schema, validate_canonical};
+pub use json::{Filter, ParseError, parse, unescape};
 pub use plan::{CompileError, Field, ListKind, Meta, Named, Plan, RoutingField, Scalar, TxRef};
 pub use resolve::compile;
 pub use spec::{Issue, Path, Source, Spec, Status, Step, parse_spec, validate_spec};
