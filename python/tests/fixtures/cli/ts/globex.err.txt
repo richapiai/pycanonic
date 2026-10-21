@@ -1,0 +1,26 @@
+only 3 samples: a field that happens to be null in all of them can't be found
+first_name                  match    0.91  "fname"
+last_name                   match    0.91  "lname"
+email                       match    0.87  {"from":"e_mail","transform":["trim","lower"]}
+phone                       match    1.00  {"from":"tel","transform":"normalize_phone"}
+title                       match    0.91  "job_title"
+linkedin_url                match    1.00  {"from":"li_url","transform":"normalize_linkedin"}
+location.city               match    0.81  "city"
+location.country            match    0.81  "country_code"
+company.name                match    0.91  "org_name"
+company.domain              match    0.75  {"from":"org_url","transform":"to_domain"}
+company.headcount           match    0.72  "num_employees"
+company.industry            match    0.81  "sector"
+updated_at                  match    0.72  {"from":"last_updated","transform":"parse_date"}
+full_name                   join     0.60  {"from":["fname","lname"],"transform":"join"}
+experiences[]               item     0.43  {"from":"jobs","item":{"title":"job_title","company":"employer","start":{"from":"start_date","transform":"parse_date"},"end":{"from":"end_date","transform":"parse_date"}}}  <- check
+experiences[].title         match    0.91  "job_title"
+experiences[].company       match    0.91  "employer"
+experiences[].start         match    0.81  {"from":"start_date","transform":"parse_date"}
+experiences[].end           match    0.81  {"from":"end_date","transform":"parse_date"}
+skills[]                    values   0.67  {"from":"skill_list"}
+seniority                   unmapped  best: fname (0.35)
+company.founded             unmapped  best: org_name (0.56)
+anchor: email "e_mail":
+anchor: phone "tel":
+anchor: company.domain "org_url":

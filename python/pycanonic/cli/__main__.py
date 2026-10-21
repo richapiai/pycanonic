@@ -10,10 +10,10 @@ import sys
 from collections.abc import Callable
 from types import ModuleType
 
-from .commands import build, test
+from .commands import build, infer, test
 from .io import Transforms, UsageError
 
-COMMANDS: dict[str, ModuleType] = {"test": test, "build": build}
+COMMANDS: dict[str, ModuleType] = {"infer": infer, "test": test, "build": build}
 
 USAGE = f"""usage: canonic <command> [options]
 
@@ -26,7 +26,8 @@ canonic <command> --help shows the details."""
 
 
 def _load_transforms(args: list[str]) -> tuple[list[str], Transforms]:
-    """Takes --transforms <module.py> out of args and imports the file's public callables."""
+    """Takes --transforms <module.py> out of args and imports the public functions the file defines
+    (not names it imports)."""
     if "--transforms" not in args:
         return args, {}
     i = args.index("--transforms")
@@ -39,7 +40,9 @@ def _load_transforms(args: list[str]) -> tuple[list[str], Transforms]:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     fns: dict[str, Callable[..., object]] = {
-        k: v for k, v in vars(mod).items() if not k.startswith("_") and callable(v)
+        k: v
+        for k, v in vars(mod).items()
+        if not k.startswith("_") and callable(v) and getattr(v, "__module__", None) == mod.__name__
     }
     return args[:i] + args[i + 2 :], fns
 

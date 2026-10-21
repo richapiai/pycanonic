@@ -1,0 +1,20 @@
+{
+  "provider": "acme",
+  "endpoint": "person.enrich",
+  "version": 1,
+  "status": "draft",
+  "fields": {
+    "first_name": "fname",
+    "email": {
+      "from": "e_mail",
+      "transform": [
+        "trim",
+        "lower"
+      ]
+    },
+    "company.industry": "vertikal"
+  },
+  "anchors": {
+    "email": "\"e_mail\":"
+  }
+}

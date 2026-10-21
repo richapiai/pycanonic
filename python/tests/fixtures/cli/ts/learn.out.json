@@ -1,0 +1,19 @@
+{
+  "provider": "acme",
+  "endpoint": "person.enrich",
+  "version": 1,
+  "status": "draft",
+  "fields": {
+    "first_name": "fname",
+    "email": {
+      "from": "e_mail",
+      "transform": [
+        "trim",
+        "lower"
+      ]
+    }
+  },
+  "anchors": {
+    "email": "\"e_mail\":"
+  }
+}

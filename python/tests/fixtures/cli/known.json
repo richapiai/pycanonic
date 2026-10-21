@@ -1,0 +1,12 @@
+{
+  "p0.json": {
+    "company": {
+      "industry": "software"
+    }
+  },
+  "p1.json": {
+    "company": {
+      "industry": "software"
+    }
+  }
+}

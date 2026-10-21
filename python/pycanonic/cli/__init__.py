@@ -5,5 +5,5 @@ Adding a command: write `commands/<name>.py` exposing `USAGE` (a string whose fi
 `COMMANDS` in `__main__.py`. The dispatcher prints `USAGE` for `--help`, strips `--transforms`
 from `args` and imports that file first, and turns `UsageError` (or any other exception) into
 exit 2. `run` returns 0 on success and 1 for a verdict (a failed fixture, drift). Parse `args`
-with `io.parser(USAGE)`, which raises `UsageError` instead of exiting.
+with `io.parser(USAGE)`, which raises a one-line `ValueError` instead of exiting.
 """

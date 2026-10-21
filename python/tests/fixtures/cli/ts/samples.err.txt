@@ -1,0 +1,25 @@
+full_name                   match    0.90  "profile.fullName"
+email                       match    0.80  {"from":"contact.workEmail","transform":["trim","lower"]}
+phone                       match    0.93  {"from":"contact.mobile","transform":"normalize_phone"}
+title                       match    0.81  {"from":"profile.headline","transform":"trim"}
+seniority                   match    0.81  "profile.level"
+linkedin_url                match    0.80  {"from":"social.li","transform":"normalize_linkedin"}
+location.city               match    0.77  "geo.city"
+location.country            match    0.77  "geo.countryCode"
+company.name                match    0.91  "org.name"
+company.domain              match    0.75  {"from":"org.website","transform":"to_domain"}
+company.headcount           match    1.00  {"from":"org.size","transform":{"cast":"integer"}}
+company.industry            match    0.91  "org.industry"
+company.founded             match    0.86  {"from":"org.foundedOn","transform":"parse_date"}
+updated_at                  match    0.72  {"from":"_meta.updated","transform":"parse_date"}
+first_name                  split    0.90  {"from":"profile.fullName","transform":{"split_name":"first"}}
+last_name                   split    0.90  {"from":"profile.fullName","transform":{"split_name":"last"}}
+experiences[]               item     0.79  {"from":"workHistory","item":{"title":"role","company":"orgName","start":{"from":"from","transform":"parse_date"},"end":{"from":"to","transform":"parse_date"}}}
+experiences[].title         match    0.91  "role"
+experiences[].company       match    0.72  "orgName"
+experiences[].start         match    1.00  {"from":"from","transform":"parse_date"}
+experiences[].end           match    1.00  {"from":"to","transform":"parse_date"}
+skills[]                    pluck    0.92  {"from":"tags","pluck":"label"}
+anchor: email "workEmail":
+anchor: phone "mobile":
+anchor: company.domain "website":

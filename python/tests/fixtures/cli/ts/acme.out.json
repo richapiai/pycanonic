@@ -1,0 +1,89 @@
+{
+  "provider": "acme",
+  "endpoint": "person.enrich",
+  "version": 1,
+  "status": "draft",
+  "fields": {
+    "full_name": "profile.fullName",
+    "email": {
+      "coalesce": [
+        "contact.workEmail",
+        "contact.emails[0].address"
+      ],
+      "transform": [
+        "trim",
+        "lower"
+      ]
+    },
+    "phone": {
+      "from": "contact.mobile",
+      "transform": "normalize_phone"
+    },
+    "title": {
+      "from": "profile.headline",
+      "transform": "trim"
+    },
+    "seniority": "profile.level",
+    "linkedin_url": {
+      "from": "social.li",
+      "transform": "normalize_linkedin"
+    },
+    "location.city": "geo.city",
+    "location.country": "geo.countryCode",
+    "company.name": "org.name",
+    "company.domain": {
+      "from": "org.website",
+      "transform": "to_domain"
+    },
+    "company.headcount": {
+      "from": "org.size",
+      "transform": {
+        "cast": "integer"
+      }
+    },
+    "company.industry": "org.industry",
+    "company.founded": {
+      "from": "org.foundedOn",
+      "transform": "parse_date"
+    },
+    "updated_at": {
+      "from": "_meta.updated",
+      "transform": "parse_date"
+    },
+    "first_name": {
+      "from": "profile.fullName",
+      "transform": {
+        "split_name": "first"
+      }
+    },
+    "last_name": {
+      "from": "profile.fullName",
+      "transform": {
+        "split_name": "last"
+      }
+    },
+    "experiences[]": {
+      "from": "workHistory",
+      "item": {
+        "title": "role",
+        "company": "orgName",
+        "start": {
+          "from": "from",
+          "transform": "parse_date"
+        },
+        "end": {
+          "from": "to",
+          "transform": "parse_date"
+        }
+      }
+    },
+    "skills[]": {
+      "from": "tags",
+      "pluck": "label"
+    }
+  },
+  "anchors": {
+    "phone": "\"mobile\":",
+    "company.domain": "\"website\":"
+  }
+}

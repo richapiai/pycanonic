@@ -1,0 +1,19 @@
+first_name                  match    0.91  "fname"
+email                       match    0.87  {"from":"e_mail","transform":["trim","lower"]}
+last_name                   unmapped  best: fname (0.63)
+full_name                   unmapped  best: fname (0.42)
+phone                       unmapped
+title                       unmapped  best: fname (0.35)
+seniority                   unmapped  best: fname (0.35)
+linkedin_url                unmapped  best: fname (0.35)
+location.city               unmapped  best: fname (0.25)
+location.country            unmapped  best: fname (0.25)
+company.name                unmapped  best: fname (0.63)
+company.domain              unmapped  best: e_mail (0.53)
+company.headcount           unmapped  best: e_mail (0.1)
+company.industry            unmapped  best: fname (0.25)
+company.founded             unmapped  best: fname (0.25)
+updated_at                  unmapped  best: fname (0.35)
+experiences[]               unmapped
+skills[]                    unmapped
+anchor: email "e_mail":
