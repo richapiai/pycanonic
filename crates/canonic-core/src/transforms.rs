@@ -351,13 +351,16 @@ fn to_boolean(v: &Value) -> Option<bool> {
         Value::Bool(b) => Some(*b),
         Value::Str(s) => {
             let s = js_trim(s);
-            let is = |w: &[&str]| w.iter().any(|w| s.eq_ignore_ascii_case(w));
-            if is(&["true", "yes", "1"]) {
-                Some(true)
-            } else if is(&["false", "no", "0"]) {
-                Some(false)
-            } else {
-                None
+            // By length first: one case-insensitive compare at most.
+            let is = |w: &str| s.eq_ignore_ascii_case(w);
+            match s.len() {
+                4 if is("true") => Some(true),
+                3 if is("yes") => Some(true),
+                1 if s == "1" => Some(true),
+                5 if is("false") => Some(false),
+                2 if is("no") => Some(false),
+                1 if s == "0" => Some(false),
+                _ => None,
             }
         }
         v => match as_f64(v) {
