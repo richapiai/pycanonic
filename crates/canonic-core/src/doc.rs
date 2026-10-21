@@ -3,6 +3,8 @@
 use crate::json::Node;
 use crate::value::Value;
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 /// An object key on a plan path. `tag` is unique per distinct key string within one `Program`
 /// (`Program::keys()[tag] == s`), so a host can intern its own string once per tag.
@@ -82,13 +84,19 @@ impl<'a, 'b> Doc for &'a Node<'b> {
         self.idx(i)
     }
 
+    /// Like `JSON.parse`, a repeated key keeps its first position and its last value. Path reads
+    /// through `get` stay first-wins (the parser's rule); the two differ only on duplicate keys.
     fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>> {
         let Node::Obj(m) = self else { return None };
         let mut out: Vec<(Cow<'_, str>, Self)> = Vec::with_capacity(m.len());
+        let mut at: HashMap<&str, usize> = HashMap::with_capacity(m.len());
         for (k, v) in m {
-            // quadratic duplicate check, fine for the rare passthrough of an object.
-            if !out.iter().any(|(seen, _)| seen == k) {
-                out.push((Cow::Borrowed(k), v));
+            match at.entry(k) {
+                Entry::Occupied(e) => out[*e.get()].1 = v,
+                Entry::Vacant(e) => {
+                    e.insert(out.len());
+                    out.push((Cow::Borrowed(k), v));
+                }
             }
         }
         Some(out)

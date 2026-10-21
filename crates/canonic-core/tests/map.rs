@@ -243,10 +243,8 @@ fn a_custom_transform_that_panics_counts_as_an_error_and_yields_null() {
         &canonical(),
         custom("boom", |_| panic!("boom")),
     );
-    let hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
+    // The default hook prints the panic to stderr; that noise is expected.
     let out = map(&a, &json!({ "n": "Ada" }));
-    std::panic::set_hook(hook);
     assert_eq!(out["first_name"], J::Null);
     assert_eq!(
         a.stats.snapshot().fields,
@@ -572,4 +570,44 @@ fn artifact_new_rejects_out_of_range_indexes_and_unregistered_transforms() {
     let mut p = plan();
     p.custom_names.clear();
     assert!(new_err(p, HashMap::new()).contains("custom transform 0"));
+}
+
+#[test]
+fn a_plain_list_element_a_transform_rejects_is_null_in_place_with_one_error() {
+    let a = artifact(
+        &spec(json!({ "skills[]": { "from": "t", "transform": "lower" } })),
+        &canonical(),
+    );
+    let out = map(&a, &json!({ "t": ["A", 7, null, "B"] }));
+    assert_eq!(out["skills"], json!(["a", null, null, "b"]));
+    assert_eq!(a.stats.snapshot().fields[0].1, fs_(1, 1));
+}
+
+#[test]
+fn a_passed_through_object_keeps_the_last_duplicate_at_the_first_position() {
+    let a = artifact(&spec(json!({ "full_name": "$" })), &canonical());
+    let out = map_raw(&a, br#"{"a":1,"b":2,"a":3}"#);
+    assert_eq!(out["full_name"].to_string(), r#"{"a":3,"b":2}"#);
+}
+
+#[test]
+fn passing_through_an_object_with_many_keys_is_linear() {
+    let a = artifact(&spec(json!({ "full_name": "$" })), &canonical());
+    let n = 160_000;
+    let mut body = b"{".to_vec();
+    for i in 0..n {
+        body.extend(format!("\"k{i}\":{i},").as_bytes());
+    }
+    body.extend(b"\"k0\":-1}");
+    let started = std::time::Instant::now();
+    let out = map_raw(&a, &body);
+    let elapsed = started.elapsed();
+    let obj = out["full_name"].as_object().unwrap();
+    assert_eq!(obj.len(), n);
+    assert_eq!(obj["k0"], json!(-1));
+    assert!(elapsed.as_secs() < 2, "took {elapsed:?}");
+}
+
+fn map_raw(a: &Artifact, body: &[u8]) -> J {
+    to_json(&a.map_bytes(body), &a.plan.names)
 }
