@@ -1,4 +1,4 @@
-use canonic_core::json::{MAX_BYTES, MAX_DEPTH, Node};
+use canonic_core::json::{MAX_DEPTH, Node};
 use canonic_core::{Filter, ParseError, parse, unescape};
 use proptest::prelude::*;
 use std::borrow::Cow;
@@ -86,6 +86,8 @@ fn bad_escapes_never_panic() {
     assert_eq!(unescape(br"\u12"), "\u{FFFD}12");
     assert_eq!(unescape(br"\uZZZZ"), "\u{FFFD}ZZZZ");
     assert_eq!(unescape(b"\\"), "\u{FFFD}");
+    assert_eq!(unescape("\\\u{e9}x".as_bytes()), "\u{FFFD}x");
+    assert_eq!(unescape("\\\u{1F600}x".as_bytes()), "\u{FFFD}x");
 }
 
 #[test]
@@ -159,16 +161,6 @@ fn deep_nesting_inside_a_skipped_subtree_is_fine() {
             (Cow::Borrowed("noise"), Node::Skipped)
         ]
     );
-}
-
-#[test]
-fn oversized_input_is_rejected_before_reading() {
-    if usize::BITS < 64 {
-        return;
-    }
-    // Zeroed pages are mapped lazily, so this costs address space, not memory.
-    let big = vec![0u8; MAX_BYTES + 1];
-    assert_eq!(parse(&big, &all()), Err(ParseError::Size));
 }
 
 #[test]
@@ -254,6 +246,33 @@ fn duplicate_keys_keep_the_first_in_the_pruned_path() {
             (Cow::Borrowed("a"), Node::Skipped)
         ]
     );
+}
+
+#[test]
+fn first_occurrence_wins_even_when_it_is_not_built() {
+    let f = keys(vec![("a", keys(vec![("b", all())]))]);
+    let out = parse(br#"{"a":[1],"a":{"b":2}}"#, &f).unwrap();
+    assert_eq!(
+        members(&out),
+        &[
+            (Cow::Borrowed("a"), Node::Skipped),
+            (Cow::Borrowed("a"), Node::Skipped)
+        ]
+    );
+}
+
+#[test]
+fn many_duplicate_keys_parse_in_linear_time() {
+    let n = 160_000;
+    let mut doc = b"{".to_vec();
+    doc.extend(b"\"a\":[],".repeat(n));
+    doc.extend(b"\"a\":[]}");
+    let f = keys(vec![("a", keys(vec![("b", all())]))]);
+    let started = std::time::Instant::now();
+    let out = parse(&doc, &f).unwrap();
+    let elapsed = started.elapsed();
+    assert_eq!(members(&out).len(), n + 1);
+    assert!(elapsed.as_secs() < 2, "took {elapsed:?}");
 }
 
 #[test]

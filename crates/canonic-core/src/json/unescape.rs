@@ -19,7 +19,8 @@ pub fn unescape(raw: &[u8]) -> Cow<'_, str> {
     let mut i = first;
     while i < raw.len() {
         if raw[i] != b'\\' {
-            // Backslash is ASCII, so a run never splits a multi-byte sequence.
+            // Runs end only at a backslash (ASCII), and an unknown escape consumes its whole
+            // multi-byte sequence below, so a run never starts mid-sequence.
             let end = memchr(b'\\', &raw[i..]).map_or(raw.len(), |k| i + k);
             out.push_str(&String::from_utf8_lossy(&raw[i..end]));
             i = end;
@@ -56,7 +57,13 @@ pub fn unescape(raw: &[u8]) -> Cow<'_, str> {
                     }
                 }
             },
-            _ => REPLACEMENT,
+            _ => {
+                // An unknown escape eats the whole character, not just its lead byte.
+                while raw.get(i).is_some_and(|&c| c & 0xC0 == 0x80) {
+                    i += 1;
+                }
+                REPLACEMENT
+            }
         });
     }
     Cow::Owned(out)

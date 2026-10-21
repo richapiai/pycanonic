@@ -67,9 +67,7 @@ pub enum ParseError {
 
 /// Parses `buf`, building only what `filter` asks for. Never panics.
 pub fn parse<'a>(buf: &'a [u8], filter: &Filter) -> Result<Node<'a>, ParseError> {
-    if buf.len() > MAX_BYTES {
-        return Err(ParseError::Size);
-    }
+    check_size(buf.len())?;
     let pos = if buf.starts_with(b"\xEF\xBB\xBF") {
         3
     } else {
@@ -79,6 +77,13 @@ pub fn parse<'a>(buf: &'a [u8], filter: &Filter) -> Result<Node<'a>, ParseError>
     p.ws();
     // Trailing content is ignored on purpose (JSON.parse would reject it; see module doc).
     p.value(filter, 0)
+}
+
+fn check_size(len: usize) -> Result<(), ParseError> {
+    if len > MAX_BYTES {
+        return Err(ParseError::Size);
+    }
+    Ok(())
 }
 
 struct Parser<'a> {
@@ -128,6 +133,8 @@ impl<'a> Parser<'a> {
         }
         self.pos += 1;
         let mut members: Vec<(Cow<'a, str>, Node<'a>)> = Vec::new();
+        // First occurrence of a wanted key wins, built or not; later repeats are skipped.
+        let mut seen = vec![false; f.keys.len()];
         self.ws();
         if self.buf.get(self.pos) == Some(&b'}') {
             self.pos += 1;
@@ -145,16 +152,11 @@ impl<'a> Parser<'a> {
             let child = if f.all {
                 Some(&ALL)
             } else {
-                // First occurrence wins in the pruned path: a repeat of a built key is skipped.
                 f.keys
                     .iter()
-                    .find(|(k, _)| **k == *key.as_bytes())
-                    .filter(|_| {
-                        !members
-                            .iter()
-                            .any(|(k, v)| *k == key && !matches!(v, Node::Skipped))
-                    })
-                    .map(|(_, c)| c)
+                    .position(|(k, _)| **k == *key.as_bytes())
+                    .filter(|&i| !std::mem::replace(&mut seen[i], true))
+                    .map(|i| &f.keys[i].1)
             };
             let v = match child {
                 Some(c) => self.value(c, depth)?,
@@ -322,4 +324,17 @@ fn skip_container(buf: &[u8], start: usize) -> Result<usize, ParseError> {
         i += 1;
     }
     Err(ParseError::Syntax(buf.len()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The size gate is tested on lengths alone: allocating 2 GiB aborts on hosts without overcommit.
+    #[test]
+    fn size_gate_rejects_only_past_max_bytes() {
+        assert_eq!(check_size(MAX_BYTES), Ok(()));
+        assert_eq!(check_size(MAX_BYTES + 1), Err(ParseError::Size));
+        assert_eq!(check_size(usize::MAX), Err(ParseError::Size));
+    }
 }
