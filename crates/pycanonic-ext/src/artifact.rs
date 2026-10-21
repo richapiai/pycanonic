@@ -166,7 +166,30 @@ impl Artifact {
         self.inner.stats.reset();
     }
 
+    /// The artifact's field counters, as `snapshot()` and `reset()`.
+    #[getter]
+    fn stats(slf: Py<Self>) -> Stats {
+        Stats(slf)
+    }
+
     fn plan_json(&self) -> String {
         serde_json::to_string(&*self.inner.plan).expect("a plan serializes")
+    }
+}
+
+/// `artifact.stats`: a view of the artifact's counters, not a copy.
+#[pyclass(frozen, module = "pycanonic._core")]
+pub struct Stats(Py<Artifact>);
+
+#[pymethods]
+impl Stats {
+    /// `{"responses": n, "fields": {spec_field: {"fill", "errors", "total"?}}}`, as `stats_snapshot()`.
+    fn snapshot<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        self.0.get().stats_snapshot(py)
+    }
+
+    /// Zeroes every counter.
+    fn reset(&self) {
+        self.0.get().stats_reset();
     }
 }

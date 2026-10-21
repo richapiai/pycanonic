@@ -16,7 +16,7 @@ mod _core {
     use serde_json::Value as J;
 
     #[pymodule_export]
-    use crate::artifact::Artifact;
+    use crate::artifact::{Artifact, Stats};
 
     #[pyfunction]
     fn version() -> &'static str {

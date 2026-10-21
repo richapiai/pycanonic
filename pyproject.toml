@@ -9,6 +9,9 @@ license = "MIT"
 authors = [{ name = "RichAPI AI (TexAu OÜ)" }]
 dynamic = ["version"]
 
+[project.optional-dependencies]
+dev = ["maturin>=1.15,<2", "mypy", "pytest"]
+
 [project.scripts]
 canonic = "pycanonic.cli.__main__:main"
 
