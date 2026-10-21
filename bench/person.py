@@ -1,10 +1,17 @@
 """Port of canonic's bench/person.js: the person.enrich mapping, the same mapping written by hand,
 and the synthetic payloads. `raw(i)` is byte-identical to `JSON.stringify(payload(i))` there.
-The hand-written mapper calls the same transforms, so the comparison measures mapping overhead."""
+
+`hand_written` calls pycanonic's own transforms, as person.js does, so canonic and the reference
+compute the same thing. Each of those calls dispatches by name in Rust (about 70 ns, against
+about 27 ns for `str.lower`), and a payload makes 35 of them, so this reference pays more call
+overhead than ordinary glue would. `hand_written_pure` is the same glue over pure-Python ports
+(pytransforms.py) and is the fairer picture of what hand-written Python costs."""
 
 import json
 import math
 from decimal import Decimal
+
+import pytransforms
 
 from pycanonic import default_transforms as T
 from pycanonic import validators as V
@@ -65,94 +72,101 @@ anchored_spec = {
     "fields": {**spec["fields"], "email": {"from": "contact.workEmail", "transform": ["trim", "lower"]}},
 }
 
-_trim, _lower, _split, _phone, _li = T["trim"], T["lower"], T["split_name"], T["normalize_phone"], T["normalize_linkedin"]
-_domain, _cast, _date = T["to_domain"], T["cast"], T["parse_date"]
-_v_email, _v_phone, _v_domain = V["email"], V["phone"], V["domain"]
+
+def make(T, V):
+    """Builds `hand_written` and `hand_routing` over a set of transforms (by name) and validators
+    (by semantic), so the same glue runs with pycanonic's functions or with pure-Python ports."""
+    _trim, _lower, _split, _phone, _li = T["trim"], T["lower"], T["split_name"], T["normalize_phone"], T["normalize_linkedin"]
+    _domain, _cast, _date = T["to_domain"], T["cast"], T["parse_date"]
+    _v_email, _v_phone, _v_domain = V["email"], V["phone"], V["domain"]
+
+    def _email(contact):
+        email = contact.get("workEmail")
+        if email is None:
+            emails = contact.get("emails")
+            email = emails[0].get("address") if emails else None
+        if email is not None:
+            email = _trim(email)
+        if email is not None:
+            email = _lower(email)
+        if email is not None:
+            email = _v_email(email)
+        return email
+
+    def _routing(contact, org):
+        email = _email(contact)
+        phone = contact.get("mobile")
+        if phone is not None:
+            phone = _phone(phone)
+        if phone is not None:
+            phone = _v_phone(phone)
+        website = org.get("website")
+        domain = None if website is None else _domain(website)
+        if domain is not None:
+            domain = _v_domain(domain)
+        return email, phone, domain
+
+    # Written the way glue code is: inline, one statement per field, transforms called directly.
+    # canonic's null semantics are kept (a transform only runs on a present value) so outputs match.
+    def hand_written(p):
+        """What a developer would write for this mapping without canonic."""
+        profile = p.get("profile") or {}
+        contact = p.get("contact") or {}
+        org = p.get("org") or {}
+        geo = p.get("geo") or {}
+        name = profile.get("fullName")
+        headline = profile.get("headline")
+        li = (p.get("social") or {}).get("li")
+        size = org.get("size")
+        industry = org.get("industry")
+        founded = org.get("foundedOn")
+        updated = (p.get("_meta") or {}).get("updated")
+        jobs = p.get("workHistory")
+        tags = p.get("tags")
+        email, phone, domain = _routing(contact, org)
+        return {
+            "first_name": None if name is None else _split(name, "first"),
+            "last_name": None if name is None else _split(name, "last"),
+            "full_name": name,
+            "email": email,
+            "phone": phone,
+            "title": None if headline is None else _trim(headline),
+            "seniority": profile.get("level"),
+            "linkedin_url": None if li is None else _li(li),
+            "location": {"city": geo.get("city"), "country": geo.get("countryCode")},
+            "company": {
+                "name": org.get("name"),
+                "domain": domain,
+                "headcount": None if size is None else _cast(size, "integer"),
+                "industry": None if industry is None else _lower(industry),
+                "founded": None if founded is None else _date(founded),
+            },
+            "experiences": [
+                {
+                    "title": e.get("role"),
+                    "company": e.get("orgName"),
+                    "start": None if e.get("from") is None else _date(e["from"]),
+                    "end": None if e.get("to") is None else _date(e["to"]),
+                }
+                for e in jobs
+            ]
+            if isinstance(jobs, list)
+            else None,
+            "skills": [None if x.get("label") is None else _lower(x["label"]) for x in tags] if isinstance(tags, list) else None,
+            "updated_at": None if updated is None else _date(updated),
+        }
+
+    def hand_routing(p):
+        """The routing fields, read by hand from a parsed payload."""
+        email, phone, domain = _routing(p.get("contact") or {}, p.get("org") or {})
+        return {"email": email, "phone": phone, "company.domain": domain}
+
+    return hand_written, hand_routing
 
 
-def _email(contact):
-    email = contact.get("workEmail")
-    if email is None:
-        emails = contact.get("emails")
-        email = emails[0].get("address") if emails else None
-    if email is not None:
-        email = _trim(email)
-    if email is not None:
-        email = _lower(email)
-    if email is not None:
-        email = _v_email(email)
-    return email
-
-
-def _routing(contact, org):
-    email = _email(contact)
-    phone = contact.get("mobile")
-    if phone is not None:
-        phone = _phone(phone)
-    if phone is not None:
-        phone = _v_phone(phone)
-    website = org.get("website")
-    domain = None if website is None else _domain(website)
-    if domain is not None:
-        domain = _v_domain(domain)
-    return email, phone, domain
-
-
-# Written the way glue code is: inline, one statement per field, transforms called directly.
-# canonic's null semantics are kept (a transform only runs on a present value) so outputs match.
-def hand_written(p):
-    """What a developer would write for this mapping without canonic."""
-    profile = p.get("profile") or {}
-    contact = p.get("contact") or {}
-    org = p.get("org") or {}
-    geo = p.get("geo") or {}
-    name = profile.get("fullName")
-    headline = profile.get("headline")
-    li = (p.get("social") or {}).get("li")
-    size = org.get("size")
-    industry = org.get("industry")
-    founded = org.get("foundedOn")
-    updated = (p.get("_meta") or {}).get("updated")
-    jobs = p.get("workHistory")
-    tags = p.get("tags")
-    email, phone, domain = _routing(contact, org)
-    return {
-        "first_name": None if name is None else _split(name, "first"),
-        "last_name": None if name is None else _split(name, "last"),
-        "full_name": name,
-        "email": email,
-        "phone": phone,
-        "title": None if headline is None else _trim(headline),
-        "seniority": profile.get("level"),
-        "linkedin_url": None if li is None else _li(li),
-        "location": {"city": geo.get("city"), "country": geo.get("countryCode")},
-        "company": {
-            "name": org.get("name"),
-            "domain": domain,
-            "headcount": None if size is None else _cast(size, "integer"),
-            "industry": None if industry is None else _lower(industry),
-            "founded": None if founded is None else _date(founded),
-        },
-        "experiences": [
-            {
-                "title": e.get("role"),
-                "company": e.get("orgName"),
-                "start": None if e.get("from") is None else _date(e["from"]),
-                "end": None if e.get("to") is None else _date(e["to"]),
-            }
-            for e in jobs
-        ]
-        if isinstance(jobs, list)
-        else None,
-        "skills": [None if x.get("label") is None else _lower(x["label"]) for x in tags] if isinstance(tags, list) else None,
-        "updated_at": None if updated is None else _date(updated),
-    }
-
-
-def hand_routing(p):
-    """The routing fields, read by hand from a parsed payload."""
-    email, phone, domain = _routing(p.get("contact") or {}, p.get("org") or {})
-    return {"email": email, "phone": phone, "company.domain": domain}
+hand_written, hand_routing = make(T, V)
+# The same glue with pure-Python transforms (pytransforms.py): what idiomatic code would call.
+hand_written_pure, hand_routing_pure = make(pytransforms.TRANSFORMS, pytransforms.VALIDATORS)
 
 
 # --- payloads -------------------------------------------------------------------------------------

@@ -50,7 +50,8 @@ for size in (256, 1024, 4096):
 for name, fns in CASES:
     for label, fn in fns.items():
         for i in range(64):
-            assert fn(i) == read(orjson.loads(bodies[i])), f"{name}: {label}"
+            if fn(i) != read(orjson.loads(bodies[i])):
+                raise SystemExit(f"output mismatch: {name}: {label}, body {i}")
 
 v = sys.version_info
 kb = sum(map(len, bodies)) / len(bodies) / 1024

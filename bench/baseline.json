@@ -1,17 +1,19 @@
 {
   "darwin-arm64": {
     "map, bytes in / orjson.loads + hand-written py": 0.291,
-    "map, bytes in / orjson.loads (input)": 0.414,
-    "map, bytes in / json.loads (input)": 0.172,
-    "map, JSON out / orjson.loads + hand-written py + orjson.dumps": 0.26,
-    "map, parsed in / hand-written py": 0.754,
-    "view, construct / dict literal": 2.208,
-    "view, 3 reads / hand-written py routing": 0.771,
-    "extract routing / orjson.loads + read": 0.092,
-    "extract routing / orjson.loads (input)": 0.097,
+    "map, bytes in / orjson.loads + hand-written py (pure-Python transforms)": 0.19,
+    "map, bytes in / orjson.loads (input)": 0.415,
+    "map, bytes in / json.loads (input)": 0.173,
+    "map, JSON out / orjson.loads + hand-written py + orjson.dumps": 0.255,
+    "map, parsed in / hand-written py": 0.76,
+    "map, parsed in / hand-written py (pure-Python transforms)": 0.26,
+    "view, construct / dict literal": 2.433,
+    "view, 3 reads / hand-written py routing": 0.76,
+    "extract routing / orjson.loads + read": 0.089,
+    "extract routing / orjson.loads (input)": 0.093,
     "extract, anchored / orjson.loads + read": 0.049,
-    "extract 5, 10.7 KB / orjson.loads + read": 0.07,
-    "extract 5, anchored / orjson.loads + read": 0.041,
-    "stream, 1 KB chunks / join + orjson.loads + read": 0.324
+    "extract 5, 10.7 KB / orjson.loads + read": 0.069,
+    "extract 5, anchored / orjson.loads + read": 0.04,
+    "stream, 1 KB chunks / join + orjson.loads + read": 0.31
   }
 }

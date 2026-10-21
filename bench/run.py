@@ -41,6 +41,7 @@ big_parsed = [orjson.loads(r) for r in big_raws]
 chunks = [[r[k : k + 1024] for k in range(0, len(r), 1024)] for r in big_raws]
 
 hand_written, hand_routing, hand_read = person.hand_written, person.hand_routing, routing.hand_read
+hand_written_pure = person.hand_written_pure
 
 
 def view_reads(v):
@@ -55,25 +56,33 @@ def stream(a, pieces):
     return s.result()
 
 
+def check(ok, what):
+    """Raises rather than asserts, so `python -O` cannot skip the check."""
+    if not ok:
+        raise SystemExit(f"output mismatch: {what}")
+
+
 # Identical output first; a fast wrong answer is not a benchmark.
 for i in range(64):
-    want = hand_written(parsed[i])
-    assert want == TS["expected"][i]
-    assert artifact.map(raws[i]) == want
-    assert artifact.map(parsed[i]) == want
-    assert artifact.map_json(raws[i]) == orjson.dumps(want)
-    assert artifact.view(parsed[i]).to_dict() == want
-    assert view_reads(artifact.view(parsed[i])) == tuple(hand_routing(parsed[i]).values())
-    assert artifact.extract(raws[i]) == hand_routing(parsed[i]) == TS["routing"][i]
-    assert anchored.extract(raws[i]) == hand_routing(parsed[i]) == TS["anchored"][i]
-    assert scan5.extract(big_raws[i]) == hand_read(big_parsed[i]) == TS["hand_read"][i]
-    assert anchored5.extract(big_raws[i]) == hand_read(big_parsed[i])
-    assert stream(scan5, chunks[i]) == hand_read(big_parsed[i])
+    want, routed, read = hand_written(parsed[i]), hand_routing(parsed[i]), hand_read(big_parsed[i])
+    check(want == TS["expected"][i], f"hand-written py, body {i}")
+    check(person.hand_written_pure(parsed[i]) == want, f"hand-written py (pure-Python transforms), body {i}")
+    check(artifact.map(raws[i]) == want, f"map, bytes in, body {i}")
+    check(artifact.map(parsed[i]) == want, f"map, parsed in, body {i}")
+    check(artifact.map_json(raws[i]) == orjson.dumps(want), f"map, JSON out, body {i}")
+    check(artifact.view(parsed[i]).to_dict() == want, f"view, body {i}")
+    check(view_reads(artifact.view(parsed[i])) == tuple(routed.values()), f"view, 3 reads, body {i}")
+    check(artifact.extract(raws[i]) == routed == TS["routing"][i], f"extract routing, body {i}")
+    check(anchored.extract(raws[i]) == routed == TS["anchored"][i], f"extract, anchored, body {i}")
+    check(scan5.extract(big_raws[i]) == read == TS["hand_read"][i], f"extract 5, body {i}")
+    check(anchored5.extract(big_raws[i]) == read, f"extract 5, anchored, body {i}")
+    check(stream(scan5, chunks[i]) == read, f"stream, body {i}")
 
 loads = orjson.loads
 CASES = [
     ("map, bytes in", lambda i: artifact.map(raws[i]), {
         "orjson.loads + hand-written py": lambda i: hand_written(loads(raws[i])),
+        "orjson.loads + hand-written py (pure-Python transforms)": lambda i: hand_written_pure(loads(raws[i])),
         "orjson.loads (input)": lambda i: loads(raws[i]),
         "json.loads (input)": lambda i: json.loads(raws[i]),
     }),
@@ -82,6 +91,7 @@ CASES = [
     }),
     ("map, parsed in", lambda i: artifact.map(parsed[i]), {
         "hand-written py": lambda i: hand_written(parsed[i]),
+        "hand-written py (pure-Python transforms)": lambda i: hand_written_pure(parsed[i]),
     }),
     ("view, construct", lambda i: artifact.view(parsed[i]), {
         "dict literal": lambda i: {"s": parsed[i]},
@@ -137,9 +147,14 @@ def run(extra=None):
     return ratios, rows
 
 
-def commit(path):
-    out = subprocess.run(["git", "-C", str(path), "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
-    return out.stdout.strip() or "unknown"
+def git(path, *args):
+    return subprocess.run(["git", "-C", str(path), *args], capture_output=True, text=True).stdout.strip()
+
+
+def commit(path, dirty=True):
+    """The short HEAD hash, with `-dirty` when the working tree has uncommitted changes."""
+    head = git(path, "rev-parse", "--short", "HEAD") or "unknown"
+    return head + ("-dirty" if dirty and git(path, "status", "--porcelain") else "")
 
 
 def kb(xs):
@@ -150,10 +165,10 @@ def table(rows):
     v = sys.version_info
     print(f"Python {v.major}.{v.minor}.{v.micro} {PLATFORM}, pycanonic {commit(HERE)}, payloads from canonic {TS['ts_commit']}")
     print(f"person.enrich: {kb(raws)} KB payloads, {len(person.spec['fields'])} spec fields; extract 5: {kb(big_raws)} KB, fields at 10% to 90% of the body\n")
-    print(f"{'case':<22}{'implementation':<48}{'per op':>11}{'ops/sec':>13}{'canonic is':>13}")
+    print(f"{'case':<22}{'implementation':<58}{'per op':>11}{'ops/sec':>13}{'canonic is':>13}")
     for name, label, ns, rel in rows:
         vs = "" if label == "canonic" else f"{1 / rel:.2f}x"
-        print(f"{name:<22}{label:<48}{fmt(ns):>11}{round(1e9 / ns):>13,}{vs:>13}")
+        print(f"{name:<22}{label:<58}{fmt(ns):>11}{round(1e9 / ns):>13,}{vs:>13}")
     print("\n'canonic is' = canonic time / reference time (below 1.00x is faster).")
 
 
@@ -191,6 +206,23 @@ def ts_rows(checkout, script):
     return {(m[1], m[2]): 1e9 / int(m[3].replace(",", "")) for m in map(ROW.match, out.splitlines()) if m}
 
 
+def ts_preflight(checkout):
+    """The TypeScript side must be the pinned commit (the one ts_outputs.json came from) and its
+    dist must be built from the current sources. Returns an error message, or None."""
+    head = commit(checkout, dirty=False)
+    if head != TS["ts_commit"]:
+        return (f"--vs-ts: {checkout} is at {head}, but bench/ts_outputs.json pins canonic {TS['ts_commit']}. "
+                f"Check out {TS['ts_commit']} there, or regenerate with `node bench/dump.mjs {checkout}`.")
+    pkg = checkout / "packages/canonic"
+    dist = pkg / "dist/index.js"
+    if not dist.exists():
+        return f"--vs-ts: {dist} is missing; run `pnpm build` in {checkout}."
+    newest = max((f for f in (pkg / "src").rglob("*") if f.is_file()), key=lambda f: f.stat().st_mtime)
+    if newest.stat().st_mtime > dist.stat().st_mtime:
+        return f"--vs-ts: {dist} is older than {newest}; run `pnpm build` in {checkout}."
+    return None
+
+
 def vs_ts(checkout, rows):
     ts = ts_rows(checkout, "run.js") | ts_rows(checkout, "streaming.js")
     py = {name: ns for name, label, ns, _ in rows if label == "canonic"}
@@ -198,6 +230,10 @@ def vs_ts(checkout, rows):
     print(f"{'case':<22}{'TypeScript rows':<38}{'TypeScript':>12}{'pycanonic':>12}{'py / ts':>10}  gate")
     ok = True
     for name, (refs, gated) in VS_TS.items():
+        missing = [r for r in refs if r not in ts]
+        if missing:
+            print(f"--vs-ts: no TypeScript row {missing} in the bench output; the table format changed?", file=sys.stderr)
+            return False
         t = sum(ts[r] for r in refs)
         ratio = py[name] / t
         verdict = ("PASS" if ratio < 1 else "FAIL") if gated else "reported"
@@ -219,6 +255,18 @@ def main(argv):
         print("selftest ok: the gate fails on a 20% slowdown" if tripped else "selftest FAILED: a 20% slowdown passed the gate")
         return 0 if tripped else 1
 
+    checkout = None
+    if "--vs-ts" in argv:
+        at = argv.index("--vs-ts") + 1
+        if at >= len(argv) or argv[at].startswith("--"):
+            print("--vs-ts needs the path to a canonic checkout: python bench/run.py --vs-ts ../canonic", file=sys.stderr)
+            return 2
+        checkout = Path(argv[at]).resolve()
+        error = ts_preflight(checkout)
+        if error:
+            print(error, file=sys.stderr)
+            return 1
+
     ratios, rows = run()
     table(rows)
 
@@ -238,9 +286,9 @@ def main(argv):
             return 1
         print(f"\nbench gate: {len(baseline)} ratios within {round((TOLERANCE - 1) * 100)}% of the {PLATFORM} baseline")
 
-    if "--vs-ts" in argv:
+    if checkout:
         print()
-        if not vs_ts(Path(argv[argv.index("--vs-ts") + 1]).resolve(), rows):
+        if not vs_ts(checkout, rows):
             return 1
     return 0
 

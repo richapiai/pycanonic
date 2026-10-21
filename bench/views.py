@@ -41,7 +41,8 @@ print(f"{'fields':>7}{'view':>12}{'view + 1 read':>16}{'map':>12}")
 for n in SIZES:
     a, payloads = build(n)
     for p in payloads:
-        assert a.view(p).to_dict() == a.map(p)
+        if a.view(p).to_dict() != a.map(p):
+            raise SystemExit(f"output mismatch: view and map at {n} fields")
     construct, read, full = measure([
         ("construct", lambda i: a.view(payloads[i])),
         ("read", lambda i: a.view(payloads[i]).email),

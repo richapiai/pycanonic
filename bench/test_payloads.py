@@ -24,3 +24,10 @@ def test_hand_written_matches_typescript():
         assert person.hand_written(p) == TS["expected"][i]
         assert person.hand_routing(p) == TS["routing"][i]
         assert routing.hand_read(json.loads(TS["routing_raws"][i])) == TS["hand_read"][i]
+
+
+def test_pure_python_reference_matches_typescript():
+    for i in range(64):
+        p = json.loads(TS["raws"][i])
+        assert person.hand_written_pure(p) == TS["expected"][i]
+        assert person.hand_routing_pure(p) == TS["routing"][i]
