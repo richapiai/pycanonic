@@ -21,6 +21,8 @@ pub struct Artifact {
     pub(crate) names: Vec<Py<PyString>>,
     /// The canonical object levels a `View` walks; see `view::levels`.
     pub(crate) levels: Vec<Level>,
+    /// Interned routing field names, in `plan.routing` order: the keys of `extract`'s dict.
+    pub(crate) routing: Vec<Py<PyString>>,
 }
 
 /// Python callables by transform name.
@@ -69,6 +71,7 @@ impl Artifact {
         Ok(Artifact {
             keys: inner.keys().iter().map(intern).collect(),
             names: inner.plan.names.iter().map(intern).collect(),
+            routing: inner.plan.routing.iter().map(|r| intern(&r.name)).collect(),
             levels: levels(py, &inner.plan.names, &inner.plan.fields),
             inner,
         })
@@ -162,7 +165,7 @@ impl Artifact {
         let body =
             body_of(raw).ok_or_else(|| PyTypeError::new_err("extract takes bytes or str"))?;
         let out = py.detach(|| self.inner.extract(&body));
-        take_pending().map_or_else(|| routing_dict(py, &self.inner.plan, &out), Err)
+        take_pending().map_or_else(|| routing_dict(py, &self.routing, &out), Err)
     }
 
     /// A lazy canonical object over `src` (as `map` takes it): each field is mapped on first read.
@@ -229,15 +232,16 @@ impl Stats {
     }
 }
 
-/// Routing values as `{spec_field: value}`, in `plan.routing` order; not found and rejected are `None`.
+/// Routing values as `{spec_field: value}`, in `plan.routing` order (`names`, interned); not found
+/// and rejected are `None`.
 fn routing_dict<'py>(
     py: Python<'py>,
-    plan: &Plan,
+    names: &[Py<PyString>],
     vals: &[Option<Value<'static>>],
 ) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(py);
-    for (r, v) in plan.routing.iter().zip(vals) {
-        d.set_item(&r.name, v.as_ref().map(|v| value(py, v)))?;
+    for (name, v) in names.iter().zip(vals) {
+        d.set_item(name.bind(py), v.as_ref().map(|v| value(py, v)))?;
     }
     Ok(d)
 }
@@ -276,9 +280,6 @@ impl ExtractStream {
             .take()
             .ok_or_else(finished)?;
         let out = py.detach(|| s.result());
-        take_pending().map_or_else(
-            || routing_dict(py, &self.artifact.get().inner.plan, &out),
-            Err,
-        )
+        take_pending().map_or_else(|| routing_dict(py, &self.artifact.get().routing, &out), Err)
     }
 }
