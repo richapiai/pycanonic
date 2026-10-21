@@ -1,0 +1,9 @@
+[package]
+name = "canonic-core"
+version = "0.1.0"
+edition = "2024"
+authors = ["RichAPI AI (TexAu OÜ)"]
+license = "MIT"
+
+[lib]
+crate-type = ["rlib"]

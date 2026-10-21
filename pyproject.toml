@@ -1,0 +1,18 @@
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[project]
+name = "pycanonic"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "RichAPI AI (TexAu OÜ)" }]
+dynamic = ["version"]
+
+[project.scripts]
+canonic = "pycanonic.cli.__main__:main"
+
+[tool.maturin]
+python-source = "python"
+module-name = "pycanonic._core"
+manifest-path = "crates/pycanonic-ext/Cargo.toml"
