@@ -1,0 +1,10 @@
+# bench/interpreters.py, second environment: these two install the same module names as jmespath and
+# jsonata-python in requirements.txt, so they cannot share an environment with them.
+orjson
+glom==25.12.0
+jmespath-community==1.1.3
+jsonpath-ng==1.12.0
+jsonbender==0.9.3
+pydantic==2.14.1
+jsonata-rs==0.1.4
+jq==1.13.0

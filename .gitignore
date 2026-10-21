@@ -1,4 +1,5 @@
 .venv/
+.venv-alt/
 target/
 *.so
 __pycache__/

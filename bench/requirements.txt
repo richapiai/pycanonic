@@ -1,1 +1,9 @@
 orjson
+# bench/interpreters.py: the mapping libraries it compares against
+glom==25.12.0
+jmespath==1.1.0
+jsonpath-ng==1.12.0
+jsonbender==0.9.3
+pydantic==2.14.1
+jsonata-python==0.7.1
+jq==1.13.0
