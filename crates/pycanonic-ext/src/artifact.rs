@@ -1,15 +1,15 @@
 //! The `Artifact` class: a compiled plan with its stats, mapping Python objects, `bytes` or `str`.
 
 use crate::pydoc::{PyDoc, text};
-use crate::pysink::{PySink, to_py};
+use crate::pysink::{PySink, to_py, value};
 use crate::transforms::{PyTransform, take_pending};
-use canonic_core::{CompileError, Plan, Status, Transform};
+use canonic_core::{CompileError, Plan, Status, Transform, Value};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyString};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 #[pyclass(frozen, module = "pycanonic._core")]
 pub struct Artifact {
@@ -144,6 +144,27 @@ impl Artifact {
         take_pending().map_or(Ok(PyBytes::new(py, &out)), Err)
     }
 
+    /// The routing fields read straight from `bytes` or `str`, keyed by spec field; GIL released.
+    fn extract<'py>(
+        &self,
+        py: Python<'py>,
+        raw: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let body =
+            body_of(raw).ok_or_else(|| PyTypeError::new_err("extract takes bytes or str"))?;
+        let out = py.detach(|| self.inner.extract(&body));
+        take_pending().map_or_else(|| routing_dict(py, &self.inner.plan, &out), Err)
+    }
+
+    /// A fresh incremental reader of the routing fields; one per response.
+    fn stream(slf: Py<Self>) -> ExtractStream {
+        let inner = slf.get().inner.stream();
+        ExtractStream {
+            artifact: slf,
+            inner: Mutex::new(Some(inner)),
+        }
+    }
+
     fn stats_snapshot<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let s = self.inner.stats.snapshot();
         let fields = PyDict::new(py);
@@ -191,5 +212,59 @@ impl Stats {
     /// Zeroes every counter.
     fn reset(&self) {
         self.0.get().stats_reset();
+    }
+}
+
+/// Routing values as `{spec_field: value}`, in `plan.routing` order; not found and rejected are `None`.
+fn routing_dict<'py>(
+    py: Python<'py>,
+    plan: &Plan,
+    vals: &[Option<Value<'static>>],
+) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    for (r, v) in plan.routing.iter().zip(vals) {
+        d.set_item(&r.name, v.as_ref().map(|v| value(py, v)))?;
+    }
+    Ok(d)
+}
+
+/// `artifact.stream()`: `push` chunks, then `result()` once.
+#[pyclass(frozen, module = "pycanonic._core")]
+pub struct ExtractStream {
+    artifact: Py<Artifact>,
+    /// Taken by `result()`, which consumes the core stream.
+    inner: Mutex<Option<canonic_core::ExtractStream>>,
+}
+
+fn finished() -> PyErr {
+    PyValueError::new_err("stream already finished")
+}
+
+#[pymethods]
+impl ExtractStream {
+    /// Feeds `bytes` or `str`; `True` once every routing field is available. GIL released.
+    fn push(&self, py: Python<'_>, chunk: &Bound<'_, PyAny>) -> PyResult<bool> {
+        let body = body_of(chunk).ok_or_else(|| PyTypeError::new_err("push takes bytes or str"))?;
+        let done = py.detach(|| {
+            let mut g = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+            g.as_mut().map(|s| s.push(&body))
+        });
+        let done = done.ok_or_else(finished)?;
+        take_pending().map_or(Ok(done), Err)
+    }
+
+    /// Ends the input and returns the routing values; a second call raises `ValueError`.
+    fn result<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let s = self
+            .inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+            .ok_or_else(finished)?;
+        let out = py.detach(|| s.result());
+        take_pending().map_or_else(
+            || routing_dict(py, &self.artifact.get().inner.plan, &out),
+            Err,
+        )
     }
 }
