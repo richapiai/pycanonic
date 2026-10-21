@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/richapiai/pycanonic/actions/workflows/ci.yml/badge.svg)](https://github.com/richapiai/pycanonic/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/pycanonic)](https://pypi.org/project/pycanonic/)
-[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/richapiai/pycanonic/blob/main/LICENSE)
 
 pycanonic maps a data provider's JSON response to your own canonical shape. It compiles a JSON mapping spec into a plan and runs it in Rust. The mapping stays a JSON file that you review in a pull request. pycanonic is the Python version of [canonic](https://github.com/richapiai/canonic), the TypeScript package, and it reads the same spec files.
 
@@ -94,7 +94,7 @@ acme person.enrich v1: fields["email"]: unknown transform "shout"
 
 `map` never raises on bad data. A missing source value becomes `None`. A transform that cannot handle its input returns `None` and adds one to that field's `errors` count. A routing field whose value fails its validator does the same. Only `map` and `map_json` count stats. The view and `extract` do not count. Call `snapshot()` and `reset()` once per period to get per-window counts.
 
-The default transforms are `cast`, `lower`, `trim`, `split_name`, `join`, `parse_date`, `normalize_phone`, `normalize_linkedin` and `to_domain`. Pass your own with `compile_spec(spec, canonical, transforms={"my_transform": fn})`. pycanonic catches an `Exception` from your function and counts it as a field error. See [docs/transforms.md](docs/transforms.md), [docs/custom-transforms.md](docs/custom-transforms.md) and [docs/spec-format.md](docs/spec-format.md).
+The default transforms are `cast`, `lower`, `trim`, `split_name`, `join`, `parse_date`, `normalize_phone`, `normalize_linkedin` and `to_domain`. Pass your own with `compile_spec(spec, canonical, transforms={"my_transform": fn})`. pycanonic catches an `Exception` from your function and counts it as a field error. See [docs/transforms.md](https://github.com/richapiai/pycanonic/blob/main/docs/transforms.md), [docs/custom-transforms.md](https://github.com/richapiai/pycanonic/blob/main/docs/custom-transforms.md) and [docs/spec-format.md](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md).
 
 The registry holds one promoted and at most one shadow artifact per provider and endpoint:
 
@@ -109,7 +109,7 @@ registry.get_shadow("acme", "person.enrich")  # None until a shadow version is p
 
 ## Benchmarks
 
-All numbers on this page come from one machine: an Apple M3 Max (36 GB, macOS 27.0) with Python 3.14.7 and Node 26.10.0, release build. The machine was under load (load average 3.5 to 5), so treat the absolute numbers as rough. Each table is one run. [bench/README.md](bench/README.md) has the method, the scripts and the full output. The run on the Hetzner server behind the TypeScript README numbers is still to come.
+All numbers on this page come from one machine: an Apple M3 Max (36 GB, macOS 27.0) with Python 3.14.7 and Node 26.10.0, release build. The machine was under load (load average 3.5 to 5), so treat the absolute numbers as rough. Each table is one run. [bench/README.md](https://github.com/richapiai/pycanonic/blob/main/bench/README.md) has the method, the scripts and the full output. The run on the Hetzner server behind the TypeScript README numbers is still to come.
 
 ### Against TypeScript canonic
 
@@ -162,7 +162,7 @@ This table is from the earlier run at 74dae8f. The same rows in the table above 
 | jsonbender 0.9.3 | 313.35 µs | 8.0x | 285.34 µs | 7.5x |
 | pydantic 2.14.1 | 118.23 µs | 3.0x | 85.73 µs | 2.3x |
 
-Six of the eight interpreted libraries are at least 10 times slower than pycanonic. Two are not. jmespath runs without transforms because it has no string functions, and lands at 9.6x. jsonbender lands at 8.0x. Both are light interpreters that spend under 1 µs per field. pydantic is the exception by design. It compiles its models into a Rust validator tree, so it does the same kind of work as pycanonic and is no interpreter. [docs/why-not-jsonata.md](docs/why-not-jsonata.md) covers the method and where the time goes.
+Six of the eight interpreted libraries are at least 10 times slower than pycanonic. Two are not. jmespath runs without transforms because it has no string functions, and lands at 9.6x. jsonbender lands at 8.0x. Both are light interpreters that spend under 1 µs per field. pydantic is the exception by design. It compiles its models into a Rust validator tree, so it does the same kind of work as pycanonic and is no interpreter. [docs/why-not-jsonata.md](https://github.com/richapiai/pycanonic/blob/main/docs/why-not-jsonata.md) covers the method and where the time goes.
 
 ## CLI
 
@@ -184,7 +184,7 @@ seniority                   unmapped  best: fname (0.35)
 anchor: email "e_mail":
 ```
 
-`--known`, `--synonyms`, `--learn` and `--min-score` tune the scores. `--ask <command>` is an optional model pass. It sends each doubtful field to that shell command as a JSON question on stdin, and the command prints one source path or `null`. See [docs/inference.md](docs/inference.md).
+`--known`, `--synonyms`, `--learn` and `--min-score` tune the scores. `--ask <command>` is an optional model pass. It sends each doubtful field to that shell command as a JSON question on stdin, and the command prints one source path or `null`. See [docs/inference.md](https://github.com/richapiai/pycanonic/blob/main/docs/inference.md).
 
 ### canonic test
 
@@ -221,7 +221,7 @@ canonic bench --schema canonical/person.enrich.json globex.json samples/
 
 ## Known limits
 
-`extract` does not check that its input is JSON. On a duplicate key it returns the first occurrence, where `map` keeps the last. A body that does not parse maps to all `None` and counts every field as a miss, with no exception. Integers beyond 2^53 stay exact, where TypeScript rounds them. [docs/known-limits.md](docs/known-limits.md) has the full list, with every place pycanonic differs from TypeScript.
+`extract` does not check that its input is JSON. On a duplicate key it returns the first occurrence, where `map` keeps the last. A body that does not parse maps to all `None` and counts every field as a miss, with no exception. Integers beyond 2^53 stay exact, where TypeScript rounds them. [docs/known-limits.md](https://github.com/richapiai/pycanonic/blob/main/docs/known-limits.md) has the full list, with every place pycanonic differs from TypeScript.
 
 ## What is in the box and what you bring
 
@@ -247,16 +247,16 @@ Your deployment wires them together:
 
 ## Docs
 
-- [How it works](docs/how-it-works.md)
-- [API reference](docs/api.md)
-- [Spec format](docs/spec-format.md)
-- [Transforms](docs/transforms.md)
-- [Custom transforms](docs/custom-transforms.md)
-- [Streaming](docs/streaming.md)
-- [Inference](docs/inference.md)
-- [Drift and the learning loop](docs/drift-and-learning-loop.md)
-- [Why not JSONata](docs/why-not-jsonata.md)
-- [Known limits](docs/known-limits.md)
+- [How it works](https://github.com/richapiai/pycanonic/blob/main/docs/how-it-works.md)
+- [API reference](https://github.com/richapiai/pycanonic/blob/main/docs/api.md)
+- [Spec format](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md)
+- [Transforms](https://github.com/richapiai/pycanonic/blob/main/docs/transforms.md)
+- [Custom transforms](https://github.com/richapiai/pycanonic/blob/main/docs/custom-transforms.md)
+- [Streaming](https://github.com/richapiai/pycanonic/blob/main/docs/streaming.md)
+- [Inference](https://github.com/richapiai/pycanonic/blob/main/docs/inference.md)
+- [Drift and the learning loop](https://github.com/richapiai/pycanonic/blob/main/docs/drift-and-learning-loop.md)
+- [Why not JSONata](https://github.com/richapiai/pycanonic/blob/main/docs/why-not-jsonata.md)
+- [Known limits](https://github.com/richapiai/pycanonic/blob/main/docs/known-limits.md)
 
 ## Status
 
@@ -264,8 +264,8 @@ pycanonic is at 0.1. The spec format follows the TypeScript package, and the Pyt
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the test, fuzz and bench commands, and how a release is cut. Report a vulnerability through the repository's Security tab, as [SECURITY.md](SECURITY.md) describes.
+[CONTRIBUTING.md](https://github.com/richapiai/pycanonic/blob/main/CONTRIBUTING.md) covers setup, the test, fuzz and bench commands, and how a release is cut. Report a vulnerability through the repository's Security tab, as [SECURITY.md](https://github.com/richapiai/pycanonic/blob/main/SECURITY.md) describes.
 
 ## License
 
-MIT, copyright RichAPI AI (TexAu OÜ). See [LICENSE](LICENSE).
+MIT, copyright RichAPI AI (TexAu OÜ). See [LICENSE](https://github.com/richapiai/pycanonic/blob/main/LICENSE).
