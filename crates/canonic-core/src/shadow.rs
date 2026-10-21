@@ -4,8 +4,7 @@
 use crate::doc::Doc;
 use crate::drift::{AlertKind, FieldAlert};
 use crate::exec::MAX_NODES;
-use crate::json::MAX_DEPTH;
-use crate::sink::{Out, RustSink, Sink};
+use crate::sink::{Out, copy};
 use crate::value::js_number_to_string;
 use crate::write::write_out;
 use std::collections::HashMap;
@@ -33,43 +32,42 @@ pub struct ShadowReport {
     pub fields: Vec<(String, FieldDiff)>,
 }
 
-/// A document as an `Out` with keys by name (`Out::Map`), or `None` past `depth` levels or
-/// `budget` values.
-fn tree<D: Doc>(d: &D, depth: usize, budget: &mut usize) -> Option<Out> {
-    if depth == 0 || *budget == 0 {
-        return None;
-    }
-    *budget -= 1;
-    if let Some(n) = d.len() {
-        let items = (0..n).map(|i| {
-            d.item(i)
-                .map_or(Some(Out::Null), |x| tree(&x, depth - 1, budget))
-        });
-        return items.collect::<Option<_>>().map(Out::List);
-    }
-    if let Some(m) = d.members() {
-        let members = m
-            .into_iter()
-            .map(|(k, v)| Some((k.into_owned(), tree(&v, depth - 1, budget)?)));
-        return members.collect::<Option<_>>().map(Out::Map);
-    }
-    Some(RustSink.scalar(d.leaf()))
-}
-
-/// A canonical value as `ShadowDiff` and `merge_gate` read it, or `None` for a host object deeper
-/// than 512 levels or with more than 1,000,000 values (one that contains itself or shares its children).
+/// A canonical value as `ShadowDiff` and `merge_gate` read it, keys by name, or `None` for a host
+/// object nested deeper than 512 containers or with more than 1,000,000 values (one that contains
+/// itself or shares its children).
 pub fn to_out_bounded<D: Doc>(d: &D) -> Option<Out> {
     let mut budget = MAX_NODES;
-    tree(d, MAX_DEPTH, &mut budget)
+    copy(d, 0, &mut budget)
 }
 
-/// The members of an object. Canonical values have keys by name: an `Out::Obj` needs its plan's names.
+/// The members of an object. An `Out::Obj` (keys are plan indexes) is never read: `add_out` and
+/// `merge_gate` turn it away first.
 fn obj(v: &Out) -> Option<&[(String, Out)]> {
     match v {
         Out::Map(m) => Some(m),
-        Out::Obj(_) => panic!("canonical values need keys by name (Out::Map), not Out::Obj"),
         _ => None,
     }
+}
+
+/// Whether `v` holds an `Out::Obj` anywhere, whose keys only its plan can name.
+fn unresolved(v: &Out) -> bool {
+    match v {
+        Out::Obj(_) => true,
+        Out::List(xs) => xs.iter().any(unresolved),
+        Out::Map(m) => m.iter().any(|(_, x)| unresolved(x)),
+        _ => false,
+    }
+}
+
+/// JavaScript's key order for an object: array-index keys first in numeric order, then the rest as inserted.
+fn js_order(m: &[(String, Out)]) -> Vec<&(String, Out)> {
+    let mut v: Vec<_> = m.iter().collect();
+    v.sort_by_key(|(k, _)| order(k));
+    v
+}
+
+fn order(k: &str) -> (u8, u32) {
+    index(k).map_or((1, 0), |n| (0, n))
 }
 
 /// Canonical leaves by dotted path, in first-seen order. An array is one leaf. A repeated path
@@ -90,7 +88,7 @@ impl<'a> Leaves<'a> {
     }
 
     fn collect(&mut self, o: &'a Out, prefix: &str) {
-        for (k, v) in obj(o).unwrap_or_default() {
+        for (k, v) in js_order(obj(o).unwrap_or_default()) {
             let path = format!("{prefix}{k}");
             if obj(v).is_some() {
                 self.collect(v, &format!("{path}."));
@@ -194,10 +192,13 @@ impl ShadowDiff {
     }
 
     /// Records one response: the promoted and candidate map() output for the same body, as finite
-    /// documents (a parsed `Node`); see `add_bounded` for host objects.
+    /// documents (a parsed `Node`). Either side nested deeper than 512 containers, as the parser
+    /// allows, is not recorded; see `add_bounded` for host objects.
     pub fn add<D: Doc>(&mut self, promoted: &D, candidate: &D) {
-        let full = |d: &D| tree(d, usize::MAX, &mut { usize::MAX }).expect("unbounded");
-        self.add_out(&full(promoted), &full(candidate));
+        let full = |d: &D| copy(d, 0, &mut { usize::MAX });
+        if let (Some(p), Some(c)) = (full(promoted), full(candidate)) {
+            self.record(&p, &c);
+        }
     }
 
     /// `add`, unless either side is past `to_out_bounded`'s limits: then nothing is recorded and
@@ -205,14 +206,24 @@ impl ShadowDiff {
     pub fn add_bounded<D: Doc>(&mut self, promoted: &D, candidate: &D) -> bool {
         match (to_out_bounded(promoted), to_out_bounded(candidate)) {
             (Some(p), Some(c)) => {
-                self.add_out(&p, &c);
+                self.record(&p, &c);
                 true
             }
             _ => false,
         }
     }
 
-    fn add_out(&mut self, promoted: &Out, candidate: &Out) {
+    /// `add` over output as `Artifact::map_named` returns it. Output with an `Out::Obj` anywhere
+    /// (`map_bytes`, keys unresolved) is not recorded and the result is false.
+    pub fn add_out(&mut self, promoted: &Out, candidate: &Out) -> bool {
+        if unresolved(promoted) || unresolved(candidate) {
+            return false;
+        }
+        self.record(promoted, candidate);
+        true
+    }
+
+    fn record(&mut self, promoted: &Out, candidate: &Out) {
         self.report.responses += 1;
         let p = Leaves::of(promoted);
         let c = Leaves::of(candidate);
@@ -277,10 +288,24 @@ pub struct GateResult {
     pub reasons: Vec<String>,
 }
 
-/// `JSON.stringify(v)`.
+/// `v` with every object's keys in JavaScript's order.
+fn js_ordered(v: &Out) -> Out {
+    match v {
+        Out::List(xs) => Out::List(xs.iter().map(js_ordered).collect()),
+        Out::Map(m) => Out::Map(
+            js_order(m)
+                .into_iter()
+                .map(|(k, x)| (k.clone(), js_ordered(x)))
+                .collect(),
+        ),
+        _ => v.clone(),
+    }
+}
+
+/// `JSON.stringify(v)`, for a value with no `Out::Obj`.
 fn stringify(v: &Out) -> String {
     let mut buf = Vec::new();
-    write_out(&[], v, &mut buf);
+    write_out(&[], &js_ordered(v), &mut buf);
     String::from_utf8(buf).expect("JSON text is UTF-8")
 }
 
@@ -301,10 +326,11 @@ fn fixed3(x: f64) -> String {
 /// entities. Every other field: regressions plus conflicts at most max_change of compared. No fill
 /// alert on the candidate. Anything else waits for a person, and reasons says why.
 pub fn merge_gate(report: &ShadowReport, opts: &GateOptions) -> GateResult {
-    let known: Vec<(Leaves<'_>, Leaves<'_>)> = opts
+    // `None`: output with unresolved names, which can't vouch for anything.
+    let known: Vec<Option<(Leaves<'_>, Leaves<'_>)>> = opts
         .known
         .iter()
-        .map(|(c, e)| (Leaves::of(c), Leaves::of(e)))
+        .map(|(c, e)| (!unresolved(c) && !unresolved(e)).then(|| (Leaves::of(c), Leaves::of(e))))
         .collect();
     // An empty report proves nothing about the candidate.
     let mut reasons: Vec<String> = Vec::new();
@@ -320,7 +346,7 @@ pub fn merge_gate(report: &ShadowReport, opts: &GateOptions) -> GateResult {
                 reasons.push(format!("{path}: {} routing conflicts", d.conflicts));
             }
             // An improvement is only trusted when some known entity states this field's true value.
-            if d.improvements > 0 && !known.iter().any(|(_, e)| e.get(path).is_some()) {
+            if d.improvements > 0 && !known.iter().flatten().any(|(_, e)| e.get(path).is_some()) {
                 reasons.push(format!(
                     "{path}: {} routing improvements with no known-entity check",
                     d.improvements
@@ -333,7 +359,13 @@ pub fn merge_gate(report: &ShadowReport, opts: &GateOptions) -> GateResult {
             ));
         }
     }
-    for (i, (c, e)) in known.iter().enumerate() {
+    for (i, k) in known.iter().enumerate() {
+        let Some((c, e)) = k else {
+            reasons.push(format!(
+                "known entity {i}: output has unresolved names; use Artifact::map_named"
+            ));
+            continue;
+        };
         for path in &report.routing {
             let Some(want) = e.get(path) else { continue };
             let got = c.get(path).unwrap_or(&Out::Null);

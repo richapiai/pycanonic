@@ -252,6 +252,28 @@ def test_a_cyclic_or_oversized_object_raises_and_records_nothing() -> None:
         merge_gate(report, known=[(cyclic, {})])
 
 
+def nested(n: int) -> Any:
+    """`n` lists nested in one another around a number."""
+    x: Any = 1
+    for _ in range(n):
+        x = [x]
+    return x
+
+
+def test_add_allows_512_nested_containers_as_the_parser_does() -> None:
+    d = ShadowDiff([])
+    d.add({"a": nested(511)}, {"a": nested(511)})
+    with pytest.raises(ValueError, match="too large or cyclic"):
+        d.add({"a": nested(512)}, {})
+    assert d.snapshot()["responses"] == 1
+
+
+def test_nested_keys_take_javascripts_order() -> None:
+    d = ShadowDiff([])
+    d.add({"a": {"b": 1, "2": 1}}, {"a": {"b": 1, "2": 1}})
+    assert list(d.snapshot()["fields"]) == ["a.2", "a.b"]
+
+
 def test_a_bench_soak_with_real_fill_alerts(bench_spec: tuple[dict[str, Any], dict[str, Any], list[str]]) -> None:
     spec, schema, raws = bench_spec
     promoted = compile_spec(spec, schema)
@@ -266,16 +288,16 @@ def test_a_bench_soak_with_real_fill_alerts(bench_spec: tuple[dict[str, Any], di
     # The promoted window is the baseline the candidate's window is judged against.
     assert monitor.check(promoted.stats.snapshot()) == []
     alerts = monitor.check(candidate.stats.snapshot())
-    assert [(a.field, a.kind, a.rate) for a in alerts] == [("title", "fill", 0.0)]
+    assert alerts == [FieldAlert(field="title", kind="fill", rate=0.0, baseline=1.0, responses=64)]
 
     report = diff.snapshot()
-    t = report["fields"]["title"]
-    assert t["regressions"] == t["compared"] > 0
+    assert report["responses"] == 64
+    assert report["fields"]["title"] == counts(64, 0, 0, 64, 0)
     assert all(f["compared"] == f["same"] for p, f in report["fields"].items() if p != "title")
     assert merge_gate(report, fill_alerts=alerts) == GateResult(
         merge=False,
         reasons=[
-            f"title: {t['regressions']} regressions and 0 conflicts in {t['compared']} compared",
-            f"title: fill alert on the candidate (0.000 vs {alerts[0].baseline:.3f})",
+            "title: 64 regressions and 0 conflicts in 64 compared",
+            "title: fill alert on the candidate (0.000 vs 1.000)",
         ],
     )

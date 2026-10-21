@@ -7,7 +7,9 @@ use canonic_core::{
     AlertKind, Artifact, FieldAlert, FieldDiff, Filter, GateOptions, GateResult, Out, ShadowDiff,
     ShadowReport, compile, merge_gate, parse, to_out_bounded,
 };
+use canonic_core::{Doc, Key, Value};
 use serde_json::{Value as J, json};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 fn all() -> Filter {
@@ -124,14 +126,13 @@ fn bodies(shape: impl Fn(usize) -> J) -> Vec<J> {
         .collect()
 }
 
-fn map(a: &Artifact, body: &J) -> String {
-    String::from_utf8(a.map_json(body.to_string().as_bytes())).unwrap()
-}
-
+/// Through `map_named` and `add_out`: no JSON text in between.
 fn soak(promoted: &Artifact, candidate: &Artifact, responses: &[J]) -> ShadowReport {
     let mut d = ShadowDiff::new(routing(promoted));
     for r in responses {
-        add_text(&mut d, &map(promoted, r), &map(candidate, r));
+        let body = r.to_string();
+        let b = body.as_bytes();
+        assert!(d.add_out(&promoted.map_named(b), &candidate.map_named(b)));
     }
     d.snapshot()
 }
@@ -286,8 +287,8 @@ fn a_routing_field_rename_auto_merges_once_known_entities_confirm_it() {
     );
     let ok: Vec<(Out, Out)> = (0..3)
         .map(|i| {
-            let c: J = serde_json::from_str(&map(&candidate, &responses[i])).unwrap();
-            known(&c, &json!({ "email": format!("u{i}@acme.com") }))
+            let c = candidate.map_named(responses[i].to_string().as_bytes());
+            (c, out(&json!({ "email": format!("u{i}@acme.com") })))
         })
         .collect();
     let opts = GateOptions {
@@ -457,4 +458,134 @@ fn a_known_entity_reason_writes_both_values_as_json_and_alerts_round_like_to_fix
             ]
         )
     );
+}
+
+#[test]
+fn keys_below_the_top_level_take_javascripts_order_too() {
+    let mut d = ShadowDiff::new(vec!["xs".into()]);
+    add_text(
+        &mut d,
+        r#"{"a": {"b": 1, "2": 1}}"#,
+        r#"{"a": {"b": 1, "2": 1}}"#,
+    );
+    let order: Vec<String> = d.snapshot().fields.into_iter().map(|(p, _)| p).collect();
+    assert_eq!(order, ["a.2", "a.b"]);
+    let opts = GateOptions {
+        known: vec![known(
+            &json!({ "xs": [{ "b": 1, "2": 2 }] }),
+            &json!({ "xs": [{ "b": 1, "2": 3 }] }),
+        )],
+        ..GateOptions::default()
+    };
+    let report = ShadowReport {
+        responses: 1,
+        routing: vec!["xs".into()],
+        fields: vec![],
+    };
+    assert_eq!(
+        merge_gate(&report, &opts).reasons,
+        [r#"known entity 0: xs is [{"2":2,"b":1}], expected [{"2":3,"b":1}]"#]
+    );
+}
+
+#[test]
+fn output_with_unresolved_names_is_turned_away_never_a_panic() {
+    let promoted = promoted();
+    let body =
+        br#"{"workEmail": "a@acme.com", "tags": [{"label": "sql"}], "org": {"name": "Acme"}}"#;
+    let raw = promoted.map_bytes(body);
+    let named = promoted.map_named(body);
+    assert!(matches!(raw, Out::Obj(_)));
+
+    let mut d = ShadowDiff::new(routing(&promoted));
+    assert!(!d.add_out(&raw, &named));
+    // Nested inside a list too.
+    let nested = Out::Map(vec![("xs".into(), Out::List(vec![raw.clone()]))]);
+    assert!(!d.add_out(&named, &nested));
+    assert_eq!(d.snapshot().responses, 0);
+    assert!(d.add_out(&named, &named));
+
+    let report = d.snapshot();
+    let opts = GateOptions {
+        known: vec![
+            (named.clone(), out(&json!({ "email": "a@acme.com" }))),
+            (raw.clone(), out(&json!({ "email": "a@acme.com" }))),
+            (out(&json!({})), nested),
+        ],
+        ..GateOptions::default()
+    };
+    assert_eq!(
+        merge_gate(&report, &opts),
+        result(
+            false,
+            &[
+                "known entity 1: output has unresolved names; use Artifact::map_named",
+                "known entity 2: output has unresolved names; use Artifact::map_named",
+            ]
+        )
+    );
+}
+
+#[test]
+fn map_named_matches_the_parsed_json_output() {
+    let promoted = promoted();
+    let body = br#"{"workEmail": "a@acme.com", "role": "CTO", "tags": [{"label": "sql"}], "org": {"name": "Acme"}}"#;
+    let text = String::from_utf8(promoted.map_json(body)).unwrap();
+    let parsed: J = serde_json::from_str(&text).unwrap();
+    assert_eq!(promoted.map_named(body), out(&parsed));
+    let node = parse(body, &all()).unwrap();
+    assert_eq!(promoted.map_doc_named(&&node), out(&parsed));
+}
+
+/// `n` objects nested in one another around a number: `{"a": {"a": ... 1}}`.
+#[derive(Clone)]
+struct Deep(usize);
+
+impl Doc for Deep {
+    fn get(&self, _: &Key) -> Option<Self> {
+        None
+    }
+    fn idx(&self, _: usize) -> Option<Self> {
+        None
+    }
+    fn leaf(&self) -> Value<'_> {
+        if self.0 == 0 {
+            Value::Int(1)
+        } else {
+            Value::Container
+        }
+    }
+    fn is_null(&self) -> bool {
+        false
+    }
+    fn len(&self) -> Option<usize> {
+        None
+    }
+    fn item(&self, _: usize) -> Option<Self> {
+        None
+    }
+    fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>> {
+        (self.0 > 0).then(|| vec![(Cow::Borrowed("a"), Deep(self.0 - 1))])
+    }
+}
+
+#[test]
+fn add_stops_at_512_nested_containers_as_the_parser_does() {
+    let max = canonic_core::json::MAX_DEPTH;
+    assert!(
+        parse(
+            format!("{}1{}", r#"{"a":"#.repeat(max), "}".repeat(max)).as_bytes(),
+            &all()
+        )
+        .is_ok()
+    );
+    assert!(to_out_bounded(&Deep(max)).is_some());
+    assert!(to_out_bounded(&Deep(max + 1)).is_none());
+    let mut d = ShadowDiff::new(vec![]);
+    d.add(&Deep(max), &Deep(max));
+    assert_eq!(d.snapshot().responses, 1);
+    d.add(&Deep(max + 1), &Deep(1));
+    d.add(&Deep(1), &Deep(max + 1));
+    assert!(!d.add_bounded(&Deep(max + 1), &Deep(1)));
+    assert_eq!(d.snapshot().responses, 1);
 }

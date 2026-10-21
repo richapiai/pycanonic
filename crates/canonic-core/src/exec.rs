@@ -14,9 +14,8 @@
 
 use crate::canonical::Semantic;
 use crate::doc::{Doc, Key};
-use crate::json::MAX_DEPTH;
 use crate::plan::{CompileError, Field, ListKind, Named, Plan, Scalar, TxRef};
-use crate::sink::Sink;
+use crate::sink::{Out, Sink, copy};
 use crate::spec::{self, Source};
 use crate::stats::Stats;
 use crate::transforms::{Transform, validate};
@@ -224,34 +223,24 @@ fn json_value(v: &serde_json::Value) -> Value<'_> {
 /// chain) has exponentially many paths though it is small; this bounds the walk.
 pub(crate) const MAX_NODES: usize = 1_000_000;
 
-/// A document value as JSON, for a custom transform's container input. `None` past `MAX_DEPTH` (a
-/// host object that contains itself) or past `budget` nodes (see `MAX_NODES`).
-fn json<D: Doc>(d: &D, depth: usize, budget: &mut usize) -> Option<J> {
-    if depth > MAX_DEPTH || *budget == 0 {
-        return None;
+/// A document value as JSON, for a custom transform's container input. `None` past `MAX_DEPTH`
+/// nested containers (a host object that contains itself) or past `budget` values (see `MAX_NODES`).
+fn json<D: Doc>(d: &D, enclosing: usize, budget: &mut usize) -> Option<J> {
+    copy(d, enclosing, budget).map(to_json)
+}
+
+fn to_json(o: Out) -> J {
+    match o {
+        Out::Bool(b) => J::Bool(b),
+        Out::Int(i) => J::from(i),
+        Out::BigInt(s) => s.parse::<f64>().map_or(J::Null, J::from),
+        Out::Float(f) => J::from(f),
+        Out::Str(s) => J::String(s),
+        Out::List(xs) => J::Array(xs.into_iter().map(to_json).collect()),
+        Out::Map(m) => J::Object(m.into_iter().map(|(k, v)| (k, to_json(v))).collect()),
+        // `copy` builds neither.
+        Out::Null | Out::Obj(_) => J::Null,
     }
-    *budget -= 1;
-    if let Some(n) = d.len() {
-        let items = (0..n).map(|i| {
-            d.item(i)
-                .map_or(Some(J::Null), |x| json(&x, depth + 1, budget))
-        });
-        return items.collect::<Option<_>>().map(J::Array);
-    }
-    if let Some(m) = d.members() {
-        let members = m
-            .into_iter()
-            .map(|(k, v)| Some((k.into_owned(), json(&v, depth + 1, budget)?)));
-        return members.collect::<Option<_>>().map(J::Object);
-    }
-    Some(match d.leaf() {
-        Value::Bool(b) => J::Bool(b),
-        Value::Int(i) => J::from(i),
-        Value::BigInt(s) => s.parse::<f64>().map_or(J::Null, J::from),
-        Value::Float(f) => J::from(f),
-        Value::Str(s) => J::String(s.into_owned()),
-        Value::Null | Value::Container => J::Null,
-    })
 }
 
 fn apply<'v>(custom: &[Arc<dyn Transform>], t: &TxRef, v: Value<'v>) -> Value<'v> {

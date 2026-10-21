@@ -27,8 +27,8 @@ impl ShadowDiff {
         ShadowDiff(canonic_core::ShadowDiff::new(routing))
     }
 
-    /// One response: the promoted and candidate `map()` output for the same body. A value deeper
-    /// than 512 levels or with more than 1,000,000 values (a cyclic one) raises `ValueError` and
+    /// One response: the promoted and candidate `map()` output for the same body. A value nested
+    /// deeper than 512 containers or with more than 1,000,000 values (a cyclic one) raises `ValueError` and
     /// records nothing.
     fn add(&mut self, promoted: &Bound<'_, PyAny>, candidate: &Bound<'_, PyAny>) -> PyResult<()> {
         if self.0.add_bounded(&doc(promoted), &doc(candidate)) {

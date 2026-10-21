@@ -1,6 +1,7 @@
 //! Where the executor writes: `RustSink` builds an `Out` tree, the extension builds Python objects.
 
 use crate::doc::Doc;
+use crate::json::MAX_DEPTH;
 use crate::value::Value;
 
 pub trait Sink {
@@ -69,4 +70,34 @@ impl Sink for RustSink {
     fn object(&mut self, members: Vec<(usize, Out)>) -> Out {
         Out::Obj(members)
     }
+}
+
+/// A document value as an `Out` with keys by name (`Out::Map`), for a walk that must stop on a host
+/// object that contains itself: `None` past `MAX_DEPTH` nested containers, as the parser allows, or
+/// past `budget` values. `enclosing` counts the containers around `d`.
+pub(crate) fn copy<D: Doc>(d: &D, enclosing: usize, budget: &mut usize) -> Option<Out> {
+    if *budget == 0 {
+        return None;
+    }
+    *budget -= 1;
+    if let Some(n) = d.len() {
+        if enclosing >= MAX_DEPTH {
+            return None;
+        }
+        let items = (0..n).map(|i| {
+            d.item(i)
+                .map_or(Some(Out::Null), |x| copy(&x, enclosing + 1, budget))
+        });
+        return items.collect::<Option<_>>().map(Out::List);
+    }
+    if let Some(m) = d.members() {
+        if enclosing >= MAX_DEPTH {
+            return None;
+        }
+        let members = m
+            .into_iter()
+            .map(|(k, v)| Some((k.into_owned(), copy(&v, enclosing + 1, budget)?)));
+        return members.collect::<Option<_>>().map(Out::Map);
+    }
+    Some(RustSink.scalar(d.leaf()))
 }

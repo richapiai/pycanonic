@@ -81,6 +81,17 @@ impl Artifact {
         self.map_with(Some(doc), &mut RustSink)
     }
 
+    /// `map_bytes` with every canonical object's keys by name (`Out::Map` all the way down), as
+    /// `ShadowDiff::add_out` and `GateOptions::known` read output.
+    pub fn map_named(&self, body: &[u8]) -> Out {
+        named(self.map_bytes(body), &self.plan.names)
+    }
+
+    /// `map_doc`, keys by name as `map_named`.
+    pub fn map_doc_named<D: Doc>(&self, doc: &D) -> Out {
+        named(self.map_doc(doc), &self.plan.names)
+    }
+
     /// The routing fields read straight from `raw`, aligned with `plan.routing`: `None` when not
     /// found, `Some(Value::Null)` when found and rejected by the field's transforms or validator.
     /// Anchored fields are found by their key token; the rest by one scan. Counts no stats.
@@ -111,6 +122,20 @@ impl Artifact {
 
     pub fn map_with<D: Doc, S: Sink>(&self, doc: Option<&D>, sink: &mut S) -> S::Out {
         execute(&self.program, doc, sink, &self.stats, &self.custom)
+    }
+}
+
+/// `o` with each `Out::Obj` key index replaced by its name in `names` (`Plan::names`).
+fn named(o: Out, names: &[String]) -> Out {
+    match o {
+        Out::Obj(m) => Out::Map(
+            m.into_iter()
+                .map(|(k, v)| (names[k].clone(), named(v, names)))
+                .collect(),
+        ),
+        Out::Map(m) => Out::Map(m.into_iter().map(|(k, v)| (k, named(v, names))).collect()),
+        Out::List(xs) => Out::List(xs.into_iter().map(|x| named(x, names)).collect()),
+        o => o,
     }
 }
 

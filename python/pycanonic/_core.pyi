@@ -143,7 +143,7 @@ class ShadowDiff:
 
     def __init__(self, routing: Sequence[str]) -> None: ...
     def add(self, promoted: Mapping[str, Any], candidate: Mapping[str, Any]) -> None:
-        """Records one response. A value deeper than 512 levels or with more than 1,000,000 values
+        """Records one response. A value nested deeper than 512 containers or with more than 1,000,000 values
         (a cyclic one) raises `ValueError` and records nothing."""
 
     def snapshot(self) -> _ShadowReport: ...
