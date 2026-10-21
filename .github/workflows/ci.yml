@@ -20,7 +20,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - run: cargo test --workspace
-      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo fmt --check
 
   python:
