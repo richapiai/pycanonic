@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "canonic mapping spec",
+  "description": "Maps one provider response shape onto a canonical schema. Compiled by canonic into generated JavaScript.",
+  "type": "object",
+  "required": ["provider", "endpoint", "version", "status", "fields"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "provider": { "type": "string", "minLength": 1 },
+    "endpoint": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["draft", "shadow", "promoted", "deprecated"] },
+    "anchors": {
+      "description": "Canonical field to a raw key token that is unique in every sample. Written by inference; used by the extractor.",
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "fields": { "$ref": "#/$defs/fieldMap" }
+  },
+  "$defs": {
+    "path": {
+      "description": "Source path: identifiers joined by dots, [n] indices, and [\"quoted keys\"] in JSON string syntax. A leading $ is the response itself.",
+      "type": "string",
+      "pattern": "^(?:[A-Za-z_$][A-Za-z0-9_$-]*|\\[\"(?:[^\"\\\\\\u0000-\\u001f]|\\\\(?:[\"\\\\/bfnrt]|u[0-9a-fA-F]{4}))*\"\\]|\\[(?:0|[1-9][0-9]*)\\])(?:\\.[A-Za-z_$][A-Za-z0-9_$-]*|\\[\"(?:[^\"\\\\\\u0000-\\u001f]|\\\\(?:[\"\\\\/bfnrt]|u[0-9a-fA-F]{4}))*\"\\]|\\[(?:0|[1-9][0-9]*)\\])*$"
+    },
+    "fieldMap": {
+      "description": "Canonical field path (dotted identifiers; a trailing [] marks an array field) to its rule.",
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$": { "$ref": "#/$defs/scalarRule" },
+        "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*\\[\\]$": { "$ref": "#/$defs/arrayRule" }
+      },
+      "additionalProperties": false
+    },
+    "scalarRule": {
+      "oneOf": [
+        { "$ref": "#/$defs/path" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "oneOf": [
+                { "$ref": "#/$defs/path" },
+                { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/path" } }
+              ]
+            },
+            "coalesce": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/path" } },
+            "default": { "type": ["string", "number", "boolean"] },
+            "transform": { "$ref": "#/$defs/transform" }
+          },
+          "oneOf": [{ "required": ["from"] }, { "required": ["coalesce"] }]
+        }
+      ]
+    },
+    "arrayRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from"],
+      "properties": {
+        "from": { "$ref": "#/$defs/path" },
+        "item": { "$ref": "#/$defs/fieldMap" },
+        "pluck": { "$ref": "#/$defs/path" },
+        "transform": { "$ref": "#/$defs/transform" }
+      },
+      "not": { "required": ["item", "pluck"] },
+      "dependentSchemas": { "item": { "not": { "required": ["transform"] } } }
+    },
+    "transformName": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "transformStep": {
+      "oneOf": [
+        { "$ref": "#/$defs/transformName" },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/transformName" }
+        }
+      ]
+    },
+    "transform": {
+      "oneOf": [
+        { "$ref": "#/$defs/transformStep" },
+        { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/transformStep" } }
+      ]
+    }
+  }
+}
