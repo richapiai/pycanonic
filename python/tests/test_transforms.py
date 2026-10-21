@@ -152,3 +152,25 @@ def test_a_base_exception_that_is_not_an_exception_propagates():
     with pytest.raises(KeyboardInterrupt):
         a.map_json(b'{"n": "x"}')
     assert a.map({}) == {"full_name": None, "pair": None, "org_keys": None}
+
+
+def test_a_container_that_refers_to_itself_twice_is_null_and_one_error_not_a_hang():
+    a = _core.compile(
+        spec({"org_keys": {"from": "org", "transform": "keys"}}), CANONICAL, {"keys": lambda v: ",".join(v)}
+    )
+    org = {}
+    org["a"] = org["b"] = org
+    assert a.map({"org": org})["org_keys"] is None
+    assert a.stats_snapshot()["fields"]["org_keys"] == {"fill": 0, "errors": 1}
+
+
+def test_a_container_that_shares_its_children_is_null_and_one_error_not_a_hang():
+    # No cycle, but 2**60 paths: the copy for the transform stops at its node budget.
+    a = _core.compile(
+        spec({"org_keys": {"from": "org", "transform": "keys"}}), CANONICAL, {"keys": lambda v: ",".join(v)}
+    )
+    org = {}
+    for _ in range(60):
+        org = {"a": org, "b": org}
+    assert a.map({"org": org})["org_keys"] is None
+    assert a.stats_snapshot()["fields"]["org_keys"] == {"fill": 0, "errors": 1}

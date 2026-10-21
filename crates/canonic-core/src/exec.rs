@@ -220,20 +220,28 @@ fn json_value(v: &serde_json::Value) -> Value<'_> {
     }
 }
 
-/// A document value as JSON, for a custom transform's container input. `None` past `MAX_DEPTH`,
-/// which a host object that contains itself would otherwise recurse through without end.
-fn json<D: Doc>(d: &D, depth: usize) -> Option<J> {
-    if depth > MAX_DEPTH {
+/// Most nodes `json` copies. A host object that shares its children (`{"a": x, "b": x}` down a
+/// chain) has exponentially many paths though it is small; this bounds the walk.
+const MAX_NODES: usize = 1_000_000;
+
+/// A document value as JSON, for a custom transform's container input. `None` past `MAX_DEPTH` (a
+/// host object that contains itself) or past `budget` nodes (see `MAX_NODES`).
+fn json<D: Doc>(d: &D, depth: usize, budget: &mut usize) -> Option<J> {
+    if depth > MAX_DEPTH || *budget == 0 {
         return None;
     }
+    *budget -= 1;
     if let Some(n) = d.len() {
-        let items = (0..n).map(|i| d.item(i).map_or(Some(J::Null), |x| json(&x, depth + 1)));
+        let items = (0..n).map(|i| {
+            d.item(i)
+                .map_or(Some(J::Null), |x| json(&x, depth + 1, budget))
+        });
         return items.collect::<Option<_>>().map(J::Array);
     }
     if let Some(m) = d.members() {
         let members = m
             .into_iter()
-            .map(|(k, v)| Some((k.into_owned(), json(&v, depth + 1)?)));
+            .map(|(k, v)| Some((k.into_owned(), json(&v, depth + 1, budget)?)));
         return members.collect::<Option<_>>().map(J::Object);
     }
     Some(match d.leaf() {
@@ -303,7 +311,8 @@ impl<S: Sink> Exec<'_, S> {
     fn pipe_doc<'d, D: Doc>(&self, tx: &[TxRef], d: &'d D) -> Value<'d> {
         match (d.leaf(), tx.split_first()) {
             (Value::Container, Some((first @ TxRef::Custom { .. }, rest))) => {
-                self.pipe(rest, self.container(first, json(d, 0)))
+                let mut budget = MAX_NODES;
+                self.pipe(rest, self.container(first, json(d, 0, &mut budget)))
             }
             (v, _) => self.pipe(tx, v),
         }
@@ -405,9 +414,11 @@ impl<S: Sink> Exec<'_, S> {
             None => Value::Null, // a routing validator alone rejects a list
             Some((TxRef::Builtin(b), rest)) => self.pipe(rest, b.apply_list(&vals)),
             Some((first, rest)) => {
-                let items = docs
-                    .iter()
-                    .map(|d| d.as_ref().map_or(Some(J::Null), |d| json(d, 1)));
+                let mut budget = MAX_NODES;
+                let items = docs.iter().map(|d| {
+                    d.as_ref()
+                        .map_or(Some(J::Null), |d| json(d, 1, &mut budget))
+                });
                 let items = items.collect::<Option<_>>().map(J::Array);
                 self.pipe(rest, self.container(first, items))
             }
