@@ -17,6 +17,7 @@ mod unescape;
 
 use std::borrow::Cow;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
 use memchr::memchr2;
 
@@ -47,37 +48,79 @@ pub enum Node<'a> {
 pub const INDEXED: usize = 8;
 
 /// The members of a `Node::Indexed` and an open-addressing table over them.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct Indexed<'a> {
     /// In document order, duplicates included, as `Node::Obj`.
     pub members: Vec<(Cow<'a, str>, Node<'a>)>,
+    /// No key repeats (the parser saw the members match strictly later filter keys), so the
+    /// member at `hint` can be returned on a key compare alone.
+    unique: bool,
+    /// Where the next read is expected: the member after the last one read. Reads of one object
+    /// tend to follow its member order, as the plan lists keys in the order providers send them.
+    hint: AtomicU32,
     /// `(hash as u32, position + 1)` per slot, 0 empty; a power of two at least twice the members.
-    table: Box<[(u32, u32)]>,
+    /// Built on the first read the hint misses.
+    table: OnceLock<KeyTable>,
+}
+
+impl Clone for Indexed<'_> {
+    fn clone(&self) -> Self {
+        Indexed::new(self.members.clone(), self.unique)
+    }
+}
+
+impl PartialEq for Indexed<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.members == other.members
+    }
 }
 
 impl<'a> Indexed<'a> {
-    fn new(members: Vec<(Cow<'a, str>, Node<'a>)>) -> Indexed<'a> {
-        let mut table =
-            vec![(0u32, 0u32); (members.len() * 2).next_power_of_two()].into_boxed_slice();
-        for (p, (k, _)) in members.iter().enumerate() {
-            let h = key_hash(k.as_bytes());
-            // A repeated key takes over its first slot: the last occurrence is what a path reads.
-            let slot = probe(&table, h, |q| {
-                same_key(members[q].0.as_bytes(), k.as_bytes())
-            });
-            table[slot] = (h as u32, p as u32 + 1);
+    fn new(members: Vec<(Cow<'a, str>, Node<'a>)>, unique: bool) -> Indexed<'a> {
+        Indexed {
+            members,
+            unique,
+            hint: AtomicU32::new(0),
+            table: OnceLock::new(),
         }
-        Indexed { members, table }
+    }
+
+    fn table(&self) -> &KeyTable {
+        self.table.get_or_init(|| {
+            let members = &self.members;
+            let mut table =
+                vec![(0u32, 0u32); (members.len() * 2).next_power_of_two()].into_boxed_slice();
+            for (p, (k, _)) in members.iter().enumerate() {
+                let h = key_hash(k.as_bytes());
+                // A repeated key takes over its first slot: the last occurrence is what a path reads.
+                let slot = probe(&table, h, |q| {
+                    same_key(members[q].0.as_bytes(), k.as_bytes())
+                });
+                table[slot] = (h as u32, p as u32 + 1);
+            }
+            table
+        })
     }
 
     /// The last member named `key` (whose `key_hash` is `hash`).
     pub fn get(&self, key: &[u8], hash: u64) -> Option<&Node<'a>> {
-        let slot = probe(&self.table, hash, |q| {
-            same_key(self.members[q].0.as_bytes(), key)
-        });
-        match self.table[slot].1 {
+        if self.unique {
+            let at = self.hint.load(Relaxed) as usize;
+            if let Some((k, v)) = self.members.get(at)
+                && same_key(k.as_bytes(), key)
+            {
+                self.hint.store(at as u32 + 1, Relaxed);
+                return Some(v);
+            }
+        }
+        let table = self.table();
+        let slot = probe(table, hash, |q| same_key(self.members[q].0.as_bytes(), key));
+        match table[slot].1 {
             0 => None,
-            p => Some(&self.members[p as usize - 1].1),
+            p => {
+                self.hint.store(p, Relaxed);
+                Some(&self.members[p as usize - 1].1)
+            }
         }
     }
 }
@@ -254,6 +297,8 @@ impl<'a> Parser<'a> {
         // A pruned object keeps at most one member per listed key, duplicates aside.
         // Where the next key is expected in `f.keys` (see `wanted`).
         let mut next = 0;
+        // The filter position of the last kept member, and whether they have all increased.
+        let (mut last, mut unique) = (None::<usize>, true);
         let mut members: Vec<(Cow<'a, str>, Node<'a>)> =
             Vec::with_capacity(if f.all { 0 } else { f.keys.len() });
         // Every occurrence of a wanted key is built; `Doc::get` reads the last, as `JSON.parse` does.
@@ -274,7 +319,12 @@ impl<'a> Parser<'a> {
             let child = if f.all {
                 Some(&ALL)
             } else {
-                wanted(f, raw, plain, &mut next)
+                wanted(f, raw, plain, &mut next).map(|(p, c)| {
+                    // Distinct keys match distinct filter entries; a repeat or a step back clears it.
+                    unique &= last.is_none_or(|l| p > l);
+                    last = Some(p);
+                    c
+                })
             };
             // An unlisted member is skipped and not kept: no path reads it, so its key is never decoded.
             match child {
@@ -290,7 +340,7 @@ impl<'a> Parser<'a> {
                 Some(b'}') => {
                     self.pos += 1;
                     if !f.all && members.len() > INDEXED {
-                        return Ok(Node::Indexed(Box::new(Indexed::new(members))));
+                        return Ok(Node::Indexed(Box::new(Indexed::new(members, unique))));
                     }
                     return Ok(Node::Obj(members));
                 }
@@ -493,11 +543,17 @@ fn decode(raw: &[u8], plain: bool) -> Cow<'_, str> {
 /// `next` is the position after the last key this object matched. Documents tend to send keys in
 /// the order the plan lists them, so that key is tried first, before hashing (when the filter has
 /// no repeated key, so the first match is the only one).
-fn wanted<'f>(f: &'f Filter, raw: &[u8], plain: bool, next: &mut usize) -> Option<&'f Filter> {
+fn wanted<'f>(
+    f: &'f Filter,
+    raw: &[u8],
+    plain: bool,
+    next: &mut usize,
+) -> Option<(usize, &'f Filter)> {
     let keys = &f.keys;
     let mut find = |key: &[u8]| {
         if keys.len() <= INDEXED {
-            return keys.iter().find(|(k, _)| same_key(k, key)).map(|(_, c)| c);
+            let p = keys.iter().position(|(k, _)| same_key(k, key))?;
+            return Some((p, &keys[p].1));
         }
         let (table, repeated) = f.index.0.get_or_init(|| {
             let mut t = vec![(0u32, 0u32); (keys.len() * 2).next_power_of_two()];
@@ -519,13 +575,13 @@ fn wanted<'f>(f: &'f Filter, raw: &[u8], plain: bool, next: &mut usize) -> Optio
             && same_key(k, key)
         {
             *next += 1;
-            return Some(c);
+            return Some((*next - 1, c));
         }
         match table[probe(table, key_hash(key), |q| same_key(&keys[q].0, key))].1 {
             0 => None,
             p => {
                 *next = p as usize;
-                Some(&keys[p as usize - 1].1)
+                Some((p as usize - 1, &keys[p as usize - 1].1))
             }
         }
     };

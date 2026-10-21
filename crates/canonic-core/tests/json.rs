@@ -399,3 +399,32 @@ proptest! {
         }
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(512))]
+
+    /// Members in the filter's order, no repeats: reads in any order, misses included, take the
+    /// hint path and its fallback and still answer as a scan does.
+    #[test]
+    fn ordered_indexed_objects_read_like_a_scan(
+        present in prop::collection::btree_set(0usize..40, 9..30),
+        reads in prop::collection::vec(0usize..45, 0..80),
+    ) {
+        use canonic_core::{Doc, Key};
+        let name = |k: usize| format!("k{k:02}");
+        let body = (present.iter())
+            .map(|&k| format!("\"{}\":{k}", name(k)))
+            .collect::<Vec<_>>()
+            .join(",");
+        let doc = format!("{{{body}}}");
+        let names: Vec<String> = (0..45).map(name).collect();
+        let f = keys(names.iter().map(|n| (n.as_str(), all())).collect());
+        let pruned = parse(doc.as_bytes(), &f).unwrap();
+        prop_assert!(matches!(pruned, Node::Indexed(_)));
+        let whole = parse(doc.as_bytes(), &all()).unwrap();
+        for k in reads {
+            let key = Key::new(name(k), k as u64);
+            prop_assert_eq!((&pruned).get(&key), (&whole).get(&key));
+        }
+    }
+}
