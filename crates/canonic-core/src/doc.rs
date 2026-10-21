@@ -1,6 +1,6 @@
 //! The document the executor reads: the borrowed JSON tree here, Python objects in the extension.
 
-use crate::json::{Node, same_key};
+use crate::json::{Node, key_hash, same_key};
 use crate::value::Value;
 use std::any::Any;
 use std::borrow::Cow;
@@ -13,6 +13,15 @@ use std::collections::hash_map::Entry;
 pub struct Key {
     pub s: String,
     pub tag: u64,
+    /// `json::key_hash(s)`, for the parse tree's key tables; `Key::new` sets it.
+    pub hash: u64,
+}
+
+impl Key {
+    pub fn new(s: String, tag: u64) -> Key {
+        let hash = key_hash(s.as_bytes());
+        Key { s, tag, hash }
+    }
 }
 
 /// Read access to a parsed document. A missing member and a `null` are both "absent" to the plan.
@@ -56,6 +65,7 @@ impl<'a, 'b> Doc for &'a Node<'b> {
             Node::Obj(m) => (m.iter())
                 .rfind(|(k, _)| same_key(k.as_bytes(), key.s.as_bytes()))
                 .map(|(_, v)| v),
+            Node::Indexed(ix) => ix.get(key.s.as_bytes(), key.hash),
             _ => None,
         }
     }
@@ -74,7 +84,7 @@ impl<'a, 'b> Doc for &'a Node<'b> {
             Node::Num(raw) => number(raw),
             Node::Str(s) => Value::Str(Cow::Borrowed(s)),
             // Skipped is a container the filter pruned: the parser always reads scalars it reaches.
-            Node::Arr(_) | Node::Obj(_) | Node::Skipped => Value::Container,
+            Node::Arr(_) | Node::Obj(_) | Node::Indexed(_) | Node::Skipped => Value::Container,
         }
     }
 
@@ -96,7 +106,11 @@ impl<'a, 'b> Doc for &'a Node<'b> {
     /// Like `JSON.parse`, a repeated key keeps its first position and its last value, the value
     /// `get` reads too. Only `extract` keeps the first value (known-limits.md, "Duplicate keys").
     fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>> {
-        let Node::Obj(m) = self else { return None };
+        let m = match self {
+            Node::Obj(m) => m,
+            Node::Indexed(ix) => &ix.members,
+            _ => return None,
+        };
         let mut out: Vec<(Cow<'_, str>, Self)> = Vec::with_capacity(m.len());
         let mut at: HashMap<&str, usize> = HashMap::with_capacity(m.len());
         for (k, v) in m {

@@ -123,10 +123,7 @@ impl Builder<'_> {
                             self.keys.len() - 1
                         }
                     };
-                    Step::Key(Key {
-                        s: k.clone(),
-                        tag: tag as u64,
-                    })
+                    Step::Key(Key::new(k.clone(), tag as u64))
                 }
             })
             .collect()

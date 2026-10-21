@@ -23,6 +23,7 @@ fn keys(ks: Vec<(&str, Filter)>) -> Filter {
 fn members<'n, 'a>(n: &'n Node<'a>) -> &'n [(Cow<'a, str>, Node<'a>)] {
     match n {
         Node::Obj(m) => m,
+        Node::Indexed(ix) => &ix.members,
         other => panic!("expected Obj, got {other:?}"),
     }
 }
@@ -234,7 +235,7 @@ fn every_occurrence_of_a_wanted_key_is_built_and_a_path_read_takes_the_last() {
     let m = members(&out);
     assert_eq!(m.len(), 3);
     assert_eq!(m[1].1, Node::Skipped);
-    let key = |s: &str, tag| Key { s: s.into(), tag };
+    let key = |s: &str, tag| Key::new(s.into(), tag);
     let b = (&out).get(&key("a", 0)).and_then(|a| a.get(&key("b", 1)));
     assert_eq!(b, Some(&Node::Num("2")));
 }
@@ -366,5 +367,35 @@ proptest! {
         let _ = parse(&bytes, &all());
         let _ = parse(&bytes, &pruned());
         let _ = unescape(&bytes);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1024))]
+
+    /// A pruned object past `INDEXED` members answers a path step through its key table exactly
+    /// as the scan over the whole object does: the last occurrence, or nothing.
+    #[test]
+    fn indexed_objects_read_like_a_scan(
+        doc_keys in prop::collection::vec(0usize..40, 0..60),
+        listed in prop::collection::vec(0usize..40, 0..30),
+    ) {
+        use canonic_core::{Doc, Key};
+        let name = |k: usize| format!("k{k}");
+        let body = doc_keys
+            .iter()
+            .enumerate()
+            .map(|(i, &k)| format!("\"{}\":{i}", name(k)))
+            .collect::<Vec<_>>()
+            .join(",");
+        let doc = format!("{{{body}}}");
+        let f = keys(listed.iter().map(|&k| (name(k), all())).collect::<Vec<_>>().iter().map(|(k, f)| (k.as_str(), f.clone())).collect());
+        let pruned = parse(doc.as_bytes(), &f).unwrap();
+        let whole = parse(doc.as_bytes(), &all()).unwrap();
+        for k in 0..40 {
+            let key = Key::new(name(k), k as u64);
+            let want = if listed.contains(&k) { (&whole).get(&key) } else { None };
+            prop_assert_eq!((&pruned).get(&key), want);
+        }
     }
 }

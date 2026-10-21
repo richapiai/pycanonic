@@ -16,6 +16,7 @@ pub mod simd;
 mod unescape;
 
 use std::borrow::Cow;
+use std::sync::OnceLock;
 
 use memchr::memchr2;
 
@@ -35,8 +36,77 @@ pub enum Node<'a> {
     /// Members in document order, duplicates included. A member the filter doesn't list is left
     /// out; a listed one whose value it pruned is kept as `Skipped`.
     Obj(Vec<(Cow<'a, str>, Node<'a>)>),
+    /// An `Obj` the filter pruned that kept more than [`INDEXED`] members, with a hash table over
+    /// its keys so a path step is not a scan. Read it as `Obj`.
+    Indexed(Box<Indexed<'a>>),
     /// A value the filter pruned. Array positions are kept.
     Skipped,
+}
+
+/// A pruned object keeps a key table past this many members; below it a scan is as fast.
+pub const INDEXED: usize = 8;
+
+/// The members of a `Node::Indexed` and an open-addressing table over them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Indexed<'a> {
+    /// In document order, duplicates included, as `Node::Obj`.
+    pub members: Vec<(Cow<'a, str>, Node<'a>)>,
+    /// `(hash as u32, position + 1)` per slot, 0 empty; a power of two at least twice the members.
+    table: Box<[(u32, u32)]>,
+}
+
+impl<'a> Indexed<'a> {
+    fn new(members: Vec<(Cow<'a, str>, Node<'a>)>) -> Indexed<'a> {
+        let mut table =
+            vec![(0u32, 0u32); (members.len() * 2).next_power_of_two()].into_boxed_slice();
+        for (p, (k, _)) in members.iter().enumerate() {
+            let h = key_hash(k.as_bytes());
+            // A repeated key takes over its first slot: the last occurrence is what a path reads.
+            let slot = probe(&table, h, |q| {
+                same_key(members[q].0.as_bytes(), k.as_bytes())
+            });
+            table[slot] = (h as u32, p as u32 + 1);
+        }
+        Indexed { members, table }
+    }
+
+    /// The last member named `key` (whose `key_hash` is `hash`).
+    pub fn get(&self, key: &[u8], hash: u64) -> Option<&Node<'a>> {
+        let slot = probe(&self.table, hash, |q| {
+            same_key(self.members[q].0.as_bytes(), key)
+        });
+        match self.table[slot].1 {
+            0 => None,
+            p => Some(&self.members[p as usize - 1].1),
+        }
+    }
+}
+
+/// The slot holding the key with hash `h` that `is_key(position)` accepts, or the empty slot
+/// where it would go. `table` is a power of two and never full.
+fn probe(table: &[(u32, u32)], h: u64, is_key: impl Fn(usize) -> bool) -> usize {
+    let mask = table.len() - 1;
+    let mut slot = (h >> 32) as usize & mask;
+    loop {
+        let (th, p) = table[slot];
+        if p == 0 || (th == h as u32 && is_key(p as usize - 1)) {
+            return slot;
+        }
+        slot = (slot + 1) & mask;
+    }
+}
+
+/// The hash `Node::Indexed` and `Filter`'s key table use, on decoded key bytes (FxHash style, a
+/// word at a time). `Key::hash` holds it for a plan key.
+pub fn key_hash(b: &[u8]) -> u64 {
+    const K: u64 = 0x517c_c1b7_2722_0a95;
+    let mut h = b.len() as u64;
+    for c in b.chunks(8) {
+        let mut w = [0u8; 8];
+        w[..c.len()].copy_from_slice(c);
+        h = (h.rotate_left(5) ^ u64::from_le_bytes(w)).wrapping_mul(K);
+    }
+    h ^ (h >> 29)
 }
 
 /// What the plan reads below one value.
@@ -51,6 +121,38 @@ pub struct Filter {
     pub idxs: Vec<(usize, Filter)>,
     pub elems: Option<Box<Filter>>,
     pub all: bool,
+    /// A hash table over `keys`, built on the first parse that needs it. Leave it default; it is
+    /// not compared, and `keys` must not change after the filter has been used.
+    pub index: KeyIndex,
+}
+
+/// `Filter::index`: for more than [`INDEXED`] keys, `(key_hash, position + 1)` per slot.
+#[derive(Default)]
+pub struct KeyIndex(OnceLock<Box<[(u32, u32)]>>);
+
+impl KeyIndex {
+    const fn new() -> KeyIndex {
+        KeyIndex(OnceLock::new())
+    }
+}
+
+impl Clone for KeyIndex {
+    /// A fresh cache: the clone's keys may be changed before it is used.
+    fn clone(&self) -> KeyIndex {
+        KeyIndex::new()
+    }
+}
+
+impl PartialEq for KeyIndex {
+    fn eq(&self, _: &KeyIndex) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for KeyIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("KeyIndex")
+    }
 }
 
 /// Builds everything below.
@@ -59,6 +161,7 @@ pub(crate) static ALL: Filter = Filter {
     idxs: Vec::new(),
     elems: None,
     all: true,
+    index: KeyIndex::new(),
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,7 +267,7 @@ impl<'a> Parser<'a> {
             let child = if f.all {
                 Some(&ALL)
             } else {
-                wanted(&f.keys, raw, plain)
+                wanted(f, raw, plain)
             };
             // An unlisted member is skipped and not kept: no path reads it, so its key is never decoded.
             match child {
@@ -179,6 +282,9 @@ impl<'a> Parser<'a> {
                 Some(b',') => self.pos += 1,
                 Some(b'}') => {
                     self.pos += 1;
+                    if !f.all && members.len() > INDEXED {
+                        return Ok(Node::Indexed(Box::new(Indexed::new(members))));
+                    }
                     return Ok(Node::Obj(members));
                 }
                 _ => return self.err(),
@@ -375,8 +481,30 @@ fn decode(raw: &[u8], plain: bool) -> Cow<'_, str> {
 
 /// The filter entry for the member whose key has the raw (still escaped) bytes `raw`. Filter keys
 /// are decoded UTF-8: plain bytes are compared as they are, anything else is decoded first.
-fn wanted<'f>(keys: &'f [(Box<[u8]>, Filter)], raw: &[u8], plain: bool) -> Option<&'f Filter> {
-    let find = |key: &[u8]| keys.iter().find(|(k, _)| same_key(k, key)).map(|(_, c)| c);
+/// Past [`INDEXED`] keys the lookup goes through `Filter::index`.
+fn wanted<'f>(f: &'f Filter, raw: &[u8], plain: bool) -> Option<&'f Filter> {
+    let keys = &f.keys;
+    let find = |key: &[u8]| {
+        if keys.len() <= INDEXED {
+            return keys.iter().find(|(k, _)| same_key(k, key)).map(|(_, c)| c);
+        }
+        let table = f.index.0.get_or_init(|| {
+            let mut t = vec![(0u32, 0u32); (keys.len() * 2).next_power_of_two()];
+            for (p, (k, _)) in keys.iter().enumerate() {
+                let h = key_hash(k);
+                // A repeated filter key keeps its first entry, as the scan finds it.
+                let slot = probe(&t, h, |q| same_key(&keys[q].0, k));
+                if t[slot].1 == 0 {
+                    t[slot] = (h as u32, p as u32 + 1);
+                }
+            }
+            t.into_boxed_slice()
+        });
+        match table[probe(table, key_hash(key), |q| same_key(&keys[q].0, key))].1 {
+            0 => None,
+            p => Some(&keys[p as usize - 1].1),
+        }
+    };
     match plain {
         true => find(raw),
         false => find(unescape(raw).as_bytes()),
