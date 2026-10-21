@@ -8,7 +8,11 @@
 //! - content after the root value is ignored;
 //! - skipped subtrees are only bracket-matched, not validated;
 //! - strings are decoded by [`unescape`], which never fails.
+//!
+//! [`simd::structurals`] indexes the structural bytes once; string ends and skips jump through
+//! that index instead of walking bytes.
 
+pub mod simd;
 mod unescape;
 
 use std::borrow::Cow;
@@ -67,13 +71,28 @@ pub enum ParseError {
 
 /// Parses `buf`, building only what `filter` asks for. Never panics.
 pub fn parse<'a>(buf: &'a [u8], filter: &Filter) -> Result<Node<'a>, ParseError> {
+    parse_in(buf, filter, true)
+}
+
+/// `indexed: false` parses with the byte scans alone, the reference the index must agree with.
+fn parse_in<'a>(buf: &'a [u8], filter: &Filter, indexed: bool) -> Result<Node<'a>, ParseError> {
     check_size(buf.len())?;
     let pos = if buf.starts_with(b"\xEF\xBB\xBF") {
         3
     } else {
         0
     };
-    let mut p = Parser { buf, pos };
+    let idx = if indexed {
+        simd::structurals(buf).idx
+    } else {
+        Vec::new()
+    };
+    let mut p = Parser {
+        buf,
+        pos,
+        idx,
+        k: 0,
+    };
     p.ws();
     // Trailing content is ignored on purpose (JSON.parse would reject it; see module doc).
     p.value(filter, 0)
@@ -89,6 +108,10 @@ fn check_size(len: usize) -> Result<(), ParseError> {
 struct Parser<'a> {
     buf: &'a [u8],
     pos: usize,
+    /// Structural positions from stage 1; empty once it can't be trusted (see [`Parser::fallback`]).
+    idx: Vec<u32>,
+    /// First entry of `idx` not yet passed. Only moves forward, like `pos`.
+    k: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -266,7 +289,7 @@ impl<'a> Parser<'a> {
 
     /// Reads a string; `pos` is on the opening quote and ends after the closing one.
     fn string(&mut self) -> Result<Cow<'a, str>, ParseError> {
-        let end = string_end(self.buf, self.pos + 1)?;
+        let end = self.string_end(self.pos)?;
         let raw = &self.buf[self.pos + 1..end - 1];
         self.pos = end;
         Ok(unescape(raw))
@@ -275,21 +298,84 @@ impl<'a> Parser<'a> {
     /// Skips the value at `pos` without building it.
     fn skip(&mut self) -> Result<Node<'a>, ParseError> {
         match self.buf.get(self.pos) {
-            Some(b'{' | b'[') => self.pos = skip_container(self.buf, self.pos)?,
-            // Scalars are cheap: read and drop them so they are still checked.
+            Some(b'{' | b'[') => self.pos = self.skip_container(self.pos)?,
+            // Decoding never fails, so a skipped string only needs its end.
+            Some(b'"') => self.pos = self.string_end(self.pos)?,
+            // Other scalars are cheap: read and drop them so they are still checked.
             _ => {
                 self.value(&ALL, 0)?;
             }
         }
         Ok(Node::Skipped)
     }
+
+    /// Moves `k` to the first entry at or after `p` and returns it if it is `p` itself. Every
+    /// byte the parser reads outside strings and skips agrees with stage 1, so a quote or
+    /// bracket the parser stands on is in the index unless the index was dropped.
+    fn entry_at(&mut self, p: usize) -> Option<usize> {
+        while self.idx.get(self.k).is_some_and(|&i| (i as usize) < p) {
+            self.k += 1;
+        }
+        (self.idx.get(self.k).map(|&i| i as usize) == Some(p)).then_some(self.k)
+    }
+
+    /// Stage 1 and the parser disagree past a backslash outside a string (the parser ignores it,
+    /// stage 1 lets it escape). Valid JSON never has one; from there on, scan bytes.
+    fn fallback(&mut self) {
+        self.idx = Vec::new();
+        self.k = 0;
+    }
+
+    /// Offset just past the closing quote of the string opening at `open`. Inside a string the
+    /// index holds only quotes, so the next entry is the closing one.
+    fn string_end(&mut self, open: usize) -> Result<usize, ParseError> {
+        let Some(k) = self.entry_at(open) else {
+            return scan_string_end(self.buf, open + 1);
+        };
+        self.k = k + 1;
+        match self.idx.get(self.k) {
+            Some(&close) => {
+                self.k += 1;
+                Ok(close as usize + 1)
+            }
+            None => Err(ParseError::Syntax(self.buf.len())),
+        }
+    }
+
+    /// Offset just past the container opening at `start`: the brackets in the index are counted
+    /// with a plain integer, not matched or validated, so any depth is fine.
+    fn skip_container(&mut self, start: usize) -> Result<usize, ParseError> {
+        let Some(k) = self.entry_at(start) else {
+            return scan_container(self.buf, start);
+        };
+        let mut depth = 0usize;
+        for (j, &i) in self.idx.iter().enumerate().skip(k) {
+            let i = i as usize;
+            match self.buf[i] {
+                b'{' | b'[' => depth += 1,
+                b'}' | b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        self.k = j + 1;
+                        return Ok(i + 1);
+                    }
+                }
+                b'\\' => {
+                    self.fallback();
+                    return scan_container(self.buf, start);
+                }
+                _ => {}
+            }
+        }
+        self.k = self.idx.len();
+        Err(ParseError::Syntax(self.buf.len()))
+    }
 }
 
-// The two scans below are the only places that walk raw bytes; Task 10 swaps them for the
-// SIMD structural index.
+// The byte scans: the reference for the index, and the fallback when it can't be trusted.
 
 /// Offset just past the closing quote of a string whose body starts at `from`.
-fn string_end(buf: &[u8], from: usize) -> Result<usize, ParseError> {
+fn scan_string_end(buf: &[u8], from: usize) -> Result<usize, ParseError> {
     let mut i = from;
     loop {
         let k = memchr2(b'"', b'\\', buf.get(i..).unwrap_or_default())
@@ -303,13 +389,13 @@ fn string_end(buf: &[u8], from: usize) -> Result<usize, ParseError> {
 
 /// Offset just past the container opening at `start`. Brackets are counted, not matched
 /// or validated, and the count is a plain integer, so any depth is fine here.
-fn skip_container(buf: &[u8], start: usize) -> Result<usize, ParseError> {
+fn scan_container(buf: &[u8], start: usize) -> Result<usize, ParseError> {
     let mut depth = 0usize;
     let mut i = start;
     while let Some(&c) = buf.get(i) {
         match c {
             b'"' => {
-                i = string_end(buf, i + 1)?;
+                i = scan_string_end(buf, i + 1)?;
                 continue;
             }
             b'{' | b'[' => depth += 1,
@@ -329,6 +415,7 @@ fn skip_container(buf: &[u8], start: usize) -> Result<usize, ParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     // The size gate is tested on lengths alone: allocating 2 GiB aborts on hosts without overcommit.
     #[test]
@@ -336,5 +423,60 @@ mod tests {
         assert_eq!(check_size(MAX_BYTES), Ok(()));
         assert_eq!(check_size(MAX_BYTES + 1), Err(ParseError::Size));
         assert_eq!(check_size(usize::MAX), Err(ParseError::Size));
+    }
+
+    fn all() -> Filter {
+        ALL.clone()
+    }
+
+    fn pruned() -> Filter {
+        Filter {
+            keys: vec![
+                (b"a".as_slice().into(), all()),
+                (
+                    b"l".as_slice().into(),
+                    Filter {
+                        idxs: vec![(1, all())],
+                        ..Filter::default()
+                    },
+                ),
+            ],
+            ..Filter::default()
+        }
+    }
+
+    /// The index walk and the byte scan agree, errors and offsets included.
+    fn same(buf: &[u8]) {
+        for f in [all(), pruned(), Filter::default()] {
+            assert_eq!(parse_in(buf, &f, true), parse_in(buf, &f, false), "{buf:?}");
+        }
+    }
+
+    #[test]
+    fn a_backslash_outside_a_string_falls_back_to_the_byte_scan() {
+        // In a skipped subtree `\"` opens a string for the parser but is an escaped quote to
+        // stage 1; the index must not be trusted past it.
+        let doc = br#"{"x":[\"],"a":1}"#;
+        assert_eq!(parse(doc, &pruned()), Err(ParseError::Syntax(doc.len())));
+        same(doc);
+        same(br#"{"x":[\\"],"a":1}"#);
+        same(br#"{"x":{"y":[1,\],"z":"]"},"a":"\\"}"#);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(4096))]
+
+        #[test]
+        fn index_and_byte_scan_agree(
+            bytes in prop::collection::vec(
+                prop::sample::select(b"{}[]:,\"\\ al1".to_vec()),
+                0..300,
+            )
+        ) {
+            same(&bytes);
+            let mut doc = br#"{"l":[0,"#.to_vec();
+            doc.extend_from_slice(&bytes);
+            same(&doc);
+        }
     }
 }
