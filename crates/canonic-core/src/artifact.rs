@@ -11,7 +11,7 @@ use crate::spec::{Path, Source, Step};
 use crate::stats::Stats;
 use crate::transforms::Transform;
 use crate::value::Value;
-use crate::write::JsonSink;
+use crate::write::{JsonSink, member_keys};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -22,6 +22,8 @@ pub struct Artifact {
     custom: Vec<Arc<dyn Transform>>,
     filter: Filter,
     extractor: Arc<Extractor>,
+    /// `"name":` per canonical name, for `map_json`.
+    json_keys: Vec<Box<[u8]>>,
 }
 
 impl Artifact {
@@ -51,6 +53,7 @@ impl Artifact {
             stats: Stats::new(&plan),
             filter: filter_for(&plan),
             extractor: Arc::new(Extractor::new(&plan, &custom)),
+            json_keys: member_keys(&plan.names),
             plan: Arc::new(plan),
             program,
             custom,
@@ -75,7 +78,7 @@ impl Artifact {
         let node = self.parse(body);
         let mut sink = JsonSink {
             buf: Vec::with_capacity(body.len()),
-            names: &self.plan.names,
+            keys: &self.json_keys,
         };
         let root = self.map_with(node.as_ref().as_ref(), &mut sink);
         sink.finish(root)

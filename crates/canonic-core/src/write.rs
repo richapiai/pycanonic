@@ -64,7 +64,19 @@ pub(crate) fn write_out(names: &[String], out: &Out, buf: &mut Vec<u8>) {
 /// builds for the same run, byte for byte.
 pub(crate) struct JsonSink<'n> {
     pub buf: Vec<u8>,
-    pub names: &'n [String],
+    /// `"name":` for each of `Plan::names`, written once per artifact by `member_keys`.
+    pub keys: &'n [Box<[u8]>],
+}
+
+/// Each canonical name as an object member's key, quotes and colon included.
+pub(crate) fn member_keys(names: &[String]) -> Vec<Box<[u8]>> {
+    let key = |name: &String| {
+        let mut k = Vec::new();
+        write_str(name, &mut k);
+        k.push(b':');
+        k.into_boxed_slice()
+    };
+    names.iter().map(key).collect()
 }
 
 impl JsonSink<'_> {
@@ -142,8 +154,7 @@ impl Sink for JsonSink<'_> {
             if n > 0 {
                 self.buf.push(b',');
             }
-            write_str(&self.names[k], &mut self.buf);
-            self.buf.push(b':');
+            self.buf.extend_from_slice(&self.keys[k]);
             self.buf.extend_from_within(r);
         }
         self.buf.push(b'}');
