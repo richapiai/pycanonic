@@ -33,7 +33,7 @@ mod _core {
     const MAX_DEPTH: usize = 256;
 
     /// A Python value as JSON, `dict` key order kept.
-    pub(crate) fn json(o: &Bound<'_, PyAny>, depth: usize) -> PyResult<J> {
+    fn json(o: &Bound<'_, PyAny>, depth: usize) -> PyResult<J> {
         if depth > MAX_DEPTH {
             return Err(PyValueError::new_err("nested too deeply (or cyclic)"));
         }

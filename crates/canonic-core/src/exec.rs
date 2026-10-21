@@ -222,7 +222,7 @@ fn json_value(v: &serde_json::Value) -> Value<'_> {
 
 /// Most nodes `json` copies. A host object that shares its children (`{"a": x, "b": x}` down a
 /// chain) has exponentially many paths though it is small; this bounds the walk.
-const MAX_NODES: usize = 1_000_000;
+pub(crate) const MAX_NODES: usize = 1_000_000;
 
 /// A document value as JSON, for a custom transform's container input. `None` past `MAX_DEPTH` (a
 /// host object that contains itself) or past `budget` nodes (see `MAX_NODES`).

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -138,6 +138,6 @@ class FillMonitor:
             min_rise=min_rise,
         )
 
-    def check(self, window: _core._StatsSnapshot) -> list[FieldAlert]:
+    def check(self, window: Mapping[str, Any]) -> list[FieldAlert]:
         """Feeds one window; the fields whose fill fell or whose errors rose, once it is big enough."""
         return [FieldAlert(**a) for a in self._core.check(window)]

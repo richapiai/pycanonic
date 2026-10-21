@@ -2,10 +2,12 @@
 //! per field. A renamed key maps to null without any error, so these two are how a rename gets noticed.
 
 use crate::doc::Doc;
+use crate::exec::MAX_NODES;
+use crate::json::MAX_DEPTH;
 use crate::stats::{FieldStats, StatsSnapshot};
 use crate::write::write_str;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// `JSON.stringify(k)`.
 fn quoted(k: &str) -> String {
@@ -14,28 +16,59 @@ fn quoted(k: &str) -> String {
     String::from_utf8(buf).expect("escaping keeps UTF-8")
 }
 
-fn walk<D: Doc>(members: Vec<(Cow<'_, str>, D)>, prefix: &str, out: &mut Vec<String>) {
-    for (k, x) in members {
-        if x.is_null() {
-            continue;
-        }
-        let path = format!("{prefix}{}", quoted(&k));
-        if let Some(n) = x.len() {
-            elements(&x, n, &format!("{path}[]."), out);
-            out.push(path + "[]");
-        } else {
-            if let Some(m) = x.members() {
-                walk(m, &format!("{path}."), out);
-            }
-            out.push(path);
-        }
-    }
+/// Most path text `shape` writes. Every path repeats its prefix, so a host object that shares its
+/// children (`d["a"] = d["b"] = d`) costs its depth per node; `MAX_NODES` alone lets that run to gigabytes.
+const MAX_PATH_BYTES: usize = 64 << 20;
+
+/// What `shape` may still walk. Past `MAX_DEPTH` levels, `MAX_NODES` values or `MAX_PATH_BYTES`, a
+/// subtree counts as a scalar: its path is kept and nothing under it. Bounds a host object that
+/// contains itself; a parsed document stays far inside all three.
+struct Walk {
+    nodes: usize,
+    bytes: usize,
+    out: HashSet<String>,
 }
 
-fn elements<D: Doc>(arr: &D, n: usize, prefix: &str, out: &mut Vec<String>) {
-    for e in (0..n).filter_map(|i| arr.item(i)) {
-        if let Some(m) = e.members() {
-            walk(m, prefix, out);
+impl Walk {
+    fn deeper(&self, depth: usize) -> bool {
+        depth < MAX_DEPTH && self.nodes > 0 && self.bytes > 0
+    }
+
+    fn add(&mut self, path: String) {
+        self.bytes = self.bytes.saturating_sub(path.len());
+        self.out.insert(path);
+    }
+
+    fn members<D: Doc>(&mut self, members: Vec<(Cow<'_, str>, D)>, prefix: &str, depth: usize) {
+        for (k, x) in members {
+            if x.is_null() {
+                continue;
+            }
+            self.nodes = self.nodes.saturating_sub(1);
+            let path = format!("{prefix}{}", quoted(&k));
+            if let Some(n) = x.len() {
+                if self.deeper(depth) {
+                    self.elements(&x, n, &format!("{path}[]."), depth + 1);
+                }
+                self.add(path + "[]");
+            } else {
+                if let Some(m) = x.members().filter(|_| self.deeper(depth)) {
+                    self.members(m, &format!("{path}."), depth + 1);
+                }
+                self.add(path);
+            }
+        }
+    }
+
+    fn elements<D: Doc>(&mut self, arr: &D, n: usize, prefix: &str, depth: usize) {
+        for i in 0..n {
+            if !self.deeper(depth) {
+                return;
+            }
+            self.nodes -= 1;
+            if let Some(m) = arr.item(i).as_ref().and_then(Doc::members) {
+                self.members(m, prefix, depth + 1);
+            }
         }
     }
 }
@@ -44,15 +77,19 @@ fn elements<D: Doc>(arr: &D, n: usize, prefix: &str, out: &mut Vec<String>) {
 /// ending in `[]` whatever its length, with the keys of its object elements merged under it. Keys
 /// are written as `JSON.stringify` writes them, and sorted by UTF-16 code units as JavaScript sorts.
 pub fn shape<D: Doc>(doc: &D) -> Vec<String> {
-    let mut out = Vec::new();
+    let mut w = Walk {
+        nodes: MAX_NODES,
+        bytes: MAX_PATH_BYTES,
+        out: HashSet::new(),
+    };
     if let Some(m) = doc.members() {
-        walk(m, "", &mut out);
+        w.members(m, "", 1);
     } else if let Some(n) = doc.len() {
-        out.push("[]".to_string());
-        elements(doc, n, "[].", &mut out);
+        w.add("[]".to_string());
+        w.elements(doc, n, "[].", 1);
     }
+    let mut out: Vec<String> = w.out.into_iter().collect();
     out.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
-    out.dedup();
     out
 }
 

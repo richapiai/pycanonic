@@ -1,6 +1,6 @@
 """Type stubs for the Rust extension `pycanonic._core`."""
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any, Literal, TypeVar, final
 
 from typing_extensions import NotRequired, TypedDict
@@ -63,7 +63,7 @@ class FillMonitor:
         min_drop: float = 0.25,
         min_rise: float = 0.01,
     ) -> None: ...
-    def check(self, window: _StatsSnapshot) -> list[_FieldAlert]: ...
+    def check(self, window: Mapping[str, Any]) -> list[_FieldAlert]: ...
 
 @final
 class View:

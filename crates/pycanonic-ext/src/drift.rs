@@ -1,41 +1,53 @@
 //! `shape`, `fingerprint` and `FillMonitor` from the core, over Python values and stats dicts.
 
-use crate::_core::json;
+use crate::pydoc::PyDoc;
 use canonic_core::json::Node;
 use canonic_core::{AlertKind, FieldStats, Filter, StatsSnapshot};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyString};
+use pyo3::types::{PyBytes, PyDict};
 
-/// `value` parsed by the core parser: `bytes` or `str` as JSON text, anything else first written
-/// as JSON, which rejects a cyclic or non-JSON object instead of walking it forever.
-fn with_doc<T>(value: &Bound<'_, PyAny>, f: impl FnOnce(&&Node<'_>) -> T) -> PyResult<T> {
-    let raw: Vec<u8> = if let Ok(b) = value.cast::<PyBytes>() {
-        b.as_bytes().to_vec()
-    } else if let Ok(s) = value.cast::<PyString>() {
-        s.to_cow()?.as_bytes().to_vec()
-    } else {
-        serde_json::to_vec(&json(value, 0)?).expect("a JSON value serializes")
+/// `bytes` parsed by the core parser as JSON text; anything else walked as the Python object it
+/// is, where only a `dict` and a `list`/`tuple` have members and any other value (a `str`, a `set`)
+/// is a scalar, as TypeScript sees it. The core walk bounds a cyclic object.
+fn with_doc<T>(
+    value: &Bound<'_, PyAny>,
+    parsed: fn(&&Node<'_>) -> T,
+    object: fn(&PyDoc<'_, '_>) -> T,
+) -> PyResult<T> {
+    let Ok(b) = value.cast::<PyBytes>() else {
+        return Ok(object(&PyDoc {
+            obj: value.clone(),
+            keys: &[],
+        }));
     };
     let all = Filter {
         all: true,
         ..Filter::default()
     };
-    let node = canonic_core::parse(&raw, &all)
+    let node = canonic_core::parse(b.as_bytes(), &all)
         .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e:?}")))?;
-    Ok(f(&&node))
+    Ok(parsed(&&node))
 }
 
-/// Sorted key paths of a parsed response (`dict`/`list`), or of JSON text: a `str` is always text.
+/// Sorted key paths of a parsed response, or of JSON text given as `bytes`.
 #[pyfunction]
 pub fn shape(value: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
-    with_doc(value, |d| canonic_core::shape(d))
+    with_doc(
+        value,
+        |d| canonic_core::shape(d),
+        |d| canonic_core::shape(d),
+    )
 }
 
 /// FNV-1a over `shape(value)`, as 8 hex digits; equal to canonic's for the same document.
 #[pyfunction]
 pub fn fingerprint(value: &Bound<'_, PyAny>) -> PyResult<String> {
-    with_doc(value, |d| canonic_core::fingerprint(d))
+    with_doc(
+        value,
+        |d| canonic_core::fingerprint(d),
+        |d| canonic_core::fingerprint(d),
+    )
 }
 
 #[pyclass(module = "pycanonic._core")]
@@ -73,7 +85,11 @@ impl FillMonitor {
             let stats = FieldStats {
                 fill: item(&s, "fill")?.extract()?,
                 errors: item(&s, "errors")?.extract()?,
-                total: s.get_item("total")?.map(|t| t.extract()).transpose()?,
+                total: s
+                    .get_item("total")?
+                    .filter(|t| !t.is_none())
+                    .map(|t| t.extract())
+                    .transpose()?,
             };
             fields.push((name.extract()?, stats));
         }

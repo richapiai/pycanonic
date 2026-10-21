@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import time
 from typing import Any
 
 import pytest
@@ -26,28 +27,48 @@ def test_pinned_fingerprints_match_typescript() -> None:
 
 
 @pytest.mark.parametrize("doc", [SIMPLE, WIDE, [{"a": 1}, {"b": None, "c": []}], 3, None])
-def test_a_parsed_value_shapes_like_its_bytes_and_text(doc: Any) -> None:
-    raw = json.dumps(doc)
-    assert shape(doc) == shape(raw) == shape(raw.encode())
-    assert fingerprint(doc) == fingerprint(raw) == fingerprint(raw.encode())
+def test_a_parsed_value_shapes_like_its_bytes(doc: Any) -> None:
+    raw = json.dumps(doc).encode()
+    assert shape(doc) == shape(raw)
+    assert fingerprint(doc) == fingerprint(raw)
 
 
-def test_a_str_is_json_text_and_scalars_have_an_empty_shape() -> None:
-    assert shape('"text"') == shape(b"3") == shape(None) == []
-    with pytest.raises(ValueError):
-        shape("text")
+def test_a_str_is_a_scalar_and_scalars_have_an_empty_shape() -> None:
+    # As TypeScript: only bytes are JSON text; a str, even one holding JSON, is a scalar.
+    assert shape("text") == shape('{"a": 1}') == shape(b"3") == shape(None) == []
+    assert fingerprint("text") == fingerprint(3) == fingerprint({}) == "811c9dc5"
     assert shape({"t": ({"a": 1},)}) == ['"t"[]', '"t"[]."a"']
 
 
-def test_bad_input_raises() -> None:
+def test_invalid_bytes_raise() -> None:
     with pytest.raises(ValueError):
         shape(b"{nope")
-    with pytest.raises(TypeError):
-        shape({"a": object()})
+
+
+def test_non_json_values_are_scalars() -> None:
+    assert shape({"a": object(), "s": {1, 2}, "t": ({"b": 1},)}) == ['"a"', '"s"', '"t"[]', '"t"[]."b"']
+
+
+def test_a_cyclic_dict_stops_at_the_depth_cap() -> None:
     cyclic: dict[str, Any] = {}
     cyclic["a"] = cyclic
-    with pytest.raises(ValueError):
-        fingerprint(cyclic)
+    paths = shape(cyclic)
+    assert len(paths) == 512
+    assert paths[0] == '"a"' and paths[-1] == ".".join(['"a"'] * 512)
+    assert len(fingerprint(cyclic)) == 8
+    # Shared children: exponentially many paths, cut at the node and path-text budgets.
+    shared: dict[str, Any] = {}
+    shared["a"] = shared["b"] = shared
+    started = time.monotonic()
+    assert 0 < len(shape(shared)) <= 1_000_000
+    assert time.monotonic() - started < 5
+
+
+def test_total_none_means_absent() -> None:
+    m = FillMonitor()
+    for _ in range(3):
+        m.check({"responses": 1000, "fields": {"f": {"fill": 900, "errors": 0, "total": None}}})
+    assert m.check(snap(1000, {"f": (0, 0)})) == [FieldAlert(field="f", kind="fill", rate=0.0, baseline=0.9, responses=1000)]
 
 
 def snap(responses: int, fields: dict[str, tuple[int, int]]) -> dict[str, Any]:
