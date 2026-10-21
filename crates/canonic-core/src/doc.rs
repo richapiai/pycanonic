@@ -2,6 +2,7 @@
 
 use crate::json::Node;
 use crate::value::Value;
+use std::any::Any;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -31,6 +32,11 @@ pub trait Doc: Clone {
     fn item(&self, i: usize) -> Option<Self>;
     /// Members of an object in document order, for passing a container through; `None` otherwise.
     fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>>;
+    /// The host's own object behind this value (a Python object in the extension), which a sink
+    /// can pass through as it is instead of rebuilding it; `None` for the parsed JSON tree.
+    fn host(&self) -> Option<&dyn Any> {
+        None
+    }
 }
 
 /// Integer text that fits i64 is `Int`, other integer text `BigInt`, a fraction or exponent `Float`.

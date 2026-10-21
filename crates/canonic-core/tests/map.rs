@@ -611,3 +611,53 @@ fn passing_through_an_object_with_many_keys_is_linear() {
 fn map_raw(a: &Artifact, body: &[u8]) -> J {
     to_json(&a.map_bytes(body), &a.plan.names)
 }
+
+/// Renders what it is given as JSON text, so a test can see a container input.
+struct Show;
+
+impl Transform for Show {
+    fn apply<'a>(&self, v: Value<'a>, _: Option<&J>) -> Value<'a> {
+        Value::Str(format!("{v:?}").into())
+    }
+
+    fn apply_container(&self, v: &J, arg: Option<&J>) -> Value<'static> {
+        Value::Str(format!("{v} {}", arg.unwrap_or(&J::Null)).into())
+    }
+}
+
+#[test]
+fn a_custom_transform_sees_a_container_input_as_json() {
+    let custom: Custom =
+        HashMap::from([("show".to_string(), Arc::new(Show) as Arc<dyn Transform>)]);
+    let a = artifact_with(
+        &spec(json!({
+            "full_name": { "from": ["a", "b.c", "x"], "transform": "show" },
+            "first_name": { "from": "o", "transform": { "show": 1 } },
+            "last_name": { "from": "s", "transform": "show" },
+            "skills[]": { "from": "l", "transform": "show" },
+        })),
+        &canonical(),
+        custom,
+    );
+    let out = map_raw(
+        &a,
+        br#"{"a":"x","b":{"c":[2,{"d":null}]},"o":{"k":1,"n":{"m":true}},"s":"t","l":[{"q":1},3]}"#,
+    );
+    assert_eq!(out["full_name"], r#"["x",[2,{"d":null}],null] null"#);
+    assert_eq!(out["first_name"], r#"{"k":1,"n":{"m":true}} 1"#);
+    assert_eq!(out["last_name"], r#"Str("t")"#);
+    assert_eq!(out["skills"], json!([r#"{"q":1} null"#, "Int(3)"]));
+}
+
+#[test]
+fn a_custom_transform_without_apply_container_gets_a_container_value_as_before() {
+    let a = artifact_with(
+        &spec(json!({ "full_name": { "from": "o", "transform": "same" } })),
+        &canonical(),
+        custom("same", |v| v),
+    );
+    assert_eq!(
+        map_raw(&a, br#"{"o":{"k":1}}"#)["full_name"],
+        json!({ "k": 1 })
+    );
+}

@@ -9,6 +9,17 @@ use std::borrow::Cow;
 
 pub trait Transform: Send + Sync {
     fn apply<'a>(&self, v: Value<'a>, arg: Option<&serde_json::Value>) -> Value<'a>;
+
+    /// A custom transform's object or array input (a several-path `from` is an array), as JSON,
+    /// since JavaScript hands the injected function the real object. The default calls `apply` with
+    /// `Value::Container`. Integers past i64 inside the container arrive as floats.
+    fn apply_container(
+        &self,
+        _v: &serde_json::Value,
+        arg: Option<&serde_json::Value>,
+    ) -> Value<'static> {
+        self.apply(Value::Container, arg).into_owned()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

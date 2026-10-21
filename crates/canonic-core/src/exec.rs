@@ -20,6 +20,7 @@ use crate::spec::{self, Source};
 use crate::stats::Stats;
 use crate::transforms::{Transform, validate};
 use crate::value::Value;
+use serde_json::Value as J;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
@@ -218,6 +219,32 @@ fn json_value(v: &serde_json::Value) -> Value<'_> {
     }
 }
 
+/// A document value as JSON, for a custom transform's container input.
+fn json<D: Doc>(d: &D) -> J {
+    if let Some(n) = d.len() {
+        return J::Array(
+            (0..n)
+                .map(|i| d.item(i).map_or(J::Null, |x| json(&x)))
+                .collect(),
+        );
+    }
+    if let Some(m) = d.members() {
+        return J::Object(
+            m.into_iter()
+                .map(|(k, v)| (k.into_owned(), json(&v)))
+                .collect(),
+        );
+    }
+    match d.leaf() {
+        Value::Bool(b) => J::Bool(b),
+        Value::Int(i) => J::from(i),
+        Value::BigInt(s) => s.parse::<f64>().map_or(J::Null, J::from),
+        Value::Float(f) => J::from(f),
+        Value::Str(s) => J::String(s.into_owned()),
+        Value::Null | Value::Container => J::Null,
+    }
+}
+
 /// Runs `program` over `doc` (`None` reads as absent everywhere) and counts one response in `stats`.
 /// `custom` is aligned with `Plan::custom_names`; a transform that panics gives null, an error.
 pub fn execute<D: Doc, S: Sink>(
@@ -271,6 +298,28 @@ impl<S: Sink> Exec<'_, S> {
         }
     }
 
+    /// `pipe` over a document value; a custom transform first in line gets a container as JSON.
+    fn pipe_doc<'d, D: Doc>(&self, tx: &[TxRef], d: &'d D) -> Value<'d> {
+        match (d.leaf(), tx.split_first()) {
+            (Value::Container, Some((first @ TxRef::Custom { .. }, rest))) => {
+                self.pipe(rest, self.container(first, &json(d)))
+            }
+            (v, _) => self.pipe(tx, v),
+        }
+    }
+
+    /// A custom transform over a container input; callers handle a default transform first.
+    fn container(&self, t: &TxRef, v: &J) -> Value<'static> {
+        let TxRef::Custom { index, arg, .. } = t else {
+            return Value::Null;
+        };
+        match self.custom.get(*index) {
+            Some(f) => catch_unwind(AssertUnwindSafe(|| f.apply_container(v, arg.as_ref())))
+                .unwrap_or(Value::Null),
+            None => Value::Null,
+        }
+    }
+
     /// Transforms in order, stopping at the first null.
     fn pipe<'v>(&self, tx: &[TxRef], mut v: Value<'v>) -> Value<'v> {
         for t in tx {
@@ -316,7 +365,7 @@ impl<S: Sink> Exec<'_, S> {
         if l.bare() {
             return Some(self.sink.passthrough(d));
         }
-        let v = Self::check(l.validator, self.pipe(&l.tx, d.leaf()));
+        let v = Self::check(l.validator, self.pipe_doc(&l.tx, d));
         match v {
             Value::Null => None,
             // A custom transform handing back its container input: the input, as it is.
@@ -353,7 +402,10 @@ impl<S: Sink> Exec<'_, S> {
         let v = match l.tx.split_first() {
             None => Value::Null, // a routing validator alone rejects a list
             Some((TxRef::Builtin(b), rest)) => self.pipe(rest, b.apply_list(&vals)),
-            Some((first, rest)) => self.pipe(rest, self.apply(first, Value::Container)),
+            Some((first, rest)) => {
+                let items = docs.iter().map(|d| d.as_ref().map_or(J::Null, json));
+                self.pipe(rest, self.container(first, &J::Array(items.collect())))
+            }
         };
         let v = Self::check(l.validator, v);
         Some(match v {
@@ -394,7 +446,7 @@ impl<S: Sink> Exec<'_, S> {
         if tx.is_empty() {
             return self.sink.passthrough(&d);
         }
-        match self.pipe(tx, d.leaf()) {
+        match self.pipe_doc(tx, &d) {
             Value::Null => {
                 self.stats.error(stat);
                 self.sink.scalar(Value::Null)

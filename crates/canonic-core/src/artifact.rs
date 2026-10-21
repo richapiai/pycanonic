@@ -4,7 +4,7 @@
 use crate::doc::Doc;
 use crate::exec::{Program, execute};
 use crate::json::{Filter, parse};
-use crate::plan::{CompileError, Field, ListKind, Named, Plan, Scalar};
+use crate::plan::{CompileError, Field, ListKind, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, RustSink, Sink};
 use crate::spec::{Path, Source, Step};
 use crate::stats::Stats;
@@ -101,22 +101,27 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
                 let e = node(f, from).elems.get_or_insert_default();
                 match kind {
                     ListKind::Item(c) => fields(e, c),
-                    ListKind::Pluck(p, tx) => node(e, p).all |= tx.is_empty(),
-                    ListKind::Plain(tx) => e.all |= tx.is_empty(),
+                    ListKind::Pluck(p, tx) => node(e, p).all |= tx.is_empty() || custom(tx),
+                    ListKind::Plain(tx) => e.all |= tx.is_empty() || custom(tx),
                 }
             }
         }
     }
 }
 
+fn custom(tx: &[TxRef]) -> bool {
+    tx.iter().any(|t| matches!(t, TxRef::Custom { .. }))
+}
+
 fn scalar(f: &mut Filter, s: &Scalar) {
-    let bare = s.tx.is_empty() && s.validator.is_none();
+    // A custom transform's container input goes to it whole (`Transform::apply_container`).
+    let whole = (s.validator.is_none() && s.tx.is_empty()) || custom(&s.tx);
     let paths = match &s.source {
         Source::From(p) => std::slice::from_ref(p),
         Source::FromMany(ps) | Source::Coalesce(ps) => ps.as_slice(),
     };
     for p in paths {
-        node(f, p).all |= bare;
+        node(f, p).all |= whole;
     }
 }
 
