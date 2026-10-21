@@ -254,6 +254,103 @@ fn json<D: Doc>(d: &D, depth: usize, budget: &mut usize) -> Option<J> {
     })
 }
 
+fn apply<'v>(custom: &[Arc<dyn Transform>], t: &TxRef, v: Value<'v>) -> Value<'v> {
+    match t {
+        TxRef::Builtin(b) => b.apply(v, None),
+        TxRef::Custom { index, arg, .. } => match custom.get(*index) {
+            Some(f) => {
+                catch_unwind(AssertUnwindSafe(|| f.apply(v, arg.as_ref()))).unwrap_or(Value::Null)
+            }
+            None => Value::Null,
+        },
+    }
+}
+
+/// `pipe` over a document value; a custom transform first in line gets a container as JSON.
+fn pipe_doc<'d, D: Doc>(custom: &[Arc<dyn Transform>], tx: &[TxRef], d: &'d D) -> Value<'d> {
+    match (d.leaf(), tx.split_first()) {
+        (Value::Container, Some((first @ TxRef::Custom { .. }, rest))) => {
+            let mut budget = MAX_NODES;
+            pipe(
+                custom,
+                rest,
+                container(custom, first, json(d, 0, &mut budget)),
+            )
+        }
+        (v, _) => pipe(custom, tx, v),
+    }
+}
+
+/// A custom transform over a container input (`None`: too deep, null); callers handle a default
+/// transform first.
+fn container(custom: &[Arc<dyn Transform>], t: &TxRef, v: Option<J>) -> Value<'static> {
+    let (TxRef::Custom { index, arg, .. }, Some(v)) = (t, v) else {
+        return Value::Null;
+    };
+    match custom.get(*index) {
+        Some(f) => catch_unwind(AssertUnwindSafe(|| f.apply_container(&v, arg.as_ref())))
+            .unwrap_or(Value::Null),
+        None => Value::Null,
+    }
+}
+
+/// Transforms in order, stopping at the first null.
+fn pipe<'v>(custom: &[Arc<dyn Transform>], tx: &[TxRef], mut v: Value<'v>) -> Value<'v> {
+    for t in tx {
+        if v.is_null() {
+            break;
+        }
+        v = apply(custom, t, v);
+    }
+    v
+}
+
+fn check(validator: Option<Semantic>, v: Value<'_>) -> Value<'_> {
+    match validator {
+        Some(s) if !v.is_null() => validate(s, v),
+        _ => v,
+    }
+}
+
+/// A present value through a scalar field's transforms, then its routing validator. `Null` is a
+/// rejection; `Container` means the value goes out as it is. `map` and `extract` share it.
+pub(crate) fn transform<'d, D: Doc>(
+    custom: &[Arc<dyn Transform>],
+    tx: &[TxRef],
+    validator: Option<Semantic>,
+    d: &'d D,
+) -> Value<'d> {
+    check(validator, pipe_doc(custom, tx, d))
+}
+
+/// `transform` for `from` with several paths (`None` where a path is absent). The first step sees
+/// the list: only `join` reads one, a custom transform sees a container.
+pub(crate) fn transform_many<'d, D: Doc>(
+    custom: &[Arc<dyn Transform>],
+    tx: &[TxRef],
+    validator: Option<Semantic>,
+    docs: &'d [Option<D>],
+) -> Value<'d> {
+    let vals: Vec<Value> = docs
+        .iter()
+        .map(|d| d.as_ref().map_or(Value::Null, |d| d.leaf()))
+        .collect();
+    let v = match tx.split_first() {
+        None => Value::Null, // a routing validator alone rejects a list
+        Some((TxRef::Builtin(b), rest)) => pipe(custom, rest, b.apply_list(&vals)),
+        Some((first, rest)) => {
+            let mut budget = MAX_NODES;
+            let items = docs.iter().map(|d| {
+                d.as_ref()
+                    .map_or(Some(J::Null), |d| json(d, 1, &mut budget))
+            });
+            let items = items.collect::<Option<_>>().map(J::Array);
+            pipe(custom, rest, container(custom, first, items))
+        }
+    };
+    check(validator, v)
+}
+
 /// Runs `program` over `doc` (`None` reads as absent everywhere) and counts one response in `stats`.
 /// `custom` is aligned with `Plan::custom_names`; a transform that panics gives null, an error.
 pub fn execute<D: Doc, S: Sink>(
@@ -296,59 +393,6 @@ impl<S: Sink> Exec<'_, S> {
         }
     }
 
-    fn apply<'v>(&self, t: &TxRef, v: Value<'v>) -> Value<'v> {
-        match t {
-            TxRef::Builtin(b) => b.apply(v, None),
-            TxRef::Custom { index, arg, .. } => match self.custom.get(*index) {
-                Some(f) => catch_unwind(AssertUnwindSafe(|| f.apply(v, arg.as_ref())))
-                    .unwrap_or(Value::Null),
-                None => Value::Null,
-            },
-        }
-    }
-
-    /// `pipe` over a document value; a custom transform first in line gets a container as JSON.
-    fn pipe_doc<'d, D: Doc>(&self, tx: &[TxRef], d: &'d D) -> Value<'d> {
-        match (d.leaf(), tx.split_first()) {
-            (Value::Container, Some((first @ TxRef::Custom { .. }, rest))) => {
-                let mut budget = MAX_NODES;
-                self.pipe(rest, self.container(first, json(d, 0, &mut budget)))
-            }
-            (v, _) => self.pipe(tx, v),
-        }
-    }
-
-    /// A custom transform over a container input (`None`: too deep, null); callers handle a default
-    /// transform first.
-    fn container(&self, t: &TxRef, v: Option<J>) -> Value<'static> {
-        let (TxRef::Custom { index, arg, .. }, Some(v)) = (t, v) else {
-            return Value::Null;
-        };
-        match self.custom.get(*index) {
-            Some(f) => catch_unwind(AssertUnwindSafe(|| f.apply_container(&v, arg.as_ref())))
-                .unwrap_or(Value::Null),
-            None => Value::Null,
-        }
-    }
-
-    /// Transforms in order, stopping at the first null.
-    fn pipe<'v>(&self, tx: &[TxRef], mut v: Value<'v>) -> Value<'v> {
-        for t in tx {
-            if v.is_null() {
-                break;
-            }
-            v = self.apply(t, v);
-        }
-        v
-    }
-
-    fn check<'v>(validator: Option<Semantic>, v: Value<'v>) -> Value<'v> {
-        match validator {
-            Some(s) if !v.is_null() => validate(s, v),
-            _ => v,
-        }
-    }
-
     fn scalar<D: Doc>(&mut self, l: &Leaf, doc: Option<&D>) -> S::Out {
         // None: absent. Some(None): rejected.
         let out = match &l.src {
@@ -376,7 +420,7 @@ impl<S: Sink> Exec<'_, S> {
         if l.bare() {
             return Some(self.sink.passthrough(d));
         }
-        let v = Self::check(l.validator, self.pipe_doc(&l.tx, d));
+        let v = transform(self.custom, &l.tx, l.validator, d);
         match v {
             Value::Null => None,
             // A custom transform handing back its container input: the input, as it is.
@@ -405,25 +449,7 @@ impl<S: Sink> Exec<'_, S> {
         if l.bare() {
             return Some(Some(self.tuple(&docs)));
         }
-        let vals: Vec<Value> = docs
-            .iter()
-            .map(|d| d.as_ref().map_or(Value::Null, |d| d.leaf()))
-            .collect();
-        // The first step sees the list. Only `join` reads one; a custom transform sees a container.
-        let v = match l.tx.split_first() {
-            None => Value::Null, // a routing validator alone rejects a list
-            Some((TxRef::Builtin(b), rest)) => self.pipe(rest, b.apply_list(&vals)),
-            Some((first, rest)) => {
-                let mut budget = MAX_NODES;
-                let items = docs.iter().map(|d| {
-                    d.as_ref()
-                        .map_or(Some(J::Null), |d| json(d, 1, &mut budget))
-                });
-                let items = items.collect::<Option<_>>().map(J::Array);
-                self.pipe(rest, self.container(first, items))
-            }
-        };
-        let v = Self::check(l.validator, v);
+        let v = transform_many(self.custom, &l.tx, l.validator, &docs);
         Some(match v {
             Value::Null => None,
             Value::Container => Some(self.tuple(&docs)),
@@ -462,7 +488,7 @@ impl<S: Sink> Exec<'_, S> {
         if tx.is_empty() {
             return self.sink.passthrough(&d);
         }
-        match self.pipe_doc(tx, &d) {
+        match pipe_doc(self.custom, tx, &d) {
             Value::Null => {
                 self.stats.error(stat);
                 self.sink.scalar(Value::Null)

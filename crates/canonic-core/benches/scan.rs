@@ -1,4 +1,4 @@
-// Stage 1 scan, pruned parse and map over bench body 0 (6,189 bytes). `cargo bench -p canonic-core`.
+// Stage 1 scan, pruned parse, map and extract over bench body 0 (6,189 bytes). `cargo bench -p canonic-core`.
 
 use canonic_core::{Artifact, Filter, compile, filter_for, parse};
 use divan::{Bencher, black_box, counter::BytesCount};
@@ -32,6 +32,16 @@ static ARTIFACT: LazyLock<Artifact> = LazyLock::new(|| {
     Artifact::new(plan, HashMap::new()).unwrap()
 });
 
+/// canonic/bench/person.js `anchoredSpec`: anchors on the three routing keys, email from one path.
+static ANCHORED: LazyLock<Artifact> = LazyLock::new(|| {
+    let mut spec = fixture("specs/bench.json");
+    spec["anchors"] = serde_json::json!({ "email": "\"workEmail\":", "phone": "\"mobile\":", "company.domain": "\"website\":" });
+    spec["fields"]["email"] =
+        serde_json::json!({ "from": "contact.workEmail", "transform": ["trim", "lower"] });
+    let plan = compile(&spec, &fixture("specs/canonical/bench.json"), &[]).unwrap();
+    Artifact::new(plan, HashMap::new()).unwrap()
+});
+
 static FILTER: LazyLock<Filter> = LazyLock::new(|| filter_for(&ARTIFACT.plan));
 
 fn main() {
@@ -54,4 +64,16 @@ fn parse_bench_filter(b: Bencher) {
 fn map_bytes(b: Bencher) {
     b.counter(BytesCount::of_slice(&*BODY))
         .bench(|| ARTIFACT.map_bytes(black_box(&BODY)));
+}
+
+#[divan::bench]
+fn extract_scanner(b: Bencher) {
+    b.counter(BytesCount::of_slice(&*BODY))
+        .bench(|| ARTIFACT.extract(black_box(&BODY)));
+}
+
+#[divan::bench]
+fn extract_anchored(b: Bencher) {
+    b.counter(BytesCount::of_slice(&*BODY))
+        .bench(|| ANCHORED.extract(black_box(&BODY)));
 }

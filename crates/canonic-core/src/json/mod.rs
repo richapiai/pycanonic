@@ -52,7 +52,8 @@ pub struct Filter {
     pub all: bool,
 }
 
-static ALL: Filter = Filter {
+/// Builds everything below.
+pub(crate) static ALL: Filter = Filter {
     keys: Vec::new(),
     idxs: Vec::new(),
     elems: None,

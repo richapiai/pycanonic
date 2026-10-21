@@ -1,0 +1,38 @@
+[package]
+name = "canonic-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+canonic-core = { path = ".." }
+serde_json = "1.0.154"
+
+# Its own workspace, so `cargo test --workspace` at the root never builds it (libFuzzer needs nightly).
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "extract"
+path = "fuzz_targets/extract.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stream"
+path = "fuzz_targets/stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "map_bytes"
+path = "fuzz_targets/map_bytes.rs"
+test = false
+doc = false
+bench = false

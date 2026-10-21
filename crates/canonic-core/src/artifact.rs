@@ -3,12 +3,14 @@
 
 use crate::doc::Doc;
 use crate::exec::{Program, execute};
+use crate::extract::{ExtractStream, Extractor};
 use crate::json::{Filter, parse};
 use crate::plan::{CompileError, Field, ListKind, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, RustSink, Sink};
 use crate::spec::{Path, Source, Step};
 use crate::stats::Stats;
 use crate::transforms::Transform;
+use crate::value::Value;
 use crate::write::write_json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,6 +21,7 @@ pub struct Artifact {
     program: Program,
     custom: Vec<Arc<dyn Transform>>,
     filter: Filter,
+    extractor: Arc<Extractor>,
 }
 
 impl Artifact {
@@ -43,10 +46,11 @@ impl Artifact {
                     ),
                 })
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Artifact {
             stats: Stats::new(&plan),
             filter: filter_for(&plan),
+            extractor: Arc::new(Extractor::new(&plan, &custom)),
             plan: Arc::new(plan),
             program,
             custom,
@@ -75,6 +79,18 @@ impl Artifact {
 
     pub fn map_doc<D: Doc>(&self, doc: &D) -> Out {
         self.map_with(Some(doc), &mut RustSink)
+    }
+
+    /// The routing fields read straight from `raw`, aligned with `plan.routing`: `None` when not
+    /// found, `Some(Value::Null)` when found and rejected by the field's transforms or validator.
+    /// Anchored fields are found by their key token; the rest by one scan. Counts no stats.
+    pub fn extract(&self, raw: &[u8]) -> Vec<Option<Value<'static>>> {
+        self.extractor.extract(raw)
+    }
+
+    /// `extract` over chunks as they arrive; always scans, anchors are for `extract` only.
+    pub fn stream(&self) -> ExtractStream {
+        ExtractStream::new(self.extractor.clone())
     }
 
     pub fn map_with<D: Doc, S: Sink>(&self, doc: Option<&D>, sink: &mut S) -> S::Out {
