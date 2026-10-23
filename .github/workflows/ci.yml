@@ -58,9 +58,8 @@ jobs:
       - run: .venv/bin/pytest python/tests bench/test_payloads.py -q
 
   bench:
-    # Non-blocking: timing is noisy on shared GitHub runners. The blocking run is on the bench box
-    # before a release (bench/README.md). There is no linux-x86_64 baseline yet, so this checks the
-    # self-test and prints the table; once one is recorded, add --gate to the `bench/run.py` step.
+    # Non-blocking: timing is noisy on shared GitHub runners, and the linux-x86_64 baseline comes
+    # from the bench box. The blocking run is on the bench box before a release (bench/README.md).
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
@@ -73,7 +72,7 @@ jobs:
       - run: .venv/bin/pip install maturin -r bench/requirements.txt
       - run: .venv/bin/maturin develop --release
       - run: .venv/bin/python bench/run.py --selftest
-      - run: .venv/bin/python bench/run.py
+      - run: .venv/bin/python bench/run.py --gate
       # Reported, never gated: pycanonic against the Python mapping libraries on the 501-field payload.
       - run: .venv/bin/python bench/interpreters.py
 

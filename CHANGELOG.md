@@ -14,4 +14,4 @@ The first release. pycanonic is the Python version of the TypeScript canonic, wi
 - abi3 wheels for CPython 3.10 and later on manylinux x86_64 and aarch64, musllinux x86_64, macOS universal2 and Windows x86_64.
 - The `canonic-core` Rust crate on crates.io.
 
-On one Apple M3 Max, `map(bytes)` on the 5.9 KB benchmark body takes 5.64 µs, against 15.25 µs for `JSON.parse` plus `map` in TypeScript. [docs/known-limits.md](docs/known-limits.md) lists every divergence from the TypeScript package.
+On the Hetzner server behind the TypeScript numbers, `map(bytes)` on the 5.9 KB benchmark body takes 8.91 µs, against 23.26 µs for `JSON.parse` plus `map` in TypeScript. [docs/known-limits.md](docs/known-limits.md) lists every divergence from the TypeScript package.

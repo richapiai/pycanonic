@@ -6,14 +6,14 @@
 
 pycanonic maps a data provider's JSON response to your own canonical shape. It compiles a JSON mapping spec into a plan and runs it in Rust. The mapping stays a JSON file that you review in a pull request. pycanonic is the Python version of [canonic](https://github.com/richapiai/canonic), the TypeScript package, and it reads the same spec files.
 
-On the 5.9 KB benchmark body with 18 spec fields, `artifact.map(bytes)` takes 5.64 µs. That is the parse and the mapping together. The TypeScript canonic needs 15.25 µs for `JSON.parse` plus `map` on the same machine. In the earlier run at 74dae8f, `orjson.loads` of the same body alone took 13.78 µs.
+On the 5.9 KB benchmark body with 18 spec fields, `artifact.map(bytes)` takes 8.91 µs on the server that produced the TypeScript numbers. That is the parse and the mapping together. The TypeScript canonic needs 23.26 µs for `JSON.parse` plus `map` on the same server, and `orjson.loads` of the same body alone takes 20.73 µs.
 
 ## Why
 
 A product that gets the same kind of data from several providers ends up with one block of glue code per provider. The data can be people, companies, prices or shipments. Each block turns that provider's response into the product's own shape. That code is tedious to write and easy to get subtly wrong. It also breaks without an error the day a provider renames a key. pycanonic turns it into data you can review, test and monitor.
 
 - **A provider is a JSON file.** `canonic infer` drafts the spec from 5 to 20 sample responses and scores every field. A person reviews a diff. A second provider for an endpoint adds a file, not a code path.
-- **The mapper is faster than glue code.** On bytes, `map` beats `orjson.loads` plus hand-written Python by 3.4 times. It is 15 to 147 times faster than six of the eight interpreted mapping libraries we measured. The numbers and the exceptions are below.
+- **The mapper is faster than glue code.** On bytes, `map` beats `orjson.loads` plus hand-written Python by 3.2 times. It is 17 to 142 times faster than six of the eight interpreted mapping libraries we measured. The numbers and the exceptions are below.
 - **Fill and error counts per field show a renamed key.** Every `map` counts them, fields inside list items included. `FillMonitor` raises an alert for a field whose fill drops. `canonic diff` proposes the fixed spec. `merge_gate` decides whether it can ship without a person.
 - **A routing value that fails its format check becomes `None`.** A routing field (email, phone, domain, URL) carries a validator. A provider that answers `"N/A"` gives you `None` and a counted error. The check is on format only, so it cannot tell a personal address from a work one.
 - **One contract, any number of providers.** Callers get your canonical keys, in a fixed order, whichever provider answered.
@@ -109,7 +109,7 @@ registry.get_shadow("acme", "person.enrich")  # None until a shadow version is p
 
 ## Benchmarks
 
-All numbers on this page come from one machine: an Apple M3 Max (36 GB, macOS 27.0) with Python 3.14.7 and Node 26.10.0, release build. The machine was under load (load average 3.5 to 5), so treat the absolute numbers as rough. Each table is one run. [bench/README.md](https://github.com/richapiai/pycanonic/blob/main/bench/README.md) has the method, the scripts and the full output. The run on the Hetzner server behind the TypeScript README numbers is still to come.
+All numbers on this page come from the Hetzner server that produced the TypeScript README numbers: AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5, Python 3.14.7 and Node 26.10.0, release build. The load average stayed under 1.1. Each number is the median of three runs of pycanonic 017c0fe against canonic 936d6fd. [bench/README.md](https://github.com/richapiai/pycanonic/blob/main/bench/README.md) has the method, the scripts and the full output.
 
 ### Against TypeScript canonic
 
@@ -117,18 +117,18 @@ All numbers on this page come from one machine: an Apple M3 Max (36 GB, macOS 27
 
 | Case | TypeScript | pycanonic | py / ts |
 |---|---:|---:|---:|
-| map, bytes in (TypeScript: `JSON.parse` + map) | 15.25 µs | 5.64 µs | 0.37x |
-| map, JSON out (TypeScript: `JSON.parse` + map) | 15.25 µs | 4.68 µs | 0.31x |
-| map, parsed in (reported, not gated) | 3.45 µs | 3.86 µs | 1.12x |
-| view, construct (reported, not gated) | 7 ns | 109 ns | 14.77x |
-| view, 3 reads | 740 ns | 726 ns | 0.98x |
-| extract 3 routing fields, 5.9 KB | 8.22 µs | 1.34 µs | 0.16x |
-| same, anchored | 1.22 µs | 705 ns | 0.58x |
-| extract 5 fields, 10.7 KB | 15.63 µs | 1.88 µs | 0.12x |
-| same, anchored | 3.89 µs | 1.12 µs | 0.29x |
-| stream, 1 KB chunks | 18.20 µs | 8.85 µs | 0.49x |
+| map, bytes in (TypeScript: `JSON.parse` + map) | 23.26 µs | 8.91 µs | 0.38x |
+| map, JSON out (TypeScript: `JSON.parse` + map) | 23.26 µs | 7.49 µs | 0.32x |
+| map, parsed in (reported, not gated) | 5.50 µs | 6.22 µs | 1.13x |
+| view, construct (reported, not gated) | 11 ns | 147 ns | 13.4x |
+| view, 3 reads | 1.06 µs | 1.15 µs | 1.08x |
+| extract 3 routing fields, 5.9 KB | 10.46 µs | 2.17 µs | 0.21x |
+| same, anchored | 1.84 µs | 854 ns | 0.46x |
+| extract 5 fields, 10.7 KB | 19.66 µs | 3.33 µs | 0.17x |
+| same, anchored | 4.44 µs | 1.30 µs | 0.29x |
+| stream, 1 KB chunks | 23.83 µs | 10.10 µs | 0.42x |
 
-pycanonic e425f48 against canonic 936d6fd. TypeScript has no bytes-in path, so the bytes rows compare with `JSON.parse` plus `map`. Two rows are slower, and both are reported, not gated. On an already parsed dict, V8's JIT reads JavaScript objects faster than Rust reads Python dicts. A Python call that returns an extension object costs about 100 ns before Rust runs, which is most of the view construct time.
+TypeScript has no bytes-in path, so the bytes rows compare with `JSON.parse` plus `map`. Three rows are slower, and all three read an already parsed dict. On a parsed object, V8's JIT reads JavaScript objects faster than Rust reads Python dicts. `map, parsed in` and `view, construct` are reported, not gated. `view, 3 reads` is gated, and it fails on this server: 1.05x to 1.09x in the three runs. On an Apple M3 Max it passed at 0.98x. A Python call that returns an extension object costs about 100 ns before Rust runs, which is most of the view construct time.
 
 ### The 6 KB rows against Python references
 
@@ -136,14 +136,12 @@ The same 5.9 KB bodies, against what a Python user writes by hand. The hand-writ
 
 | Case | pycanonic | Reference | pycanonic is |
 |---|---:|---|---:|
-| map, bytes in | 5.68 µs | `orjson.loads` + hand-written, 19.54 µs | 0.29x |
-| map, JSON out | 4.92 µs | `orjson.loads` + hand-written + `orjson.dumps`, 19.31 µs | 0.25x |
-| map, parsed in | 3.88 µs | hand-written, 5.21 µs | 0.75x |
-| view, 3 reads | 678 ns | hand-written routing reads, 907 ns | 0.75x |
-| extract routing | 1.33 µs | `orjson.loads` + read, 14.61 µs | 0.09x |
-| extract, anchored | 714 ns | `orjson.loads` + read, 14.25 µs | 0.05x |
-
-This table is from the earlier run at 74dae8f. The same rows in the table above moved by 0.25 µs or less since.
+| map, bytes in | 8.91 µs | `orjson.loads` + hand-written, 28.65 µs | 0.31x |
+| map, JSON out | 7.49 µs | `orjson.loads` + hand-written + `orjson.dumps`, 28.89 µs | 0.26x |
+| map, parsed in | 6.22 µs | hand-written, 7.31 µs | 0.85x |
+| view, 3 reads | 1.15 µs | hand-written routing reads, 1.25 µs | 0.92x |
+| extract routing | 2.17 µs | `orjson.loads` + read, 22.43 µs | 0.10x |
+| extract, anchored | 854 ns | `orjson.loads` + read, 22.26 µs | 0.04x |
 
 ### Against mapping libraries
 
@@ -151,18 +149,18 @@ This table is from the earlier run at 74dae8f. The same rows in the table above 
 
 | Library | Bytes in | vs pycanonic | Dict in | vs pycanonic |
 |---|---:|---:|---:|---:|
-| pycanonic `map` | 38.99 µs | 1.0x | 38.02 µs | 1.0x |
-| jsonata-python 0.7.1 | 5585.88 µs | 143.2x | 5579.45 µs | 146.7x |
-| glom 25.12.0 | 4757.68 µs | 122.0x | 4705.15 µs | 123.7x |
-| jq 1.13.0 (jq.py) | 2841.09 µs | 72.9x | 2818.44 µs | 74.1x |
-| jmespath-community 1.1.3 | 881.77 µs | 22.7x | 850.34 µs | 22.3x |
-| jsonpath-ng 1.12.0 | 806.43 µs | 20.7x | 783.02 µs | 20.6x |
-| jsonata-rs 0.1.4 | 593.25 µs | 15.2x | 570.19 µs | 15.0x |
-| jmespath 1.1.0, without transforms | 372.41 µs | 9.6x | 348.98 µs | 9.2x |
-| jsonbender 0.9.3 | 313.35 µs | 8.0x | 285.34 µs | 7.5x |
-| pydantic 2.14.1 | 118.23 µs | 3.0x | 85.73 µs | 2.3x |
+| pycanonic `map` | 62.20 µs | 1.0x | 54.94 µs | 1.0x |
+| jsonata-python 0.7.1 | 7849.88 µs | 126.2x | 7811.03 µs | 142.2x |
+| glom 25.12.0 | 6420.34 µs | 103.2x | 6299.15 µs | 114.7x |
+| jq 1.13.0 (jq.py) | 4595.36 µs | 73.9x | 4564.36 µs | 83.1x |
+| jmespath-community 1.1.3 | 1211.80 µs | 19.8x | 1162.64 µs | 21.1x |
+| jsonpath-ng 1.12.0 | 1164.09 µs | 18.7x | 1123.58 µs | 20.5x |
+| jsonata-rs 0.1.4 | 1029.03 µs | 16.8x | 1001.41 µs | 18.1x |
+| jmespath 1.1.0, without transforms | 475.19 µs | 7.6x | 432.93 µs | 7.9x |
+| jsonbender 0.9.3 | 424.93 µs | 6.8x | 381.35 µs | 6.9x |
+| pydantic 2.14.1 | 176.68 µs | 2.8x | 129.74 µs | 2.4x |
 
-Six of the eight interpreted libraries are at least 10 times slower than pycanonic. Two are not. jmespath runs without transforms because it has no string functions, and lands at 9.6x. jsonbender lands at 8.0x. Both are light interpreters that spend under 1 µs per field. pydantic is the exception by design. It compiles its models into a Rust validator tree, so it does the same kind of work as pycanonic and is no interpreter. [docs/why-not-jsonata.md](https://github.com/richapiai/pycanonic/blob/main/docs/why-not-jsonata.md) covers the method and where the time goes.
+Six of the eight interpreted libraries are at least 10 times slower than pycanonic. Two are not. jmespath runs without transforms because it has no string functions, and lands at 7.6x. jsonbender lands at 6.8x. Both are light interpreters that spend under 1 µs per field. pydantic is the exception by design. It compiles its models into a Rust validator tree, so it does the same kind of work as pycanonic and is no interpreter. jmespath-community and jsonata-rs install the same modules as jmespath and jsonata-python, so their rows come from a second environment, against that environment's pycanonic run. [docs/why-not-jsonata.md](https://github.com/richapiai/pycanonic/blob/main/docs/why-not-jsonata.md) covers the method and where the time goes.
 
 ## CLI
 

@@ -4,7 +4,7 @@
 
 `bench/run.py` is the port of canonic's `bench/run.js`. `bench/person.py` and `bench/routing.py` build the same bodies as `person.js` and `routing.js`, byte for byte. `bench/test_payloads.py` checks this against `bench/ts_outputs.json`, which `node bench/dump.mjs ../canonic` writes. Every case checks that canonic and its references give identical output before any timing starts.
 
-How it measures (`measure`, shared with `canonic bench`): every function runs once to warm up and once more to find a batch size that takes at least 4 ms. Then 21 rounds run every function in the case in turn, starting from a different function each round, so drift hits all of them alike. The number is the median per-op time over the 21 batches. The loop is plain Python (`for i in ix: sink = fn(i)`), so each op includes a lambda call, an index and a list step. An empty lambda measures 18 ns this way, and one that indexes the input list measures 25 ns. canonic and every reference pay the same cost. The TypeScript bench uses the same loop shape with its own JIT costs. The tables below are one run, not the best of several.
+How it measures (`measure`, shared with `canonic bench`): every function runs once to warm up and once more to find a batch size that takes at least 4 ms. Then 21 rounds run every function in the case in turn, starting from a different function each round, so drift hits all of them alike. The number is the median per-op time over the 21 batches. The loop is plain Python (`for i in ix: sink = fn(i)`), so each op includes a lambda call, an index and a list step. An empty lambda measures 18 ns this way, and one that indexes the input list measures 25 ns. canonic and every reference pay the same cost. The TypeScript bench uses the same loop shape with its own JIT costs. The Hetzner tables are the median of three runs. The Apple M3 Max tables are one run each.
 
 ### References
 
@@ -13,6 +13,26 @@ Every hand-written reference calls the same transforms canonic runs, as `person.
 To show what idiomatic glue would cost, `map, parsed in` and `map, bytes in` also have a `hand-written py (pure-Python transforms)` row: the same glue over pure-Python ports of the eight transforms and three validators the bench needs (`bench/pytransforms.py`). The trivial ports are faster than the Rust calls (trim 66 ns against 90 ns, lower 61 against 83), but the ones that do real work are slower: to_domain takes 1.27 µs against 141 ns, normalize_linkedin 708 against 142 ns, and parse_date on an epoch 1.65 µs against 120 ns. In total the pure-Python reference takes about 15 µs on a parsed dict, three times the shared-transforms reference. So the shared-transforms row is the harder bar for canonic, and it is the one the gate uses.
 
 ### Against TypeScript canonic
+
+On the Hetzner box (AMD EPYC-Genoa, 4 vCPUs, Ubuntu 24.04.5, Python 3.14.7, Node 26.10.0, release build), three runs of `--vs-ts` on 2026-10-24, load average under 1.1. Each number is the median of the three.
+
+```
+pycanonic 017c0fe against canonic 936d6fd, median of 3 sessions
+
+case                  TypeScript   pycanonic   py / ts   gate      py / ts in each run
+map, bytes in           23.26 µs     8.91 µs     0.38x   PASS      0.37x 0.38x 0.39x
+map, JSON out           23.26 µs     7.49 µs     0.32x   PASS      0.31x 0.32x 0.33x
+map, parsed in           5.50 µs     6.22 µs     1.13x   reported  1.09x 1.13x 1.20x
+view, construct            11 ns      147 ns     13.4x   reported
+view, 3 reads            1.06 µs     1.15 µs     1.08x   FAIL      1.09x 1.05x 1.09x
+extract routing         10.46 µs     2.17 µs     0.21x   PASS      0.21x 0.21x 0.20x
+extract, anchored        1.84 µs      854 ns     0.46x   PASS      0.45x 0.47x 0.47x
+extract 5, 10.7 KB      19.66 µs     3.33 µs     0.17x   PASS      0.17x 0.11x 0.17x
+extract 5, anchored      4.44 µs     1.30 µs     0.29x   PASS      0.29x 0.30x 0.29x
+stream, 1 KB chunks     23.83 µs    10.10 µs     0.42x   PASS      0.42x 0.42x 0.42x
+```
+
+`view, 3 reads` fails on this box in all three runs. The first box run, at f0b325b, measured 1.12x to 1.17x. Commit 017c0fe cut the loop from 14,022 to 13,329 instructions (callgrind, `PYTHONHASHSEED=0`), and that brought the row to 1.05x to 1.09x. The rest of the time goes to CPython's dict lookups, the transforms, the two view objects and PyO3's call wrappers.
 
 Measured on an Apple M3 Max (36 GB, macOS 27.0) with Python 3.14.7 and Node 26.10.0, release build, in one session: pycanonic first, then canonic's `run.js` and `streaming.js`. The machine was not idle (load average about 3.5), so treat the absolute numbers as rough. Both sides ran under the same load. `--vs-ts` refuses to run unless the checkout is at the canonic commit pinned in `bench/ts_outputs.json` and `packages/canonic/dist` is newer than its sources.
 
@@ -83,11 +103,13 @@ stream, 1 KB chunks   join + orjson.loads + read                                
 - `python bench/run.py --gate` fails if any canonic/reference ratio is more than 15% worse than `bench/baseline.json` for this platform (`sys.platform-machine`). An unrecorded platform fails and prints the JSON to paste. `--selftest` adds a 20% slowdown to canonic and checks that the gate trips.
 - `python bench/run.py --vs-ts <canonic checkout>` fails if any gated row is not faster than TypeScript. Run it on the bench box before a release.
 
-`baseline.json` has `darwin-arm64` only. Until it has `linux-x86_64`, the CI `bench` job runs `--selftest` and prints the table without gating. To record the Linux baseline, run this on the Hetzner box (or a runner), then commit `bench/baseline.json` and change the job's last step to `--gate`:
+`baseline.json` has `darwin-arm64` and `linux-x86_64`. The Linux entry was recorded on the Hetzner box at 017c0fe with this command:
 
 ```
 .venv/bin/maturin develop --release && .venv/bin/python bench/run.py --update-baseline
 ```
+
+The CI `bench` job runs `--selftest`, then `--gate` against that entry. GitHub runners are not the bench box, so the job does not block a merge.
 
 The two timing smoke tests in `bench/test_run.py` are opt-in: `PYCANONIC_BENCH_TESTS=1 .venv/bin/pytest bench`.
 
@@ -99,7 +121,7 @@ The two timing smoke tests in `bench/test_run.py` are opt-in: `PYCANONIC_BENCH_T
 
 The rule from the owner: every published Python mapping library must be at least 10x slower than pycanonic on this mapping, bytes in and dict in. `--gate` checks exactly that and exits 1 otherwise. orjson and the hand-written row are not mappers, so they are reported and never gated.
 
-The rule does not hold today. Three libraries are less than 10x slower: pydantic (about 2.3x to 3x), jsonbender (about 7.5x to 8x) and plain jmespath without transforms (about 9.2x to 9.6x). The reasons are below the tables. These three are listed with their reasons in `bench/interpreters-exempt.json`. The gate marks their rows `exempt`, prints the reasons under the table and does not fail on them. Every other mapping library still has to be 10x slower. `--exempt FILE` reads another list; the names are distribution names, the first word of the row.
+The rule does not hold today. Three libraries are less than 10x slower. On the Hetzner box, pydantic is 2.4x to 2.8x, jsonbender 6.8x to 6.9x, and plain jmespath without transforms 7.6x to 7.9x. On the Apple M3 Max they were 2.3x to 3x, 7.5x to 8x and 9.2x to 9.6x. The reasons are below the tables. These three are listed with their reasons in `bench/interpreters-exempt.json`. The gate marks their rows `exempt`, prints the reasons under the table and does not fail on them. Every other mapping library still has to be 10x slower. `--exempt FILE` reads another list; the names are distribution names, the first word of the row.
 
 ### Method
 
@@ -234,9 +256,9 @@ Each candidate was installed with `uv pip install` into a scratch Python 3.14 en
 
 marshmallow and cattrs are in pydantic's category (schemas over classes); pydantic is the one in the table.
 
-### Hetzner box (to be filled in)
+### Hetzner box
 
-The TypeScript README's numbers come from a Hetzner cloud server (AMD EPYC-Genoa, 4 vCPUs, Ubuntu 24.04). Run this there from a fresh clone of both repos, side by side, and paste both outputs here with `uname -a`, `python3 --version`, `node --version` and the two `git rev-parse --short HEAD` hashes:
+AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5 (`Linux 6.8.0-139-generic x86_64`), Python 3.14.7, Node 26.10.0, pycanonic 017c0fe, canonic 936d6fd, 2026-10-24. Each number is the median of three runs. The alt rows are measured against the alt environment's own pycanonic run (61.17 µs bytes in, 55.19 µs dict in). `--gate` passed in both environments.
 
 ```
 cd pycanonic
@@ -250,13 +272,25 @@ uv venv -p .venv/bin/python .venv-alt
 uv pip install -p .venv-alt/bin/python maturin pytest -r bench/requirements-alt.txt
 VIRTUAL_ENV="$PWD/.venv-alt" .venv-alt/bin/maturin develop --release
 .venv-alt/bin/python bench/interpreters.py --gate
-
-cd ../canonic && pnpm install && pnpm bench:interp
 ```
 
 | implementation | bytes in | vs pycanonic | dict in | vs pycanonic |
 |---|---:|---:|---:|---:|
-| (not yet run) | | | | |
+| pycanonic map | 62.20 µs |  | 54.94 µs |  |
+| pycanonic map_json(bytes), JSON out, reported | 49.43 µs | 0.8x |  |  |
+| glom 25.12.0 | 6420.34 µs | 103.2x | 6299.15 µs | 114.7x |
+| jmespath 1.1.0, without transforms | 475.19 µs | 7.6x **<10x** | 432.93 µs | 7.9x **<10x** |
+| jsonpath-ng 1.12.0 | 1164.09 µs | 18.7x | 1123.58 µs | 20.5x |
+| jsonbender 0.9.3 | 424.93 µs | 6.8x **<10x** | 381.35 µs | 6.9x **<10x** |
+| pydantic 2.14.1 | 176.68 µs | 2.8x **<10x** | 129.74 µs | 2.4x **<10x** |
+| jsonata-python 0.7.1 | 7849.88 µs | 126.2x | 7811.03 µs | 142.2x |
+| jq 1.13.0 (jq.py) | 4595.36 µs | 73.9x | 4564.36 µs | 83.1x |
+| hand-written py (pure-Python transforms), not a mapper | 114.97 µs | 1.8x | 77.42 µs | 1.4x |
+| orjson.loads, parse only, not a mapper | 27.37 µs | 0.4x |  |  |
+| jmespath-community 1.1.3 (alt env) | 1211.80 µs | 19.8x | 1162.64 µs | 21.1x |
+| jsonata-rs 0.1.4 (alt env) | 1029.03 µs | 16.8x | 1001.41 µs | 18.1x |
+
+The TypeScript interpreter comparison (`pnpm bench:interp`) was not run on the box this time.
 
 ## Hot path
 

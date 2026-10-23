@@ -15,5 +15,22 @@
     "extract 5, 10.7 KB / orjson.loads + read": 0.069,
     "extract 5, anchored / orjson.loads + read": 0.04,
     "stream, 1 KB chunks / join + orjson.loads + read": 0.31
+  },
+  "linux-x86_64": {
+    "map, bytes in / orjson.loads + hand-written py": 0.315,
+    "map, bytes in / orjson.loads + hand-written py (pure-Python transforms)": 0.213,
+    "map, bytes in / orjson.loads (input)": 0.442,
+    "map, bytes in / json.loads (input)": 0.212,
+    "map, JSON out / orjson.loads + hand-written py + orjson.dumps": 0.259,
+    "map, parsed in / hand-written py": 0.851,
+    "map, parsed in / hand-written py (pure-Python transforms)": 0.311,
+    "view, construct / dict literal": 2.412,
+    "view, 3 reads / hand-written py routing": 0.946,
+    "extract routing / orjson.loads + read": 0.098,
+    "extract routing / orjson.loads (input)": 0.104,
+    "extract, anchored / orjson.loads + read": 0.038,
+    "extract 5, 10.7 KB / orjson.loads + read": 0.088,
+    "extract 5, anchored / orjson.loads + read": 0.036,
+    "stream, 1 KB chunks / join + orjson.loads + read": 0.275
   }
 }
