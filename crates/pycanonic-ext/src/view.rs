@@ -25,12 +25,23 @@ self_cell::self_cell!(
     }
 );
 
-/// The document every view of one `artifact.view` call reads.
+/// The document every view of one `artifact.view` call reads. Nested views share it: an `Arc` of
+/// the parse, or another reference to the object. Neither points back at a view, so the root's
+/// cache holding its children makes no cycle the GC can't see.
 enum Source {
     /// `bytes` or `str`, copied and parsed once with the plan's filter.
-    Parsed(Parsed),
+    Parsed(Arc<Parsed>),
     /// Any other object, read as `map` reads it.
     Object(Py<PyAny>),
+}
+
+impl Source {
+    fn share(&self, py: Python<'_>) -> Source {
+        match self {
+            Source::Parsed(p) => Source::Parsed(p.clone()),
+            Source::Object(o) => Source::Object(o.clone_ref(py)),
+        }
+    }
 }
 
 /// One canonical field of a `Level`, worked out once per artifact.
@@ -102,9 +113,8 @@ pub fn levels(py: Python<'_>, names: &[String], fields: &[Named<Field>]) -> Vec<
 #[pyclass(frozen, module = "pycanonic._core")]
 pub struct View {
     artifact: Py<Artifact>,
-    /// Shared with nested views. An `Arc`, not a `Py` of the root: the root's cache holds its
-    /// children, so a child pointing back at the root would be a cycle the GC can't see.
-    doc: Arc<Source>,
+    /// Shared with nested views.
+    doc: Source,
     /// Index into the artifact's `levels`.
     level: usize,
     /// One slot per field at this level: the mapped value, or the nested `View`.
@@ -121,14 +131,16 @@ impl View {
         let doc = match body_of(src)? {
             Some(body) => {
                 let body = body.into_owned();
-                Source::Parsed(py.detach(|| Parsed::new(body, |b| a.inner.parse(b))))
+                Source::Parsed(Arc::new(
+                    py.detach(|| Parsed::new(body, |b| a.inner.parse(b))),
+                ))
             }
             None => Source::Object(object_root(src)?.unbind()),
         };
         let n = a.levels[0].fields.len();
         Ok(View {
             artifact,
-            doc: Arc::new(doc),
+            doc,
             level: 0,
             cache: slots(n),
         })
@@ -145,7 +157,7 @@ impl View {
             py,
             names: &a.names,
         };
-        let out = match &*self.doc {
+        let out = match &self.doc {
             Source::Parsed(p) => {
                 let node = p.borrow_dependent().as_ref();
                 a.inner.map_field(path, node.as_ref(), &mut sink)
@@ -187,7 +199,7 @@ impl View {
                 py,
                 View {
                     artifact: self.artifact.clone_ref(py),
-                    doc: self.doc.clone(),
+                    doc: self.doc.share(py),
                     level,
                     cache: slots(self.artifact.get().levels[level].fields.len()),
                 },

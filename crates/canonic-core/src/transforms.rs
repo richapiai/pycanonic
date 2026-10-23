@@ -198,8 +198,8 @@ pub fn validate(semantic: Semantic, v: Value<'_>) -> Value<'_> {
     let s = as_str(&v);
     let ok = match semantic {
         Semantic::Email => s.is_some_and(valid_email),
-        Semantic::Phone => normalize_phone(&v).is_some(),
-        Semantic::Domain => s.is_some_and(|s| is_domain(&lower(Cow::Borrowed(s)))),
+        Semantic::Phone => is_phone(&v),
+        Semantic::Domain => s.is_some_and(is_domain_ci),
         Semantic::LinkedinUrl => s.and_then(normalize_linkedin).is_some(),
         Semantic::Url => s.is_some_and(valid_url),
         Semantic::IsoDate => s.is_some_and(|s| s == js_trim(s) && date_from_string(s).is_some()),
@@ -257,12 +257,13 @@ fn js_trim(s: &str) -> &str {
 }
 
 fn lower(s: Cow<'_, str>) -> Cow<'_, str> {
-    if !s.is_ascii() {
-        Cow::Owned(s.to_lowercase())
-    } else if s.bytes().any(|b| b.is_ascii_uppercase()) {
+    // One pass for the common case: ASCII with nothing to lower.
+    if s.bytes().all(|b| b.is_ascii() && !b.is_ascii_uppercase()) {
+        s
+    } else if s.is_ascii() {
         Cow::Owned(s.to_ascii_lowercase())
     } else {
-        s
+        Cow::Owned(s.to_lowercase())
     }
 }
 
@@ -495,14 +496,34 @@ fn normalize_phone(v: &Value) -> Option<String> {
     };
     let mut out = String::with_capacity(s.len());
     out.push_str(plus);
-    for c in rest.chars() {
+    // A byte at or above 0x80 is neither a digit nor a separator, so bytes reject what chars did.
+    for c in rest.bytes() {
         if c.is_ascii_digit() {
-            out.push(c);
-        } else if !" -().".contains(c) {
+            out.push(c as char);
+        } else if !PHONE_SEPARATORS.contains(&c) {
             return None;
         }
     }
     (7..=15).contains(&(out.len() - plus.len())).then_some(out)
+}
+
+const PHONE_SEPARATORS: &[u8] = b" -().";
+
+/// `normalize_phone(v).is_some()` without building the string.
+fn is_phone(v: &Value) -> bool {
+    let Some(s) = phone_text(v) else {
+        return false;
+    };
+    let rest = s.strip_prefix('+').unwrap_or(&s);
+    let mut digits = 0;
+    for c in rest.bytes() {
+        if c.is_ascii_digit() {
+            digits += 1;
+        } else if !PHONE_SEPARATORS.contains(&c) {
+            return false;
+        }
+    }
+    (7..=15).contains(&digits)
 }
 
 /// Drops a scheme whose `://` starts within the first 10 UTF-16 units.
@@ -516,12 +537,25 @@ fn strip_scheme(s: &str) -> &str {
 /// Dot-separated labels of 1 to 63 bytes of `[a-z0-9-]`, none starting or ending with `-`, at
 /// least two of them, 253 bytes at most. One pass over the bytes.
 fn is_domain(s: &str) -> bool {
-    let b = s.as_bytes();
+    domain_bytes(s.bytes())
+}
+
+/// `is_domain(&lower(s))` without the lowercased copy. Only ASCII takes the fast path: a non-ASCII
+/// letter can lowercase to ASCII (the Kelvin sign to `k`).
+fn is_domain_ci(s: &str) -> bool {
+    if s.is_ascii() {
+        domain_bytes(s.bytes().map(|c| c.to_ascii_lowercase()))
+    } else {
+        is_domain(&s.to_lowercase())
+    }
+}
+
+fn domain_bytes(b: impl ExactSizeIterator<Item = u8>) -> bool {
     if b.len() > 253 {
         return false;
     }
     let (mut len, mut prev, mut dots) = (0usize, b'.', 0usize);
-    for &c in b {
+    for c in b {
         if c == b'.' {
             if len == 0 || prev == b'-' {
                 return false;
@@ -594,7 +628,7 @@ fn normalize_linkedin(v: &str) -> Option<String> {
 fn valid_email(v: &str) -> bool {
     match (v.find('@'), v.rfind('@')) {
         (Some(at), Some(last)) if at >= 1 && at == last && !v.contains(' ') => {
-            is_domain(&lower(Cow::Borrowed(&v[at + 1..])))
+            is_domain_ci(&v[at + 1..])
         }
         _ => false,
     }
@@ -639,5 +673,79 @@ fn valid_money(v: &Value) -> bool {
                 && js_number_unbounded(&s.replace(',', "")).is_some_and(|n| n > 0.0)
         }
         v => as_f64(v).is_some_and(|f| f.is_finite() && f > 0.0),
+    }
+}
+
+#[cfg(test)]
+mod fast_paths {
+    //! The allocation-free checks agree with the compositions they replace.
+    use super::*;
+    use proptest::prelude::*;
+
+    const EDGE: &[&str] = &[
+        "",
+        ".",
+        "a.b",
+        "Example.COM",
+        "\u{212A}.com",
+        "İ.com",
+        "x-.com",
+        "-x.com",
+        "a..b",
+        "a.b.",
+        "ÉCOLE.fr",
+        "a\u{0301}.com",
+        "WWW.Example.Com",
+        "1.2",
+        "x.c-m",
+    ];
+
+    fn strings() -> impl Strategy<Value = String> {
+        prop_oneof![
+            "[a-zA-Z0-9.\\-]{0,20}",
+            "[a-zA-Z0-9.\\-@ +()\u{212A}\u{130}é]{0,20}",
+            any::<String>(),
+        ]
+    }
+
+    fn check(s: &str) {
+        assert_eq!(lower(Cow::Borrowed(s)), s.to_lowercase(), "lower {s:?}");
+        assert_eq!(
+            is_domain_ci(s),
+            is_domain(&s.to_lowercase()),
+            "is_domain_ci {s:?}"
+        );
+        let v = Value::Str(Cow::Borrowed(s));
+        assert_eq!(
+            is_phone(&v),
+            normalize_phone(&v).is_some(),
+            "is_phone {s:?}"
+        );
+    }
+
+    #[test]
+    fn edge_cases() {
+        for s in EDGE {
+            check(s);
+        }
+        for v in [
+            Value::Int(1234567),
+            Value::Int(-5),
+            Value::Float(12345678.0),
+            Value::Null,
+        ] {
+            assert_eq!(
+                is_phone(&v),
+                normalize_phone(&v).is_some(),
+                "is_phone {v:?}"
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn agree(s in strings()) {
+            check(&s);
+        }
     }
 }

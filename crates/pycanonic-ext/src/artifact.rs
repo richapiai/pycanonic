@@ -54,7 +54,10 @@ pub fn value_error(e: CompileError) -> PyErr {
 /// object. A `bytearray` or `memoryview` is copied: another thread may change it while the GIL is
 /// released.
 pub(crate) fn body_of<'s>(src: &'s Bound<'_, PyAny>) -> PyResult<Option<Cow<'s, [u8]>>> {
-    Ok(if let Ok(b) = src.cast::<PyBytes>() {
+    // A parsed dict is the common non-text input: one type compare instead of four checks.
+    Ok(if src.is_exact_instance_of::<PyDict>() {
+        None
+    } else if let Ok(b) = src.cast::<PyBytes>() {
         Some(Cow::Borrowed(b.as_bytes()))
     } else if let Ok(s) = src.cast::<PyString>() {
         Some(match text(s) {
