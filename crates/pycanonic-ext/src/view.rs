@@ -94,7 +94,7 @@ pub fn levels(py: Python<'_>, names: &[String], fields: &[Named<Field>]) -> Vec<
                     Field::Object {
                         members,
                         present,
-                        if_empty_null: false,
+                        if_empty: None,
                     } if present.is_empty() => Some(walk(out, ty, names, members, p.clone())),
                     _ => None,
                 };

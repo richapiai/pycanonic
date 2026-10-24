@@ -15,7 +15,9 @@
 //!   `Empty::Missing` leaves the key out when the source is missing or null. `OmitNull` leaves the
 //!   key out when nothing under it is written as something other than null.
 //! - Language 2: an object whose `present` path is missing or null is null, and every field
-//!   inside it is a miss. With `if_empty`, an object that writes nothing but null is rewound to null.
+//!   inside it is a miss. With `if_empty` or an object `x-empty` of null or `{}`, an
+//!   object that writes nothing but null is rewound to that. An `x-empty` placeholder (`[]` or `{}`
+//!   for an unmapped field or a missing list) is not a fill for this check.
 
 use crate::canonical::{Empty, Semantic};
 use crate::cond::{Cond, holds};
@@ -147,14 +149,14 @@ enum Op {
         ops: ListOps,
     },
     /// Written as it is. Counts no miss, so it is always a fill. The stat slot is `None` for an
-    /// unmapped field's `x-empty`.
+    /// unmapped field's `x-empty`, a placeholder that does not make its object filled.
     Const(J, Option<usize>),
-    /// An object with `present` paths (all of them `Cond::Present`), or `if_null`: null when it
-    /// writes nothing but null.
+    /// An object with `present` paths (all of them `Cond::Present`), or `if_empty`: what it
+    /// writes (null or `{}`) when it writes nothing but null.
     Optional {
         members: Vec<(usize, Op)>,
         present: Cond<Path>,
-        if_null: bool,
+        if_empty: Option<J>,
     },
     /// Left out of its object when it writes nothing but null.
     OmitNull(Box<Op>),
@@ -267,10 +269,10 @@ impl Builder<'_> {
             Field::Object {
                 members,
                 present,
-                if_empty_null,
+                if_empty,
             } => {
                 let members = self.fields(members)?;
-                if present.is_empty() && !if_empty_null {
+                if present.is_empty() && if_empty.is_none() {
                     Op::Object(members)
                 } else {
                     let present = present
@@ -280,7 +282,10 @@ impl Builder<'_> {
                     Op::Optional {
                         members,
                         present: Cond::All(present),
-                        if_null: *if_empty_null,
+                        if_empty: if_empty.map(|e| match e {
+                            Empty::Object => J::Object(Default::default()),
+                            _ => J::Null,
+                        }),
                     }
                 }
             }
@@ -647,31 +652,31 @@ impl<S: Sink> Exec<'_, S> {
                 stat,
                 ops,
             } => self.list(*from, kind, *stat, *ops, f),
-            Op::Const(v, _) => {
-                self.filled += !v.is_null() as usize;
+            Op::Const(v, stat) => {
+                self.filled += (stat.is_some() && !v.is_null()) as usize;
                 self.sink.passthrough(&v)
             }
             Op::OmitNull(inner) => self.op(inner, f),
             Op::Optional {
                 members,
                 present,
-                if_null,
+                if_empty,
             } => {
                 // Inside an item map the frame's document is the element, which `holds` then reads.
                 if !holds(present, f.doc.as_ref(), None, None) {
                     members.iter().for_each(|(_, op)| self.miss(op));
                     return self.sink.scalar(Value::Null);
                 }
-                if !if_null {
+                let Some(if_empty) = if_empty else {
                     return self.object(members, f);
-                }
+                };
                 let (mark, filled) = (self.sink.mark(), self.filled);
                 let out = self.object(members, f);
                 if self.filled > filled {
                     return out;
                 }
                 self.sink.rewind(mark);
-                self.sink.scalar(Value::Null)
+                self.sink.passthrough(&if_empty)
             }
         }
     }
@@ -776,7 +781,7 @@ impl<S: Sink> Exec<'_, S> {
     ) -> S::Out {
         let Some(x) = f.read(from) else {
             self.stats.miss(stat);
-            return self.empty(ops.missing);
+            return self.empty(ops.missing, false);
         };
         let Some(n) = x.len() else {
             self.stats.error(stat);
@@ -784,7 +789,7 @@ impl<S: Sink> Exec<'_, S> {
             return self.sink.scalar(Value::Null);
         };
         if n == 0 {
-            return self.empty(ops.empty);
+            return self.empty(ops.empty, true);
         }
         self.filled += 1;
         if let Kind::Item(..) = kind {
@@ -805,12 +810,13 @@ impl<S: Sink> Exec<'_, S> {
         self.sink.list(items)
     }
 
-    /// `[]` for `Empty::List`, null otherwise.
-    fn empty(&mut self, e: Empty) -> S::Out {
+    /// `[]` for `Empty::List`, null otherwise. `[]` for an empty source array is a fill. For a
+    /// missing source it is a placeholder, which does not make its object filled.
+    fn empty(&mut self, e: Empty, fill: bool) -> S::Out {
         if e != Empty::List {
             return self.sink.scalar(Value::Null);
         }
-        self.filled += 1;
+        self.filled += fill as usize;
         self.sink.open(false);
         self.sink.list(Vec::new())
     }

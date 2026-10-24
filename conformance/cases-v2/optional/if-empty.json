@@ -28,6 +28,13 @@
           },
           "country": {
             "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "x-empty": "[]"
           }
         }
       }
@@ -73,7 +80,8 @@
         "name": "a",
         "hq": {
           "city": null,
-          "country": "y"
+          "country": "y",
+          "tags": []
         }
       }
     }

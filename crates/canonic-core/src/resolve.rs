@@ -202,7 +202,7 @@ impl Resolver<'_> {
                     Field::Object {
                         members: Vec::new(),
                         present: present.clone(),
-                        if_empty_null: *if_empty_null,
+                        if_empty: if_empty_null.then_some(Empty::Null),
                     }
                 }
                 Rule::Array(r) => self.array(r, target, stat, &kat)?,
@@ -243,18 +243,21 @@ impl Resolver<'_> {
             .iter()
             .map(|(name, child)| {
                 let path = [prefix, std::slice::from_ref(name)].concat();
+                // an object that writes nothing but null follows its `x-empty`. The
+                // spec's `if_empty` wins. `missing` is the `OmitNull` below.
+                let x_empty = child
+                    .empty
+                    .filter(|e| matches!(e, Empty::Null | Empty::Object));
                 let value = match (mapped.remove(&path), &child.kind) {
                     (
                         Some(Field::Object {
-                            present,
-                            if_empty_null,
-                            ..
+                            present, if_empty, ..
                         }),
                         Kind::Object { children: c, .. },
                     ) => Field::Object {
                         members: self.build(c, &path, mapped),
                         present,
-                        if_empty_null,
+                        if_empty: if_empty.or(x_empty),
                     },
                     (Some(f), _) => f,
                     // a node with `x-empty` that nothing maps follows it, as a missing
@@ -269,7 +272,7 @@ impl Resolver<'_> {
                         Field::Object {
                             members: self.build(c, &path, mapped),
                             present: Vec::new(),
-                            if_empty_null: false,
+                            if_empty: x_empty,
                         }
                     }
                     (None, _) => match child.empty {

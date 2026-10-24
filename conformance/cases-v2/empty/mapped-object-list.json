@@ -1,0 +1,78 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "hq.city": "c",
+      "hq.tags[]": {
+        "from": "t"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "hq": {
+        "type": "object",
+        "x-empty": "null",
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "x-empty": "[]"
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "hq": null
+      }
+    },
+    {
+      "body": {
+        "t": null
+      },
+      "context": null,
+      "expected": {
+        "hq": null
+      }
+    },
+    {
+      "body": {
+        "t": []
+      },
+      "context": null,
+      "expected": {
+        "hq": {
+          "city": null,
+          "tags": []
+        }
+      }
+    },
+    {
+      "body": {
+        "c": "x"
+      },
+      "context": null,
+      "expected": {
+        "hq": {
+          "city": "x",
+          "tags": []
+        }
+      }
+    }
+  ]
+}

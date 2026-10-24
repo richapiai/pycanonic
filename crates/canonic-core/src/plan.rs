@@ -91,13 +91,14 @@ pub enum Field {
     Null,
     Scalar(Scalar),
     /// A canonical object. Language 2: when a `present` path is missing or null, the object
-    /// is null and nothing inside it is mapped. With `if_empty_null`, an object that writes
-    /// nothing but null is null. Without either it is written as `[members]`, as in format 1.
+    /// is null and nothing inside it is mapped. With `if_empty` (`Null` or `Object`, from the spec's
+    /// `if_empty` or the node's `x-empty`), an object that writes nothing but null is
+    /// written as that. Without either it is written as `[members]`, as in format 1.
     #[serde(serialize_with = "object_out", deserialize_with = "object_in")]
     Object {
         members: Vec<Named<Field>>,
         present: Vec<Path>,
-        if_empty_null: bool,
+        if_empty: Option<Empty>,
     },
     List {
         from: Path,
@@ -118,7 +119,7 @@ pub enum Field {
 }
 
 /// The members, present paths and option of a `Field::Object`, in the variant's field order.
-type ObjectParts = (Vec<Named<Field>>, Vec<Path>, bool);
+type ObjectParts = (Vec<Named<Field>>, Vec<Path>, Option<Empty>);
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
@@ -128,42 +129,42 @@ enum ObjectForm {
     Optional {
         members: Vec<Named<Field>>,
         present: Vec<Path>,
-        if_empty_null: bool,
+        if_empty: Option<Empty>,
     },
 }
 
 fn object_out<S: serde::Serializer>(
     members: &[Named<Field>],
     present: &[Path],
-    if_empty_null: &bool,
+    if_empty: &Option<Empty>,
     s: S,
 ) -> Result<S::Ok, S::Error> {
-    if present.is_empty() && !if_empty_null {
+    if present.is_empty() && if_empty.is_none() {
         return members.serialize(s);
     }
     #[derive(Serialize)]
     struct Optional<'a> {
         members: &'a [Named<Field>],
         present: &'a [Path],
-        if_empty_null: bool,
+        if_empty: Option<Empty>,
     }
-    let if_empty_null = *if_empty_null;
+    let if_empty = *if_empty;
     Optional {
         members,
         present,
-        if_empty_null,
+        if_empty,
     }
     .serialize(s)
 }
 
 fn object_in<'de, D: Deserializer<'de>>(d: D) -> Result<ObjectParts, D::Error> {
     Ok(match ObjectForm::deserialize(d)? {
-        ObjectForm::Plain(members) => (members, Vec::new(), false),
+        ObjectForm::Plain(members) => (members, Vec::new(), None),
         ObjectForm::Optional {
             members,
             present,
-            if_empty_null,
-        } => (members, present, if_empty_null),
+            if_empty,
+        } => (members, present, if_empty),
     })
 }
 
@@ -263,9 +264,11 @@ impl Plan {
                 Field::Object {
                     members,
                     present,
-                    if_empty_null,
+                    if_empty,
                 } => {
-                    !present.is_empty() || *if_empty_null || members.iter().any(|n| field(&n.value))
+                    !present.is_empty()
+                        || if_empty.is_some()
+                        || members.iter().any(|n| field(&n.value))
                 }
                 Field::List { kind, ops, .. } => {
                     !ops.is_default()
@@ -312,13 +315,15 @@ fn line(out: &mut String, name: &str, field: &Field) {
         Field::Object {
             members,
             present,
-            if_empty_null,
+            if_empty,
         } => {
             if !present.is_empty() {
                 _ = writeln!(out, "{name}: null unless present({})", list(present));
             }
-            if *if_empty_null {
-                _ = writeln!(out, "{name}: null when empty");
+            match if_empty {
+                Some(Empty::Object) => _ = writeln!(out, "{name}: {{}} when empty"),
+                Some(_) => _ = writeln!(out, "{name}: null when empty"),
+                None => {}
             }
             lines(out, &format!("{name}."), members)
         }

@@ -1,0 +1,117 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "name": "n",
+      "a.x": "x",
+      "b.x": "x",
+      "c.x": "x"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "a": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "x-empty": "[]"
+          }
+        },
+        "x-empty": "null"
+      },
+      "b": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "x-empty": "[]"
+          }
+        },
+        "x-empty": "{}"
+      },
+      "c": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "x-empty": "[]"
+          }
+        },
+        "x-empty": "missing"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "n": "a"
+      },
+      "context": null,
+      "expected": {
+        "name": "a",
+        "a": null,
+        "b": {}
+      }
+    },
+    {
+      "body": {
+        "n": "a",
+        "x": null
+      },
+      "context": null,
+      "expected": {
+        "name": "a",
+        "a": null,
+        "b": {}
+      }
+    },
+    {
+      "body": {
+        "x": "y"
+      },
+      "context": null,
+      "expected": {
+        "name": null,
+        "a": {
+          "x": "y",
+          "tags": []
+        },
+        "b": {
+          "x": "y",
+          "tags": []
+        },
+        "c": {
+          "x": "y",
+          "tags": []
+        }
+      }
+    }
+  ]
+}
