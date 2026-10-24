@@ -260,7 +260,7 @@ def _object(props: dict[str, Any], eps: list[Pair], owners: list[int], groups: l
                 rule = _regroup(rule)
                 head = sub_fits[0]
                 alts = [{**a, "rule": r} for a in head.alternatives if (r := _regroup(a["rule"])) is not None]
-                sub_fits[0] = replace(head, rule=rule, alternatives=alts) if rule else replace(head, rule=None, kind="none", alternatives=alts)
+                sub_fits[0] = replace(head, rule=rule, alternatives=alts) if rule else replace(head, rule=None, kind="none", support=0, holdout=0.0, alternatives=alts)
             if rule is not None:
                 item[key + "[]"] = rule
             fits += sub_fits

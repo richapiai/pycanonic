@@ -338,6 +338,18 @@ def test_array_not_found() -> None:
     assert fit_array("skills[]", {"type": "array", "items": S}, pairs_of([({}, {"a": [1]})])) == (None, [])
 
 
+def test_filter_picks_best_source() -> None:
+    """The decoy `aaa` comes first and passes the filter check, but its cities are wrong."""
+
+    def row(i: int) -> tuple[Any, Any]:
+        ps = [{"name": f"n{i}{k}", "city": f"c{i}{k}", "status": "active" if (k + i) % 3 else "gone"} for k in range(4)]
+        return {"people": [{"name": p["name"], "city": p["city"]} for p in ps if p["status"] == "active"]}, {"aaa": [{**p, "city": "x"} for p in ps], "people": ps}
+
+    rule, fits = fit_array("people[]", objs(name=S, city=S), pairs_of([row(i) for i in range(6)]))
+    assert rule is not None and "filter" in rule and rule["from"] == "people"
+    assert (fits[0].kind, fits[0].support) == ("filter", 6)
+
+
 # --- structure section ---
 
 
