@@ -80,7 +80,7 @@ pub enum Builtin {
     ToString,
     FormatDate(DateOut),
     /// `parse_date` with `{"formats": [...]}`. Without an argument it is `ParseDate`.
-    ParseDateFormats(Vec<Layout>),
+    ParseDateFormats(#[serde(deserialize_with = "dates::non_empty")] Vec<Layout>),
     ParseNumber {
         units: bool,
     },
@@ -765,12 +765,7 @@ fn is_code(s: &[u8], at: usize) -> bool {
 
 /// The amount left once a currency sign or code and a K/M/B suffix are taken off.
 fn bare_amount(v: &str) -> &str {
-    let mut s = js_trim(v);
-    if let Some(rest) = s.strip_prefix(['$', '€', '£', '¥', '₹']) {
-        s = rest;
-    } else if is_code(s.as_bytes(), 0) {
-        s = s[3..].trim_start_matches(is_js_space);
-    }
+    let mut s = strip_currency(js_trim(v));
     let b = s.as_bytes();
     if b.len() > 4 && b[b.len() - 4] == b' ' && is_code(b, b.len() - 3) {
         s = &s[..s.len() - 4];
@@ -804,14 +799,19 @@ fn parse_number(v: &Value, units: bool) -> Option<f64> {
     }
 }
 
-fn number_text(s: &str, units: bool) -> Option<f64> {
-    let mut s = js_trim(s);
+/// `s` without one leading currency sign, or 3-letter code and the space after it.
+fn strip_currency(s: &str) -> &str {
     if let Some(rest) = s.strip_prefix(['$', '€', '£', '¥', '₹']) {
-        s = rest;
+        rest
     } else if is_code(s.as_bytes(), 0) {
-        s = s[3..].trim_start_matches(is_js_space);
+        s[3..].trim_start_matches(is_js_space)
+    } else {
+        s
     }
-    let mut text = s.replace(',', "");
+}
+
+fn number_text(s: &str, units: bool) -> Option<f64> {
+    let mut text = strip_currency(js_trim(s)).replace(',', "");
     let exponent = match text.as_bytes().last() {
         Some(b'k' | b'K') => "e3",
         Some(b'm' | b'M') => "e6",
@@ -834,7 +834,11 @@ fn parse_range(v: &Value, end: RangeEnd) -> Option<f64> {
     };
     let s = js_trim(s);
     // The dash after the first character, so a leading minus stays a sign.
-    let dash = s.get(1..).and_then(|r| r.find('-')).map(|i| i + 1);
+    let dash = s
+        .char_indices()
+        .skip(1)
+        .find(|(_, c)| *c == '-')
+        .map(|(i, _)| i);
     let (lo, hi) = match (s.strip_suffix('+'), dash) {
         (Some(lo), _) => (lo, None),
         (None, Some(i)) => (&s[..i], Some(&s[i + 1..])),

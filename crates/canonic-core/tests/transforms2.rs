@@ -323,19 +323,6 @@ fn dates_numbers_and_ranges() {
             Float(1614556800.0),
             s("2021-03-01"),
         ),
-        // A time parse_date drops but format_date cannot read is the date at midnight, as parse_date gives it.
-        (
-            "format_date",
-            dms(),
-            s("2021-03-01Tjunk"),
-            s("2021-03-01T00:00:00.000Z"),
-        ),
-        (
-            "format_date",
-            dms(),
-            s("2021-03-01T24:00:00Z"),
-            s("2021-03-01T00:00:00.000Z"),
-        ),
         // Past year 9999 after the offset, or what parse_date refuses, is null.
         ("format_date", dms(), s("9999-12-31T23:00:00-05:00"), Null),
         ("format_date", dms(), s("2021-13"), Null),
@@ -434,6 +421,11 @@ fn dates_numbers_and_ranges() {
         ("parse_range", Some(json!("min")), s("a-b"), Null),
         ("parse_range", Some(json!("min")), s("+"), Null),
         ("parse_range", Some(json!("min")), Bool(true), Null),
+        // A multi-byte currency sign before the dash.
+        ("parse_range", Some(json!("min")), s("€1-5"), Int(1)),
+        ("parse_range", Some(json!("max")), s("€1-5"), Int(5)),
+        ("parse_range", Some(json!("min")), s("£10-50"), Int(10)),
+        ("parse_range", Some(json!("max")), s("£10-50"), Int(50)),
     ];
     for (name, arg, input, want) in cases {
         assert_eq!(
@@ -441,6 +433,41 @@ fn dates_numbers_and_ranges() {
             want,
             "{name} {arg:?} on {input:?}"
         );
+    }
+}
+
+/// a time part format_date cannot read is null on every output, never midnight.
+#[test]
+fn format_date_rejects_unreadable_times() {
+    let times = [
+        "2021-03-01T25:00:00Z",
+        "2021-03-01T10:61",
+        "2021-03-01Tnoon",
+        "2021-03-01Tjunk",
+        "2021-03-01T24:00:00Z",
+        "2021-03-01T10:00:00+25:00",
+        "2021-03-01T10:00:00.Z",
+        "2021-03-01T",
+    ];
+    for out in ["date", "datetime", "datetime_ms", "epoch_s", "epoch_ms"] {
+        for t in times {
+            assert_eq!(
+                run("format_date", Some(json!(out)), s(t)),
+                Value::Null,
+                "{out} {t}"
+            );
+        }
+    }
+}
+
+#[test]
+fn plan_load_checks_parse_date_formats() {
+    let t = json!({"parse_date": {"formats": ["%B %Y"]}});
+    let text = serde_json::to_string(&compile(&spec(Some(2), t), &schema(), &[]).unwrap()).unwrap();
+    assert!(text.contains(r#"["%B %Y"]"#), "{text}");
+    for bad in [r#"["%Y %Y"]"#, "[]"] {
+        let broken = text.replace(r#"["%B %Y"]"#, bad);
+        assert!(serde_json::from_str::<Plan>(&broken).is_err(), "{broken}");
     }
 }
 

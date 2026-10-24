@@ -154,15 +154,18 @@ pub(crate) fn format_date(v: &Value, out: DateOut) -> Option<Value<'static>> {
     Some(Value::Str(text.into()))
 }
 
-/// Milliseconds since 1970 for a string `date_from_string` accepts. A time after the T or space
-/// counts when it reads as one. Otherwise the date is midnight UTC, as `parse_date` drops it.
+/// Milliseconds since 1970 for a string `date_from_string` accepts. Text after the T or space must
+/// read as a time, else `None` (no guessed midnight).
 fn instant(s: &str) -> Option<i64> {
     let b = date_from_string(s)?.as_bytes();
     let field = |at: usize| digits_at(b, at, 2).map_or(1, i64::from);
     let y = i64::from(digits_at(b, 0, 4)?);
     let days = days_from_civil(y, field(5), field(8));
-    let time = js_trim(s).as_bytes().get(11..).and_then(time_of_day);
-    Some(days * DAY_MS + time.unwrap_or(0))
+    let time = match js_trim(s).as_bytes().get(11..) {
+        Some(t) => time_of_day(t)?,
+        None => 0,
+    };
+    Some(days * DAY_MS + time)
 }
 
 /// `HH:MM`, optional `:SS` and `.fraction`, then `Z`, `±HH:MM`, `±HHMM` or nothing (UTC), as
@@ -331,6 +334,15 @@ pub(crate) fn read_formats(layouts: &[Layout], v: &Value) -> Option<String> {
     };
     let s = js_trim(s);
     layouts.iter().find_map(|l| l.read(s))
+}
+
+/// A plan's `parse_date` formats, held to the rule `formats_arg` checks: not empty.
+pub(crate) fn non_empty<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Layout>, D::Error> {
+    let list = Vec::<Layout>::deserialize(d)?;
+    if list.is_empty() {
+        return Err(serde::de::Error::custom("parse_date formats are empty"));
+    }
+    Ok(list)
 }
 
 /// `{"formats": [...]}`, a non-empty list of valid formats.
