@@ -169,7 +169,9 @@ class _Search:
         return sorted(scored.items(), key=lambda cs: self.rank(*cs))
 
     def _coalesces(self, scored: dict[_Cand, int], support: Callable[[_Cand], int]) -> list[_Cand]:
-        """Per chain, add the path that adds the most pairs to the best path, up to three paths."""
+        """Per chain, add the path that adds the most pairs to the best path, up to three paths. The
+        first step also tries the new path in front, so two paths are tried in both orders (a tie
+        keeps the best path first)."""
         groups: dict[tuple[tuple[str, str], ...], list[_Cand]] = {}
         for c in sorted(scored, key=lambda c: self.rank(c, scored[c])):
             if c.kind == "path":
@@ -178,7 +180,10 @@ class _Search:
         for steps, group in groups.items():
             paths, best = group[0].paths, scored[group[0]]
             while len(paths) < 3:
-                tries = [(support(t), t) for t in (_Cand("coalesce", (*paths, c.paths[0]), steps) for c in group if c.paths[0] not in paths)]
+                orders = [(*paths, c.paths[0]) for c in group if c.paths[0] not in paths]
+                if len(paths) == 1:
+                    orders = [o for ab in orders for o in (ab, ab[::-1])]
+                tries = [(support(t), t) for t in (_Cand("coalesce", o, steps) for o in orders)]
                 top = max(tries, key=lambda st: st[0], default=None)
                 if top is None or top[0] <= best:
                     break
@@ -214,7 +219,11 @@ def fit_leaf(
     field: str, pairs: list[Pair], targets: list[Any], sources_by_pair: list[list[Occurrence]], lookups_allowed: bool, floor: float = 0.8
 ) -> LeafFit:
     """The best rule for `field` over the pairs, or kind `none` when no rule reaches `floor`, the
-    share of pairs with a value. A learned lookup is tried only below it."""
+    share of pairs with a value. A learned lookup is tried only below it.
+
+    Build `sources_by_pair[j]` with `scalars(pairs[j].provider)`: join and coalesce are scored on
+    `pairs[j].provider`, so both must read the same body. Item-level fits build element pairs the
+    same way, with the provider element as `provider` and `scalars(element)` as its occurrences."""
     s = _Search(field, pairs, targets, sources_by_pair, lookups_allowed, floor)
     every = list(range(len(pairs)))
     live = [j for j in every if targets[j] is not None]

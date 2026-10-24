@@ -1,13 +1,15 @@
-"""`canonic fit`: the leaf search (index, transform chains, rule choice, holdout)."""
+"""`canonic fit`: the leaf search (index, transform chains, rule choice, holdout), arrays and structure."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from pycanonic.cli.fit.chains import Chain, apply, candidates
+from pycanonic.cli.fit.arrays import fit_array
+from pycanonic.cli.fit.chains import Chain, apply, apply_rule, candidates
 from pycanonic.cli.fit.index import Occurrence, scalars
 from pycanonic.cli.fit.leaves import LeafFit, _related, fit_leaf
 from pycanonic.cli.fit.pairs import Pair
+from pycanonic.cli.fit.structure import fit_const, fit_object_presence, fit_when, propose_reject
 
 # --- leaf section ---
 
@@ -154,11 +156,13 @@ def test_two_step_kind_names_the_review_step() -> None:
 
 
 def test_coalesce_scored_by_runtime() -> None:
-    """The runtime's coalesce takes an object at the first path, so that pair does not count."""
+    """The runtime's coalesce takes an object at the first path, so `a` first misses that pair and
+    `b` first wins."""
     rows: list[tuple[Any, Any]] = [("v0", {"a": {"k": 1}, "b": "v0"})]
     rows += [(f"v{i}", {"a": f"v{i}"}) for i in range(1, 5)] + [("v5", {"b": "v5"})]
     f = leaf("value", rows)
-    assert (f.rule, f.kind, f.support, f.total) == ({"coalesce": ["a", "b"]}, "coalesce", 5, 6)
+    assert (f.rule, f.kind, f.support, f.total) == ({"coalesce": ["b", "a"]}, "coalesce", 6, 6)
+    assert apply_rule({"coalesce": ["a", "b"]}, rows[0][1]) == {"k": 1}  # a first: the object, a miss
 
 
 def test_alternatives_skip_case_only_steps() -> None:
@@ -167,3 +171,164 @@ def test_alternatives_skip_case_only_steps() -> None:
     for alt in f.alternatives:
         steps = alt["rule"].get("transform", [])
         assert not ({"cast": "boolean"} in steps and ({"upper", "lower", "title"} & {s for s in steps if isinstance(s, str)})), alt
+
+
+def test_coalesce_tries_both_orders() -> None:
+    """`a` alone hits 5 of 6, `b` first then `a` hits all 6, `a` first then `b` stays at 5."""
+    rows: list[tuple[Any, Any]] = [(f"v{i}", {"a": f"v{i}"}) for i in range(3)]
+    rows += [("v3", {"a": "wrong", "b": "v3"})] + [(f"v{i}", {"a": f"v{i}", "b": f"v{i}"}) for i in (4, 5)]
+    f = leaf("value", rows)
+    assert (f.rule, f.kind, f.support) == ({"coalesce": ["b", "a"]}, "coalesce", 6)
+
+
+# --- array section ---
+
+S = {"type": "string"}
+
+
+def objs(**props: Any) -> dict[str, Any]:
+    return {"type": "array", "items": {"type": "object", "properties": props}}
+
+
+def pairs_of(rows: list[tuple[Any, Any]], inputs: list[Any] | None = None) -> list[Pair]:
+    return [Pair(f"p{i}.json", d, p, inputs[i] if inputs else None) for i, (d, p) in enumerate(rows)]
+
+
+def test_item_alignment() -> None:
+    rows = [
+        ({"experiences": [{"title": f"t{i}{k}", "company": f"c{i}{k}"} for k in range(i % 3 + 1)]}, {"workHistory": [{"role": f"t{i}{k}", "orgName": f"c{i}{k}", "n": k} for k in range(i % 3 + 1)], "tags": ["x"]})
+        for i in range(6)
+    ]
+    rule, fits = fit_array("experiences[]", objs(title=S, company=S), pairs_of(rows))
+    assert rule == {"from": "workHistory", "item": {"title": {"from": "role"}, "company": {"from": "orgName"}}}
+    assert [(f.field, f.kind, f.support, f.total) for f in fits] == [("experiences[]", "path", 6, 6), ("experiences[].title", "path", 12, 12), ("experiences[].company", "path", 12, 12)]
+
+
+def test_pluck() -> None:
+    rows = [({"skills": [f"s{i}{k}" for k in range(i % 2 + 1)]}, {"tags": [{"label": f"S{i}{k}", "w": k} for k in range(i % 2 + 1)]}) for i in range(6)]
+    rule, fits = fit_array("skills[]", {"type": "array", "items": S}, pairs_of(rows))
+    assert rule == {"from": "tags", "pluck": "label", "transform": ["lower"]}
+    assert (fits[0].kind, fits[0].support) == ("lower", 6)
+
+
+def test_wrap_detected() -> None:
+    rows = [({"industries": [f"i{i}"]}, {"industry": f"i{i}", "n": i}) for i in range(6)]
+    rule, fits = fit_array("industries[]", {"type": "array", "items": S}, pairs_of(rows))
+    assert rule == {"from": "industry", "wrap": True}
+    assert (fits[0].kind, fits[0].support) == ("wrap", 6)
+
+
+def test_flatten_detected() -> None:
+    rows = [({"skills": [f"s{i}a", f"s{i}b", f"s{i}c"]}, {"jobs": [{"skills": [f"s{i}a", f"s{i}b"]}, {"title": "x"}, {"skills": [f"s{i}c"]}]}) for i in range(6)]
+    rule, fits = fit_array("skills[]", {"type": "array", "items": S}, pairs_of(rows))
+    assert rule == {"from": "jobs[].skills[]"}
+    assert (fits[0].kind, fits[0].support) == ("flatten", 6)
+
+
+def test_root_array() -> None:
+    node = objs(name=S)
+    rows = [([{"name": f"n{i}{k}"} for k in range(i % 3 + 1)], {"results": [{"n": f"n{i}{k}"} for k in range(i % 3 + 1)]}) for i in range(5)]
+    assert fit_array("[]", node, pairs_of(rows))[0] == {"from": "results", "item": {"name": {"from": "n"}}}
+    rule, fits = fit_array("[]", node, pairs_of([(d, p["results"]) for d, p in rows]))
+    assert rule == {"from": "$", "item": {"name": {"from": "n"}}}
+    assert [f.field for f in fits] == ["[]", "[].name"]
+
+
+GROUPS = [["A", "A", "B", "A"], ["A", "B"], ["C", "C", "C"], ["A", "B", "A"], ["B", "B", "A"], ["C", "A", "C", "C"]]
+
+
+def grouped(i: int, keys: list[str]) -> tuple[Any, Any]:
+    """Positions with company keys `keys`; the default groups them consecutively."""
+    pos = [{"company_id": k, "title": f"t{i}{n}", "start": f"2020-0{(n * 7 + i) % 9 + 1}", "end": None if (n * 3 + i) % 7 == 0 else f"2024-0{9 - abs(n - 1) * 3}"} for n, k in enumerate(keys)]
+    runs: list[list[dict[str, Any]]] = []
+    for p in pos:
+        if runs and runs[-1][0]["company_id"] == p["company_id"]:
+            runs[-1].append(p)
+        else:
+            runs.append([p])
+    ends = [[p["end"] for p in r] for r in runs]
+    jobs = [
+        {"company_id": r[0]["company_id"], "start": min(p["start"] for p in r), "end": None if None in e else max(x for x in e if x), "roles": [{"title": p["title"]} for p in r]}
+        for r, e in zip(runs, ends)
+    ]
+    return {"jobs": jobs}, {"positions": pos}
+
+
+JOBS = objs(company_id=S, start=S, end=S, roles=objs(title=S))
+
+
+def test_group_detected_with_gaps() -> None:
+    rows = [grouped(i, k) for i, k in enumerate(GROUPS)]
+    assert len(rows[3][0]["jobs"]) == 3  # A, B, A is three groups
+    rule, fits = fit_array("jobs[]", JOBS, pairs_of(rows))
+    assert rule is not None
+    assert {k: rule[k] for k in ("from", "group_by", "consecutive")} == {"from": "positions", "group_by": "company_id", "consecutive": True}
+    assert rule["item"]["company_id"] == {"from": "company_id"}
+    assert rule["item"]["roles[]"] == {"from": "$group", "item": {"title": {"from": "title"}}}
+    assert (fits[0].kind, fits[0].support, fits[0].total) == ("group", 6, 6)
+    assert "jobs[].roles[].title" in [f.field for f in fits]
+
+
+def test_group_aggregates_min_max_propagate() -> None:
+    rows = [grouped(i, k) for i, k in enumerate(GROUPS)]
+    rule, fits = fit_array("jobs[]", JOBS, pairs_of(rows))
+    assert rule is not None
+    assert rule["item"]["start"] == {"aggregate": "min", "from": "$group[].start"}
+    assert rule["item"]["end"] == {"aggregate": "max", "from": "$group[].end", "nulls": "propagate"}
+    by = {f.field: f for f in fits}
+    assert by["jobs[].end"].kind == "group"
+
+
+def test_filter_detected() -> None:
+    def row(i: int) -> tuple[Any, Any]:
+        people = [{"name": f"n{i}{k}", "status": "active" if (k + i) % 3 else "gone", "role": "x"} for k in range(4)]
+        return {"people": [{"name": p["name"]} for p in people if p["status"] == "active"]}, {"people": people}
+
+    rule, fits = fit_array("people[]", objs(name=S), pairs_of([row(i) for i in range(6)]))
+    assert rule == {"from": "people", "filter": {"path": "status", "eq": "active"}, "item": {"name": {"from": "name"}}}
+    assert (fits[0].kind, fits[0].support) == ("filter", 6)
+
+
+def test_array_not_found() -> None:
+    rows = [({"skills": [f"s{i}"]}, {"other": [1, 2], "n": i}) for i in range(4)]
+    rule, fits = fit_array("skills[]", {"type": "array", "items": S}, pairs_of(rows))
+    assert rule is None and [(f.field, f.kind, f.total) for f in fits] == [("skills[]", "none", 4)]
+    assert fit_array("skills[]", {"type": "array", "items": S}, pairs_of([({}, {"a": [1]})])) == (None, [])
+
+
+# --- structure section ---
+
+
+def test_presence_detected() -> None:
+    rows = [({"name": f"n{i}", "hq": {"city": f"c{i}"} if i % 2 else None}, {"n": f"n{i}", "data": {"hq": {"city": f"c{i}", "zip": i}} if i % 2 else {"x": 1}}) for i in range(6)]
+    assert fit_object_presence("hq", pairs_of(rows)) == {"present": "data.hq"}
+    rows = [({"hq": {"city": "c"}}, {"data": {"hq": {"city": "c"}}}) for _ in range(4)]
+    assert fit_object_presence("hq", pairs_of(rows)) is None  # never null: nothing to learn
+
+
+def test_const_detected_only_without_source() -> None:
+    assert fit_const("kind", ["person"] * 6) == {"const": "person"}
+    assert fit_const("tags", [[]] * 4) == {"const": []}
+    assert fit_const("kind", ["person"] * 5 + ["org"]) is None
+    assert fit_const("kind", [None] * 4) is None
+    with_source = leaf("kind", [("person", {"type": "person", "n": i}) for i in range(6)])
+    assert (with_source.rule, with_source.kind) == ({"from": "type"}, "path")
+    without = leaf("kind", [("person", {"n": i}) for i in range(6)])
+    assert without.kind == "const"
+
+
+def test_when_from_inputs() -> None:
+    inputs: list[Any] = [{"full": i % 2 == 0, "page": i} for i in range(6)]
+    rows = [({"name": f"n{i}", **({"bio": f"b{i}"} if i % 2 == 0 else {})}, {"bio": f"b{i}"}) for i in range(6)]
+    assert fit_when("bio", pairs_of(rows, inputs)) == {"when": {"path": "$input.full", "eq": True}, "omit": True}
+    rows = [({"bio": f"b{i}" if i % 2 == 0 else None}, {"bio": f"b{i}"}) for i in range(6)]
+    assert fit_when("bio", pairs_of(rows, inputs)) == {"when": {"path": "$input.full", "eq": True}}
+    assert fit_when("name", pairs_of([({"name": "a"}, {})] * 3, [{"full": True}] * 3)) is None
+
+
+def test_reject_proposal() -> None:
+    schema = {"type": "object", "properties": {"name": S, "title": S, "jobs": objs(title=S)}}
+    rows = [({"name": f"n{i}", "title": f"t{i}" if i % 3 else None, "jobs": []}, {"title": f"t{i}", **({"full_name": f"n{i}"} if i % 3 else {})}) for i in range(6)]
+    assert propose_reject(schema, pairs_of(rows)) == [{"missing": "full_name"}]
+    full = [(d, {**p, "full_name": d["name"]}) for d, p in rows]
+    assert propose_reject(schema, pairs_of(full)) == []

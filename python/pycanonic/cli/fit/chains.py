@@ -66,18 +66,23 @@ def apply(chain: Chain, v: Any) -> Any:
     return art.map({f"v{i}": x for i, x in enumerate(v)} if many else {"v": v})["v"]
 
 
-def apply_rule(rule: dict[str, Any], body: Any) -> Any:
-    """What the runtime maps for one field `rule` over a whole provider body. None if it does not compile."""
-    key = repr(rule)
+def apply_rule(rule: dict[str, Any], body: Any, node: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> Any:
+    """What the runtime maps for one field `rule` over a whole provider body, with `node` as the
+    field's canonical schema node (an array node takes an array rule). None if it does not compile."""
+    key = repr((rule, node))
     art = _compiled.get(key, False)
     if art is False:
-        spec = {"language": 2, "provider": "fit", "endpoint": "rule", "version": 1, "status": "draft", "fields": {"v": rule}}
+        name = "v[]" if node is not None and node.get("type") == "array" else "v"
+        spec = {"language": 2, "provider": "fit", "endpoint": "rule", "version": 1, "status": "draft", "fields": {name: rule}}
         try:
-            art = _api.compile_spec(spec, _SCHEMA)
+            art = _api.compile_spec(spec, {"type": "object", "properties": {"v": {} if node is None else node}})
         except ValueError:
             art = None
         _compiled[key] = art
-    return None if art is None else art.map(body)["v"]
+    if art is None:
+        return None
+    out = art.map(body) if context is None else art.map(body, context=context)
+    return out.get("v")
 
 
 def _kind(v: Any) -> str:
