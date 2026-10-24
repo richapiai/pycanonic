@@ -1,0 +1,12 @@
+{
+  "spec": {
+    "language": "2",
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"name": "full_name"}
+  },
+  "schema": {"type": "object", "properties": {"name": {"type": "string"}}},
+  "error": "invalid spec: spec.language: must be 1 or 2"
+}

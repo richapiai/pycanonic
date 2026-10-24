@@ -229,5 +229,7 @@ def test_load_plan_checks_the_format_stamp():
     with pytest.raises(ValueError, match="missing field `format`"):
         _core.load_plan(json.dumps(plan), None)
     plan["format"] = 2
-    with pytest.raises(ValueError, match="plan format 2 is not supported"):
+    assert json.loads(_core.load_plan(json.dumps(plan), None).plan_json())["format"] == 2
+    plan["format"] = 3
+    with pytest.raises(ValueError, match="plan format 3 is not supported"):
         _core.load_plan(json.dumps(plan), None)

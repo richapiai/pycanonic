@@ -301,8 +301,8 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
     })();
     let (fields, routing, anchors) =
         resolved.map_err(|m| fail(format!("{} {} v{}: {m}", s.provider, s.endpoint, s.version)))?;
-    Ok(Plan {
-        format: Format,
+    let mut plan = Plan {
+        format: Format(1),
         meta: Meta {
             provider: s.provider,
             endpoint: s.endpoint,
@@ -315,5 +315,9 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
         stat_names: r.stat_names,
         custom_names: custom.to_vec(),
         names: r.names,
-    })
+    };
+    if plan.needs_v2() {
+        plan.format = Format(2);
+    }
+    Ok(plan)
 }

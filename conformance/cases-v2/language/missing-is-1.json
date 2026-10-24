@@ -1,0 +1,38 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "name": "full_name",
+      "email": {"from": "contact.email", "transform": ["trim", "lower"]},
+      "tags[]": {"from": "labels"}
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string"},
+      "email": {"type": "string"},
+      "tags": {"type": "array", "items": {"type": "string"}}
+    }
+  },
+  "inputs": [
+    {
+      "body": {"full_name": "Ada Byron", "contact": {"email": " Ada@Example.test "}, "labels": ["a", "b"]},
+      "context": null,
+      "expected": {"name": "Ada Byron", "email": "ada@example.test", "tags": ["a", "b"]}
+    },
+    {
+      "body": {"full_name": 7},
+      "context": null,
+      "expected": {"name": 7, "email": null, "tags": null}
+    },
+    {
+      "raw": "{\"full_name\": \"Ada\"",
+      "context": null,
+      "expected": {"name": null, "email": null, "tags": null}
+    }
+  ]
+}

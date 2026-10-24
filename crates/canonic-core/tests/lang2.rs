@@ -1,0 +1,93 @@
+// The `language` key and plan format 2. A spec without `language` is language 1, and a plan with no
+// language 2 rule still writes format 1.
+
+use canonic_core::{PLAN_FORMAT, Plan, compile, parse_spec, validate_spec};
+use serde_json::{Value as J, json};
+
+fn schema() -> J {
+    json!({"type": "object", "properties": {"name": {"type": "string"}}})
+}
+
+fn spec_without_language() -> J {
+    json!({"provider": "acme", "endpoint": "people", "version": 1, "status": "promoted",
+           "fields": {"name": "full_name"}})
+}
+
+fn spec_with_language(v: J) -> J {
+    let mut s = spec_without_language();
+    s["language"] = v;
+    s
+}
+
+fn lang1_spec() -> J {
+    spec_with_language(json!(1))
+}
+
+fn parse(spec: J) -> canonic_core::Spec {
+    parse_spec(&spec).unwrap()
+}
+
+fn assert_issue(spec: J, want: &str) {
+    let issues: Vec<String> = validate_spec(&spec)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(issues, [want]);
+}
+
+fn plan_json(spec: J) -> J {
+    serde_json::to_value(compile(&spec, &schema(), &[]).unwrap()).unwrap()
+}
+
+#[test]
+fn language_missing_is_1() {
+    assert_eq!(parse(spec_without_language()).language, 1);
+}
+
+#[test]
+fn language_1_and_2_parse() {
+    assert_eq!(parse(lang1_spec()).language, 1);
+    assert_eq!(parse(spec_with_language(json!(2))).language, 2);
+}
+
+#[test]
+fn language_3_is_rejected() {
+    assert_issue(
+        spec_with_language(json!(3)),
+        "spec.language: must be 1 or 2",
+    );
+    assert_issue(
+        spec_with_language(json!("2")),
+        "spec.language: must be 1 or 2",
+    );
+    assert_issue(
+        spec_with_language(json!(2.5)),
+        "spec.language: must be 1 or 2",
+    );
+}
+
+#[test]
+fn plain_spec_writes_format_1() {
+    assert_eq!(plan_json(lang1_spec())["format"], 1);
+    // Language 2 alone does not need format 2. Only a language 2 rule does.
+    assert_eq!(plan_json(spec_with_language(json!(2)))["format"], 1);
+}
+
+#[test]
+fn format_1_and_2_load_format_3_fails() {
+    assert_eq!(PLAN_FORMAT, 2);
+    let mut plan = plan_json(lang1_spec());
+    for f in [1, 2] {
+        plan["format"] = json!(f);
+        let loaded: Plan = serde_json::from_value(plan.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&loaded).unwrap()["format"], f);
+    }
+    plan["format"] = json!(3);
+    let err = serde_json::from_value::<Plan>(plan)
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        err,
+        "plan format 3 is not supported. This build reads format 2. Rebuild the plan."
+    );
+}

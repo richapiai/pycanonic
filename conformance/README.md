@@ -13,7 +13,7 @@ conformance/sync.sh
 
 ## Comparison rule
 
-Both runners apply the same rule (`compare` in `conformance.rs`, `compare.py` for Python):
+Both runners apply the same rule (`crates/canonic-core/tests/common/mod.rs`, `compare.py` for Python):
 
 - Numbers compare by value, so `1` equals `1.0`. Past 2^53, the rule allows one double step of difference (`|a - b| <= ulp(a)`). A JavaScript number does not hold more precision than that.
 - Strings compare after lone surrogates become U+FFFD on both sides. The TypeScript JSON carries them as `\ud800` escapes, and a UTF-8 string cannot hold them.

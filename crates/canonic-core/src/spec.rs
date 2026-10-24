@@ -1,5 +1,6 @@
 //! Spec types, the path grammar, and the hand-written validator for spec.schema.json.
-//! The validator must accept and reject exactly what the JSON Schema does (tests/validate.rs).
+//! For a spec without `language`, the validator must accept and reject exactly what the JSON Schema
+//! does (tests/validate.rs). spec.schema.json stays language 1.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -61,6 +62,8 @@ pub type FieldMap = Vec<(String, Rule)>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Spec {
+    /// The spec language: 1 (the TypeScript grammar) or 2. A spec without `language` is 1.
+    pub language: u8,
     pub provider: String,
     pub endpoint: String,
     pub version: u32,
@@ -197,6 +200,8 @@ fn json_string(s: &str) -> String {
 #[derive(Default)]
 struct Checker {
     issues: Vec<Issue>,
+    /// Set by `header`, before any field is checked.
+    language: u8,
 }
 
 impl Checker {
@@ -205,6 +210,16 @@ impl Checker {
             at: at.to_string(),
             message: message.to_string(),
         });
+    }
+    /// Records that `rule`, a language 2 key, sits in a language 1 spec.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the first language 2 rule calls it")
+    )]
+    fn lang2(&mut self, at: &str, rule: &str) {
+        if self.language == 1 {
+            self.fail(at, &format!("{} needs \"language\": 2", json_string(rule)));
+        }
     }
     fn keys(&mut self, o: &Map<String, Value>, at: &str, allowed: &[&str]) {
         for k in o.keys().filter(|k| !allowed.contains(&k.as_str())) {
@@ -331,7 +346,8 @@ impl Checker {
             s,
             "spec",
             &[
-                "$schema", "provider", "endpoint", "version", "status", "anchors", "fields",
+                "$schema", "language", "provider", "endpoint", "version", "status", "anchors",
+                "fields",
             ],
         );
         self.header(s);
@@ -344,6 +360,14 @@ impl Checker {
         if s.get("$schema").is_some_and(|v| !v.is_string()) {
             self.fail("spec.$schema", "must be a string");
         }
+        self.language = match language(s.get("language")) {
+            Some(l) => l,
+            None => {
+                self.fail("spec.language", "must be 1 or 2");
+                // Checked as language 2, so a bad value adds no `needs "language": 2` issues.
+                2
+            }
+        };
         for k in ["provider", "endpoint"] {
             if s.get(k).and_then(Value::as_str).is_none_or(str::is_empty) {
                 self.fail(&format!("spec.{k}"), "must be a non-empty string");
@@ -381,6 +405,15 @@ impl Checker {
 /// The version as a whole number (JS `Number.isInteger`, so `2.0` counts), or None.
 fn version(v: Option<&Value>) -> Option<f64> {
     v?.as_f64().filter(|f| f.fract() == 0.0)
+}
+
+/// 1 when absent, the integer 1 or 2 when present, None for any other value.
+fn language(v: Option<&Value>) -> Option<u8> {
+    match v.map(Value::as_u64) {
+        None => Some(1),
+        Some(Some(l @ (1 | 2))) => Some(l as u8),
+        Some(_) => None,
+    }
 }
 
 /// Grammar check only (what spec.schema.json expresses). Semantic checks come with compilation.
@@ -474,6 +507,7 @@ pub fn parse_spec(spec: &Value) -> Result<Spec, Vec<Issue>> {
     };
     let anchors = spec.get("anchors").and_then(Value::as_object);
     Ok(Spec {
+        language: language(spec.get("language")).unwrap(),
         provider: spec["provider"].as_str().unwrap().to_string(),
         endpoint: spec["endpoint"].as_str().unwrap().to_string(),
         version: v as u32,
@@ -485,4 +519,29 @@ pub fn parse_spec(spec: &Value) -> Result<Spec, Vec<Issue>> {
             .map(|(k, t)| (k.clone(), t.as_str().unwrap().to_string()))
             .collect(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn issues_for(language: Option<u8>) -> Vec<String> {
+        let mut s = json!({"provider": "p", "endpoint": "e", "version": 1, "status": "draft"});
+        if let Some(l) = language {
+            s["language"] = json!(l);
+        }
+        let mut c = Checker::default();
+        c.header(s.as_object().unwrap());
+        c.lang2("spec.fields[\"skills[]\"]", "group_by");
+        c.issues.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn lang2_flags_a_language_1_spec_only() {
+        let want = [r#"spec.fields["skills[]"]: "group_by" needs "language": 2"#];
+        assert_eq!(issues_for(None), want);
+        assert_eq!(issues_for(Some(1)), want);
+        assert!(issues_for(Some(2)).is_empty());
+    }
 }

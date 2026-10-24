@@ -82,26 +82,27 @@ pub struct RoutingField {
     pub anchor: Option<String>,
 }
 
-/// The plan JSON layout this build writes and reads, serialized as `"format": 1`.
-pub const PLAN_FORMAT: u32 = 1;
+/// The newest plan JSON layout this build writes and reads. Format 1 plans still load.
+pub const PLAN_FORMAT: u32 = 2;
 
-/// The `format` stamp of a serialized plan: always writes [`PLAN_FORMAT`], and reading any other
-/// value (or none: serde's "missing field `format`") is an error, so an old or newer plan fails
-/// to load instead of mapping wrongly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Format;
+/// The `format` stamp of a serialized plan, 1 or 2. `compile` writes 2 only when the plan holds a
+/// language 2 rule ([`Plan::needs_v2`]), so other plans stay readable by format 1 builds. Reading
+/// any other value (or none: serde's "missing field `format`") is an error, so an old or newer
+/// plan fails to load instead of mapping wrongly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Format(pub u32);
 
 impl Serialize for Format {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_u32(PLAN_FORMAT)
+        s.serialize_u32(self.0)
     }
 }
 
 impl<'de> Deserialize<'de> for Format {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Format, D::Error> {
         let v = Value::deserialize(d)?;
-        if v == PLAN_FORMAT {
-            Ok(Format)
+        if v == 1 || v == 2 {
+            Ok(Format(v.as_u64().unwrap() as u32))
         } else {
             Err(serde::de::Error::custom(format!(
                 "plan format {v} is not supported. This build reads format {PLAN_FORMAT}. Rebuild the plan."
@@ -149,6 +150,22 @@ fn present<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
 }
 
 impl Plan {
+    /// True when a field needs plan format 2. No language 1 variant does. The matches name every
+    /// variant, so a new one must say which format it needs.
+    pub fn needs_v2(&self) -> bool {
+        fn field(f: &Field) -> bool {
+            match f {
+                Field::Null | Field::Scalar(_) => false,
+                Field::Object(c) => c.iter().any(|n| field(&n.value)),
+                Field::List { kind, .. } => match kind {
+                    ListKind::Item(c) => c.iter().any(|n| field(&n.value)),
+                    ListKind::Pluck(..) | ListKind::Plain(_) => false,
+                },
+            }
+        }
+        self.fields.iter().any(|n| field(&n.value))
+    }
+
     /// One line per canonical field, in schema order, e.g.
     /// `email <- coalesce(a, b) | trim | lower | validate email`.
     pub fn source(&self) -> String {
