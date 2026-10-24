@@ -94,6 +94,7 @@ class _Fitter:
         self.fields: dict[str, Any] = {}
         self.rows: list[Row] = []
         self.inputs = any(p.inputs for p in pairs)
+        self.disagree: list[str] = []  # pairs where fit's reject check and the runtime disagree
 
     def node(self, key: str, node: dict[str, Any]) -> None:
         start = len(self.rows)
@@ -215,13 +216,27 @@ def _spec(opts: FitOptions, fields: dict[str, Any], reject: list[Any] | None = N
     return {**spec, "reject": reject} if reject else spec
 
 
+def _map(art: Any, p: Pair) -> Any:
+    return art.map(p.provider) if p.inputs is None else art.map(p.provider, context=p.inputs)
+
+
 def _check(f: _Fitter) -> None:
     """Maps every pair through the compiled spec. A field whose runtime output disagrees with what
-    fit reported loses its rule and becomes manual, kind none, until the spec agrees with itself."""
+    fit reported loses its rule and becomes manual, kind none, until the spec agrees with itself.
+    A pair that the runtime rejects but fit did not drops the reject rules (fit_pairs makes them manual)."""
     pairs, n = f.pairs, len(f.pairs)
     while f.fields:
         art = _api.compile_spec(_spec(f.opts, f.fields, f.reject), f.schema, transforms=f.opts.transforms)
-        outs = [art.map(p.provider) if p.inputs is None else art.map(p.provider, context=p.inputs) for p in pairs]
+        outs: list[Any] = []
+        for p in pairs:
+            try:
+                outs.append(_map(art, p))
+            except Rejected:
+                f.disagree.append(p.name)
+                break
+        if len(outs) < n:
+            f.reject = []
+            continue
         bad: list[tuple[Row, int, list[Any], list[Any]]] = []
         for r in f.rows:
             if (r.field not in f.fields and r.kind != "empty") or "[]." in r.field:
@@ -304,7 +319,8 @@ def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) ->
     """The in-process core of `run`: fit, decide, prove. Writes nothing.
 
     Proposed rejects come first. A pair that they reject is a failover: it is named in
-    the reject row and left out of every field's support and total."""
+    the reject row and left out of every field's support and total. If fit's own reject check and
+    the runtime disagree on a pair, the spec leaves the rejects out and their rows are manual."""
     reject = propose_reject(schema, pairs) if schema.get("type") != "array" else []
     failover = [p for p in pairs if any(_rejects(c, p.provider) for c in reject)]
     if len(failover) == len(pairs):  # a reject that throws every answer away is no proposal
@@ -313,18 +329,22 @@ def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) ->
     for key, node in _nodes(schema):
         f.node(key, node)
     _check(f)
-    spec = _spec(options, f.fields, reject) if f.fields else None
-    if spec is not None:  # never write a spec that has not mapped every pair, rejects included
-        art = _api.compile_spec(spec, schema, transforms=options.transforms)
+    if f.fields and f.reject:  # never write a spec that has not mapped every pair, rejects included
+        art = _api.compile_spec(_spec(options, f.fields, f.reject), schema, transforms=options.transforms)
         for p in failover:
             try:
-                art.map(p.provider) if p.inputs is None else art.map(p.provider, context=p.inputs)
+                _map(art, p)
+                f.disagree.append(p.name)
             except Rejected:
-                continue
-            raise RuntimeError(f"fit: the written spec does not reject {p.name}")
+                pass
+        if f.disagree:
+            f.reject = []
+    spec = _spec(options, f.fields, f.reject) if f.fields else None
     for i, cond in enumerate(reject):
         hit = [p.name for p in failover if _rejects(cond, p.provider)]
         note = f"Rejects {len(hit)} of {len(pairs)} pairs: rejects {', '.join(hit)}, where the default answered. Those pairs are left out of every other field's support."
+        if f.disagree:
+            note = f"fit and the runtime disagree on which pairs the reject rules reject ({', '.join(f.disagree)}), so the spec leaves them out. Those pairs are still left out of every other field's support."
         f.rows.append(Row(f"reject[{i}]", "", "reject", cond, len(hit), len(pairs), 1.0, [], note))
     for r in f.rows:
         one = not r.field.startswith("reject[") and _one_value(f.pairs, r.field)
@@ -332,6 +352,8 @@ def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) ->
         r.tier = decide.tier(lf, min_auto=options.min_auto, min_pairs=options.min_pairs, floor=FLOOR)
         if one and r.tier == "review" and r.kind in decide.AUTO:
             r.note = " ".join(filter(None, [r.note, "The default sent one value or none in every pair, so the samples cannot tell this rule from a constant."]))
+        if r.kind == "reject" and f.disagree:
+            r.tier = "manual"
     return FitResult(options.provider, options.endpoint, len(pairs), f.rows, spec, stubs(f.rows, pairs, options.provider, options.endpoint))
 
 

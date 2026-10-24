@@ -716,3 +716,27 @@ def test_object_never_empty_gets_if_empty_for_review() -> None:
     art = pycanonic.compile_spec(result.spec, schema)
     assert art.map({"n": "x", "employer": None}) == {"name": "x", "org": None}
 
+
+def reject_pairs() -> list[Pair]:
+    return [Pair(f"p{i}.json", {"name": f"n{i}", "email": f"e{i}@x.test"}, {**({"full_name": f"n{i}"} if i else {}), "mail": f"e{i}@x.test"}, None) for i in range(30)]
+
+
+def test_reject_runtime_rejects_more_goes_manual(monkeypatch: pytest.MonkeyPatch) -> None:
+    """fit's own check says no pair is rejected, the runtime rejects p0: the reject is manual, not an
+    uncaught Rejected."""
+    monkeypatch.setattr(fit_mod, "_rejects", lambda cond, body: False)
+    result = fit_pairs(reject_pairs(), derive_schema([p.default for p in reject_pairs()]), FitOptions("acme", "e"))
+    assert result.spec is not None and "reject" not in result.spec
+    row = {r.field: r for r in result.fields}["reject[0]"]
+    assert (row.tier, row.kind, row.rule) == ("manual", "reject", {"missing": "full_name"})
+    assert "p0.json" in row.note
+
+
+def test_reject_runtime_rejects_less_goes_manual(monkeypatch: pytest.MonkeyPatch) -> None:
+    """fit's own check says p1 is rejected too, the runtime does not reject it: manual, not a RuntimeError."""
+    monkeypatch.setattr(fit_mod, "_rejects", lambda cond, body: "full_name" not in body or body["mail"] == "e1@x.test")
+    result = fit_pairs(reject_pairs(), derive_schema([p.default for p in reject_pairs()]), FitOptions("acme", "e"))
+    assert result.spec is not None and "reject" not in result.spec
+    row = {r.field: r for r in result.fields}["reject[0]"]
+    assert (row.tier, row.kind) == ("manual", "reject")
+    assert "p1.json" in row.note
