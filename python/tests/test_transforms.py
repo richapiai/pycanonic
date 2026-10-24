@@ -208,3 +208,39 @@ def test_language_2_transform_names_need_language_2():
     # A custom transform with a new name works in language 1.
     a = _core.compile(spec(fields), CANONICAL, {"upper": lambda v: "custom"})
     assert a.map({"name": "x"})["full_name"] == "custom"
+
+
+def test_language_2_date_number_range_transforms_in_default_transforms():
+    from pycanonic import default_transforms as T
+
+    assert T["format_date"]("2021-03", "datetime_ms") == "2021-03-01T00:00:00.000Z"
+    assert T["format_date"]("2021-03-01T23:30:00-05:00", "datetime_ms") == "2021-03-02T04:30:00.000Z"
+    assert T["format_date"](1614556800, "datetime_ms") == "2021-03-01T00:00:00.000Z"
+    assert T["format_date"]("2021-03-01", "epoch_ms") == 1614556800000
+    assert T["format_date"]("2021-02-29", "date") is None
+    assert T["parse_date"]("june 2014", {"formats": ["%B %Y"]}) == "2014-06"
+    assert T["parse_date"]("03/2021", {"formats": ["%m/%Y"]}) == "2021-03"
+    assert T["parse_number"]("$3.2M", {"units": True}) == 3200000
+    assert T["parse_number"]("1,234.5") == 1234.5
+    assert T["parse_number"]("40k") is None
+    assert T["parse_range"]("10,001+", "min") == 10001
+    assert T["parse_range"]("10,001+", "max") is None
+    assert T["parse_range"]("51 - 200", "max") == 200
+    with pytest.raises(ValueError, match="invalid argument"):
+        T["format_date"]("2021", "time")
+
+
+def test_parse_date_formats_and_new_names_need_language_2():
+    fields = {"full_name": {"from": "d", "transform": {"parse_date": {"formats": ["%B %Y"]}}}}
+    with pytest.raises(ValueError, match="invalid argument for parse_date"):
+        _core.compile(spec(fields), CANONICAL)
+    for name in ("format_date", "parse_number", "parse_range"):
+        with pytest.raises(ValueError, match=f'unknown transform "{name}"'):
+            _core.compile(spec({"full_name": {"from": "d", "transform": {name: "min"}}}), CANONICAL)
+    fields["pair"] = {"from": "n", "transform": [{"parse_number": {"units": True}}, "to_string"]}
+    a = _core.compile({**spec(fields), "language": 2}, CANONICAL)
+    body = {"d": "June 2014", "n": "40k"}
+    want = {"full_name": "2014-06", "pair": "40000", "org_keys": None}
+    assert a.map(body) == want
+    assert a.map(json.dumps(body).encode()) == want
+    assert json.loads(a.map_json(json.dumps(body))) == want

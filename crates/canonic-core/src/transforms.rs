@@ -3,6 +3,7 @@
 //! Port of canonic/packages/canonic/src/transforms.ts.
 
 use crate::canonical::Semantic;
+use crate::dates::{self, DateOut, Layout, date_from_epoch, date_from_string};
 use crate::strings::{self, Find, Otherwise, Pattern};
 use crate::value::{Value, js_number_to_string};
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,13 @@ pub enum NamePart {
     Last,
 }
 
+/// The end of a range that `parse_range` gives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RangeEnd {
+    Min,
+    Max,
+}
+
 /// A default transform with its argument already checked and bound.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Builtin {
@@ -70,6 +78,13 @@ pub enum Builtin {
         index: i64,
     },
     ToString,
+    FormatDate(DateOut),
+    /// `parse_date` with `{"formats": [...]}`. Without an argument it is `ParseDate`.
+    ParseDateFormats(Vec<Layout>),
+    ParseNumber {
+        units: bool,
+    },
+    ParseRange(RangeEnd),
 }
 
 /// Why `builtin` refused: the name is not a default transform, or its argument is wrong.
@@ -79,7 +94,10 @@ pub enum ArgError {
     InvalidArgument,
 }
 
-const NAMES: [&str; 19] = [
+/// How many of the default transforms language 1 has. They come first in the list.
+pub const LANGUAGE_1_TRANSFORMS: usize = 9;
+
+const NAMES: [&str; 22] = [
     "cast",
     "lower",
     "trim",
@@ -100,11 +118,14 @@ const NAMES: [&str; 19] = [
     "title",
     "split",
     "to_string",
+    "format_date",
+    "parse_number",
+    "parse_range",
 ];
 
 /// True for a default transform that only a language 2 spec can name.
 pub(crate) fn language_2_only(name: &str) -> bool {
-    NAMES[9..].contains(&name)
+    NAMES[LANGUAGE_1_TRANSFORMS..].contains(&name)
 }
 
 pub fn default_transform_names() -> &'static [&'static str] {
@@ -145,7 +166,26 @@ pub fn builtin(name: &str, arg: Option<&serde_json::Value>) -> Result<Builtin, A
         },
         "lower" => no_arg(Builtin::Lower),
         "trim" => no_arg(Builtin::Trim),
-        "parse_date" => no_arg(Builtin::ParseDate),
+        "parse_date" if arg.is_none() => Ok(Builtin::ParseDate),
+        "parse_date" => dates::formats_arg(arg)
+            .map(Builtin::ParseDateFormats)
+            .ok_or(ArgError::InvalidArgument),
+        "format_date" => text
+            .and_then(DateOut::new)
+            .map(Builtin::FormatDate)
+            .ok_or(ArgError::InvalidArgument),
+        "parse_number" => match arg {
+            None => Ok(Builtin::ParseNumber { units: false }),
+            a => strings::object(a, &["units"], &[])
+                .and_then(|o| o["units"].as_bool())
+                .map(|units| Builtin::ParseNumber { units })
+                .ok_or(ArgError::InvalidArgument),
+        },
+        "parse_range" => match text {
+            Some("min") => Ok(Builtin::ParseRange(RangeEnd::Min)),
+            Some("max") => Ok(Builtin::ParseRange(RangeEnd::Max)),
+            _ => Err(ArgError::InvalidArgument),
+        },
         "normalize_phone" => no_arg(Builtin::NormalizePhone),
         "normalize_linkedin" => no_arg(Builtin::NormalizeLinkedin),
         "to_domain" => no_arg(Builtin::ToDomain),
@@ -227,6 +267,13 @@ impl Transform for Builtin {
             | Builtin::Title
             | Builtin::Split { .. }) => strings::apply(b, v),
             Builtin::ToString => to_text(v),
+            Builtin::FormatDate(out) => dates::format_date(&v, *out),
+            Builtin::ParseDateFormats(layouts) => match dates::read_formats(layouts, &v) {
+                Some(s) => Some(owned(s)),
+                None => return Builtin::ParseDate.apply(v, None),
+            },
+            Builtin::ParseNumber { units } => parse_number(&v, *units).map(number),
+            Builtin::ParseRange(end) => parse_range(&v, *end).map(number),
         };
         out.unwrap_or(Value::Null)
     }
@@ -284,12 +331,35 @@ impl Builtin {
                 Some(serde_json::json!({"sep": sep, "index": index})),
             ),
             Builtin::ToString => ("to_string", None),
+            Builtin::FormatDate(out) => ("format_date", text(out.name())),
+            Builtin::ParseDateFormats(layouts) => {
+                let list: Vec<&str> = layouts.iter().map(Layout::as_str).collect();
+                ("parse_date", Some(serde_json::json!({ "formats": list })))
+            }
+            Builtin::ParseNumber { units: false } => ("parse_number", None),
+            Builtin::ParseNumber { units: true } => {
+                ("parse_number", Some(serde_json::json!({"units": true})))
+            }
+            Builtin::ParseRange(RangeEnd::Min) => ("parse_range", text("min")),
+            Builtin::ParseRange(RangeEnd::Max) => ("parse_range", text("max")),
         }
     }
 
     /// True for a transform only language 2 has, which needs plan format 2.
     pub(crate) fn is_language_2(&self) -> bool {
-        language_2_only(self.spec().0)
+        use Builtin as B;
+        !matches!(
+            self,
+            B::Cast(_)
+                | B::Lower
+                | B::Trim
+                | B::SplitName(_)
+                | B::Join(_)
+                | B::ParseDate
+                | B::NormalizePhone
+                | B::NormalizeLinkedin
+                | B::ToDomain
+        )
     }
 
     /// Applies the transform to a JS array, as `from` with several paths produces. Only `join`
@@ -367,7 +437,7 @@ fn is_js_space(c: char) -> bool {
     (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
 }
 
-fn js_trim(s: &str) -> &str {
+pub(crate) fn js_trim(s: &str) -> &str {
     // ASCII edges by byte, and the char walk only when an edge is non-ASCII (it can be Unicode space).
     let ascii_space = |c: &u8| matches!(c, b'\t'..=b'\r' | b' ');
     let b = s.as_bytes();
@@ -396,7 +466,7 @@ fn lower(s: Cow<'_, str>) -> Cow<'_, str> {
 }
 
 /// The number a `Value` holds, as JavaScript sees it.
-fn as_f64(v: &Value) -> Option<f64> {
+pub(crate) fn as_f64(v: &Value) -> Option<f64> {
     match v {
         Value::Int(i) => Some(*i as f64),
         Value::BigInt(d) => d.parse().ok(),
@@ -520,85 +590,6 @@ fn split_name(s: &str, part: NamePart) -> Option<&str> {
         NamePart::First => Some(s.split_once(' ').map_or(s, |(first, _)| first)),
         NamePart::Last => s.rsplit_once(' ').map(|(_, last)| last),
     }
-}
-
-/// The `n` ASCII digits at `at` as a number. `None` if any is missing or not a digit.
-fn digits_at(s: &[u8], at: usize, n: usize) -> Option<u32> {
-    let d = s.get(at..at + n)?;
-    d.iter().try_fold(0u32, |v, c| {
-        c.is_ascii_digit().then(|| v * 10 + u32::from(c - b'0'))
-    })
-}
-
-fn date_field(s: &[u8], at: usize) -> Option<u32> {
-    if s.get(at) == Some(&b'-') {
-        digits_at(s, at + 1, 2)
-    } else {
-        None
-    }
-}
-
-fn days_in_month(y: u32, m: u32) -> u32 {
-    match m {
-        2 if y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400)) => 29,
-        2 => 28,
-        4 | 6 | 9 | 11 => 30,
-        _ => 31,
-    }
-}
-
-/// Accepts YYYY, YYYY-MM and YYYY-MM-DD after a trim. Anything after a T or space at 10 is dropped.
-fn date_from_string(v: &str) -> Option<&str> {
-    let s = js_trim(v);
-    let b = s.as_bytes();
-    let end = if b.len() > 10 && matches!(b[10], b'T' | b' ') {
-        10
-    } else {
-        b.len()
-    };
-    if end != 4 && end != 7 && end != 10 {
-        return None;
-    }
-    let y = digits_at(b, 0, 4)?;
-    let m = if end > 4 { date_field(b, 4)? } else { 1 };
-    let d = if end > 7 { date_field(b, 7)? } else { 1 };
-    ((1..=12).contains(&m) && d >= 1 && d <= days_in_month(y, m)).then(|| &s[..end])
-}
-
-/// Epoch seconds below 1e11, else milliseconds, as the UTC day. Providers send 0 or negatives for
-/// "unknown". Past year 9999 the number was microseconds or an id.
-fn date_from_epoch(v: f64) -> Option<String> {
-    const YEAR_10000_MS: f64 = 253_402_300_800_000.0;
-    if v.fract() != 0.0 || v <= 0.0 {
-        return None;
-    }
-    let ms = if v < 1e11 { v * 1000.0 } else { v };
-    if ms >= YEAR_10000_MS {
-        return None;
-    }
-    let (y, m, d) = civil_from_days((ms / 86_400_000.0).floor() as i64);
-    // 1970 to 9999, so four digits. Written by hand because `format!` took most of this function's time.
-    let digit = |n: i64, p: i64| char::from(b'0' + (n / p % 10) as u8);
-    let mut out = String::with_capacity(10);
-    out.extend([1000, 100, 10, 1].map(|p| digit(y, p)));
-    for n in [m, d] {
-        out.push('-');
-        out.extend([10, 1].map(|p| digit(n, p)));
-    }
-    Some(out)
-}
-
-/// Howard Hinnant's days-since-1970 to proleptic Gregorian (year, month, day).
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    (yoe + era * 400 + i64::from(m <= 2), m, d)
 }
 
 /// A phone as text. A number must be whole and positive. Otherwise its digits pass as a phone.
@@ -801,6 +792,62 @@ fn valid_money(v: &Value) -> bool {
                 && js_number_unbounded(&s.replace(',', "")).is_some_and(|n| n > 0.0)
         }
         v => as_f64(v).is_some_and(|f| f.is_finite() && f > 0.0),
+    }
+}
+
+/// A number, or text with commas and a leading currency sign or 3-letter code. With `units`, a
+/// K, M or B suffix in any case multiplies by 10^3, 10^6 or 10^9.
+fn parse_number(v: &Value, units: bool) -> Option<f64> {
+    match v {
+        Value::Str(s) => number_text(s, units),
+        v => to_number(v),
+    }
+}
+
+fn number_text(s: &str, units: bool) -> Option<f64> {
+    let mut s = js_trim(s);
+    if let Some(rest) = s.strip_prefix(['$', '€', '£', '¥', '₹']) {
+        s = rest;
+    } else if is_code(s.as_bytes(), 0) {
+        s = s[3..].trim_start_matches(is_js_space);
+    }
+    let mut text = s.replace(',', "");
+    let exponent = match text.as_bytes().last() {
+        Some(b'k' | b'K') => "e3",
+        Some(b'm' | b'M') => "e6",
+        Some(b'b' | b'B') => "e9",
+        _ => "",
+    };
+    if units && !exponent.is_empty() {
+        // Exact through the decimal parse: 3.2e6, where 3.2 * 1e6 can round off a whole number.
+        text.pop();
+        text.push_str(exponent);
+    }
+    js_number(&text)
+}
+
+/// One end of `"51-200"`, `"51 - 200"`, `"10,001+"` (no max) or `"5"` (both ends). Both ends
+/// must read as numbers.
+fn parse_range(v: &Value, end: RangeEnd) -> Option<f64> {
+    let Value::Str(s) = v else {
+        return to_number(v);
+    };
+    let s = js_trim(s);
+    // The dash after the first character, so a leading minus stays a sign.
+    let dash = s.get(1..).and_then(|r| r.find('-')).map(|i| i + 1);
+    let (lo, hi) = match (s.strip_suffix('+'), dash) {
+        (Some(lo), _) => (lo, None),
+        (None, Some(i)) => (&s[..i], Some(&s[i + 1..])),
+        (None, None) => (s, Some(s)),
+    };
+    let lo = number_text(lo, false)?;
+    let hi = match hi {
+        Some(h) => Some(number_text(h, false)?),
+        None => None,
+    };
+    match end {
+        RangeEnd::Min => Some(lo),
+        RangeEnd::Max => hi,
     }
 }
 

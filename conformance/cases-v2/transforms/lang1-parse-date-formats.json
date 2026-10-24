@@ -1,0 +1,11 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"since": {"from": "since", "transform": {"parse_date": {"formats": ["%B %Y"]}}}}
+  },
+  "schema": {"type": "object", "properties": {"since": {"type": "string"}}},
+  "error": "acme orgs v1: fields[\"since\"]: invalid argument for parse_date"
+}

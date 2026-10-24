@@ -51,11 +51,15 @@ impl Resolver<'_> {
                     let (name, arg) = (t.name.clone(), t.arg.clone());
                     return Ok(TxRef::Custom { index, name, arg });
                 }
-                // Language 1 does not have the language 2 transforms.
-                let found = if self.language == 1 && language_2_only(&t.name) {
-                    Err(ArgError::UnknownTransform)
-                } else {
-                    builtin(&t.name, t.arg.as_ref())
+                // Language 1 does not have the language 2 transforms, nor parse_date's formats.
+                let found = match builtin(&t.name, t.arg.as_ref()) {
+                    _ if self.language == 1 && language_2_only(&t.name) => {
+                        Err(ArgError::UnknownTransform)
+                    }
+                    Ok(b) if self.language == 1 && b.is_language_2() => {
+                        Err(ArgError::InvalidArgument)
+                    }
+                    found => found,
                 };
                 found.map(TxRef::Builtin).map_err(|e| match e {
                     ArgError::UnknownTransform => {

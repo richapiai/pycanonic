@@ -114,7 +114,7 @@ pub(crate) fn apply<'a>(b: &Builtin, v: Value<'a>) -> Option<Value<'a>> {
 }
 
 /// The argument as an object with all of `required` and nothing outside `required` and `optional`.
-fn object<'j>(
+pub(crate) fn object<'j>(
     arg: Option<&'j J>,
     required: &[&str],
     optional: &[&str],

@@ -101,6 +101,9 @@ _DEFAULT_NAMES = (
     "title",
     "split",
     "to_string",
+    "format_date",
+    "parse_number",
+    "parse_range",
 )
 _SEMANTICS = ("email", "phone", "domain", "linkedin_url", "url", "iso_date", "money")
 

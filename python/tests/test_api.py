@@ -153,6 +153,9 @@ def test_default_transforms_and_validators_like_the_readme() -> None:
             "title",
             "split",
             "to_string",
+            "format_date",
+            "parse_number",
+            "parse_range",
         ]
     )
     assert validators["email"]("N/A") is None

@@ -1,5 +1,5 @@
-// The A9 string transforms of language 2: regex, strip_prefix, strip_suffix, replace, lookup,
-// null_if, upper, title, split and to_string.
+// The A9 transforms of language 2: regex, strip_prefix, strip_suffix, replace, lookup, null_if,
+// upper, title, split, to_string, format_date, parse_date formats, parse_number and parse_range.
 
 use canonic_core::{ArgError, Builtin, Plan, Transform, Value, builtin, compile};
 use proptest::prelude::*;
@@ -211,8 +211,277 @@ fn arguments_are_checked() {
 }
 
 #[test]
-fn nineteen_default_transforms() {
-    assert_eq!(canonic_core::default_transform_names().len(), 19);
+fn dates_numbers_and_ranges() {
+    use Value::{Bool, Float, Int, Null};
+    let dms = || Some(json!("datetime_ms"));
+    let formats = |f: J| Some(json!({ "formats": f }));
+    let units = || Some(json!({"units": true}));
+    let cases: Vec<(&str, Option<J>, Value<'static>, Value<'static>)> = vec![
+        // The rows of the brief.
+        (
+            "format_date",
+            dms(),
+            s("2021-03"),
+            s("2021-03-01T00:00:00.000Z"),
+        ),
+        (
+            "format_date",
+            dms(),
+            s("1996"),
+            s("1996-01-01T00:00:00.000Z"),
+        ),
+        (
+            "format_date",
+            dms(),
+            s("2021-03-01T23:30:00-05:00"),
+            s("2021-03-02T04:30:00.000Z"),
+        ),
+        (
+            "format_date",
+            dms(),
+            Int(1614556800),
+            s("2021-03-01T00:00:00.000Z"),
+        ),
+        (
+            "format_date",
+            Some(json!("epoch_ms")),
+            s("2021-03-01"),
+            Int(1614556800000),
+        ),
+        ("format_date", Some(json!("date")), s("2021-02-29"), Null),
+        (
+            "parse_date",
+            formats(json!(["%B %Y"])),
+            s("june 2014"),
+            s("2014-06"),
+        ),
+        (
+            "parse_date",
+            formats(json!(["%m/%Y"])),
+            s("03/2021"),
+            s("2021-03"),
+        ),
+        ("parse_number", units(), s("$3.2M"), Int(3200000)),
+        ("parse_number", units(), s("40k"), Int(40000)),
+        ("parse_number", units(), s("1,234"), Int(1234)),
+        ("parse_number", None, s("40k"), Null),
+        ("parse_range", Some(json!("min")), s("10,001+"), Int(10001)),
+        ("parse_range", Some(json!("max")), s("10,001+"), Null),
+        // format_date, each output.
+        (
+            "format_date",
+            Some(json!("date")),
+            s("2021-03-01T23:30:00-05:00"),
+            s("2021-03-02"),
+        ),
+        (
+            "format_date",
+            Some(json!("datetime")),
+            s("2021-03-01T04:30:15.250Z"),
+            s("2021-03-01T04:30:15Z"),
+        ),
+        (
+            "format_date",
+            dms(),
+            s("2021-03-01T04:30:15.25Z"),
+            s("2021-03-01T04:30:15.250Z"),
+        ),
+        (
+            "format_date",
+            dms(),
+            s("2021-03-01 04:30:15+0130"),
+            s("2021-03-01T03:00:15.000Z"),
+        ),
+        // No offset is UTC.
+        (
+            "format_date",
+            dms(),
+            s("2021-03-01T04:30"),
+            s("2021-03-01T04:30:00.000Z"),
+        ),
+        (
+            "format_date",
+            Some(json!("epoch_s")),
+            s("2021-03-01T00:00:01.999Z"),
+            Int(1614556801),
+        ),
+        (
+            "format_date",
+            Some(json!("epoch_s")),
+            s("1969-12-31"),
+            Int(-86400),
+        ),
+        (
+            "format_date",
+            Some(json!("epoch_ms")),
+            Int(1614556800123),
+            Int(1614556800123),
+        ),
+        (
+            "format_date",
+            Some(json!("date")),
+            Float(1614556800.0),
+            s("2021-03-01"),
+        ),
+        // A time parse_date drops but format_date cannot read is the date at midnight, as parse_date gives it.
+        (
+            "format_date",
+            dms(),
+            s("2021-03-01Tjunk"),
+            s("2021-03-01T00:00:00.000Z"),
+        ),
+        (
+            "format_date",
+            dms(),
+            s("2021-03-01T24:00:00Z"),
+            s("2021-03-01T00:00:00.000Z"),
+        ),
+        // Past year 9999 after the offset, or what parse_date refuses, is null.
+        ("format_date", dms(), s("9999-12-31T23:00:00-05:00"), Null),
+        ("format_date", dms(), s("2021-13"), Null),
+        ("format_date", dms(), Int(0), Null),
+        ("format_date", dms(), Bool(true), Null),
+        // parse_date formats.
+        (
+            "parse_date",
+            formats(json!(["%b %d, %Y"])),
+            s("JUN 5, 2014"),
+            s("2014-06-05"),
+        ),
+        (
+            "parse_date",
+            formats(json!(["%d/%m/%Y"])),
+            s(" 29/02/2021 "),
+            Null,
+        ),
+        (
+            "parse_date",
+            formats(json!(["%d/%m/%Y"])),
+            s("28/02/2021"),
+            s("2021-02-28"),
+        ),
+        ("parse_date", formats(json!(["%Y"])), s("2014"), s("2014")),
+        (
+            "parse_date",
+            formats(json!(["%m/%Y", "%B %Y"])),
+            s("March 2021"),
+            s("2021-03"),
+        ),
+        ("parse_date", formats(json!(["%B %Y"])), s("jun 2014"), Null),
+        (
+            "parse_date",
+            formats(json!(["%b %Y"])),
+            s("june 2014"),
+            Null,
+        ),
+        (
+            "parse_date",
+            formats(json!(["%m/%Y"])),
+            s("3/2021"),
+            s("2021-03"),
+        ),
+        ("parse_date", formats(json!(["%m/%Y"])), s("13/2021"), Null),
+        ("parse_date", formats(json!(["%m/%Y"])), s("03/2021x"), Null),
+        // A value no format reads falls back to the rules without an argument.
+        (
+            "parse_date",
+            formats(json!(["%m/%Y"])),
+            s("2021-03-04"),
+            s("2021-03-04"),
+        ),
+        (
+            "parse_date",
+            formats(json!(["%m/%Y"])),
+            Int(1614556800),
+            s("2021-03-01"),
+        ),
+        // parse_number.
+        ("parse_number", None, s("1,234.5"), Float(1234.5)),
+        ("parse_number", None, s("USD 1,000"), Int(1000)),
+        ("parse_number", None, s("€12"), Int(12)),
+        ("parse_number", None, Int(7), Int(7)),
+        ("parse_number", None, Float(2.0), Int(2)),
+        ("parse_number", units(), s("1.5b"), Int(1500000000)),
+        ("parse_number", units(), s("USD 2.5K"), Int(2500)),
+        ("parse_number", units(), s("12"), Int(12)),
+        (
+            "parse_number",
+            Some(json!({"units": false})),
+            s("40k"),
+            Null,
+        ),
+        ("parse_number", units(), s("k"), Null),
+        ("parse_number", units(), s("1e3k"), Null),
+        ("parse_number", None, s("N/A"), Null),
+        ("parse_number", None, s(""), Null),
+        ("parse_number", None, Bool(true), Null),
+        ("parse_number", None, Float(f64::NAN), Null),
+        // parse_range.
+        ("parse_range", Some(json!("min")), s("51-200"), Int(51)),
+        ("parse_range", Some(json!("max")), s("51-200"), Int(200)),
+        ("parse_range", Some(json!("min")), s("51 - 200"), Int(51)),
+        ("parse_range", Some(json!("max")), s("51 - 200"), Int(200)),
+        ("parse_range", Some(json!("min")), s("5"), Int(5)),
+        ("parse_range", Some(json!("max")), s("5"), Int(5)),
+        ("parse_range", Some(json!("max")), Int(5), Int(5)),
+        (
+            "parse_range",
+            Some(json!("max")),
+            s("1,001-5,000"),
+            Int(5000),
+        ),
+        ("parse_range", Some(json!("min")), s("51-"), Null),
+        ("parse_range", Some(json!("min")), s("a-b"), Null),
+        ("parse_range", Some(json!("min")), s("+"), Null),
+        ("parse_range", Some(json!("min")), Bool(true), Null),
+    ];
+    for (name, arg, input, want) in cases {
+        assert_eq!(
+            run(name, arg.clone(), input.clone()),
+            want,
+            "{name} {arg:?} on {input:?}"
+        );
+    }
+}
+
+#[test]
+fn date_number_range_arguments_are_checked() {
+    let bad: Vec<(&str, Option<J>)> = vec![
+        ("format_date", None),
+        ("format_date", Some(json!("time"))),
+        ("format_date", Some(json!(1))),
+        ("parse_date", Some(json!("%Y"))),
+        ("parse_date", Some(json!({"formats": []}))),
+        ("parse_date", Some(json!({"formats": "%Y"}))),
+        ("parse_date", Some(json!({"formats": [1]}))),
+        ("parse_date", Some(json!({"formats": ["%m/%d"]}))),
+        ("parse_date", Some(json!({"formats": ["%Y %d"]}))),
+        ("parse_date", Some(json!({"formats": ["%Y %Y"]}))),
+        ("parse_date", Some(json!({"formats": ["%Y %m %B"]}))),
+        ("parse_date", Some(json!({"formats": ["%Y %H"]}))),
+        ("parse_date", Some(json!({"formats": ["%Y%"]}))),
+        ("parse_date", Some(json!({"formats": ["%Y"], "x": 1}))),
+        ("parse_number", Some(json!(true))),
+        ("parse_number", Some(json!({"units": "yes"}))),
+        ("parse_number", Some(json!({"units": true, "x": 1}))),
+        ("parse_range", None),
+        ("parse_range", Some(json!("mid"))),
+    ];
+    for (name, arg) in bad {
+        assert_eq!(
+            builtin(name, arg.as_ref()),
+            Err(ArgError::InvalidArgument),
+            "{name} {arg:?}"
+        );
+    }
+}
+
+#[test]
+fn twenty_two_default_transforms() {
+    let names = canonic_core::default_transform_names();
+    assert_eq!(names.len(), 22);
+    assert_eq!(canonic_core::LANGUAGE_1_TRANSFORMS, 9);
+    assert_eq!(names[canonic_core::LANGUAGE_1_TRANSFORMS], "regex");
 }
 
 fn schema() -> J {
@@ -230,7 +499,16 @@ fn spec(language: Option<u8>, transform: J) -> J {
 
 #[test]
 fn language_1_does_not_see_the_new_names() {
-    for name in ["regex", "strip_prefix", "lookup", "upper", "to_string"] {
+    for name in [
+        "regex",
+        "strip_prefix",
+        "lookup",
+        "upper",
+        "to_string",
+        "format_date",
+        "parse_number",
+        "parse_range",
+    ] {
         for language in [None, Some(1)] {
             let err = compile(&spec(language, json!({name: "x"})), &schema(), &[]).unwrap_err();
             assert_eq!(
@@ -241,6 +519,22 @@ fn language_1_does_not_see_the_new_names() {
     }
     // A custom transform with a new name still works in language 1.
     let plan = compile(&spec(None, json!("upper")), &schema(), &["upper".into()]).unwrap();
+    assert_eq!(serde_json::to_value(&plan).unwrap()["format"], 1);
+}
+
+#[test]
+fn language_1_parse_date_takes_no_argument() {
+    let t = json!({"parse_date": {"formats": ["%m/%Y"]}});
+    for language in [None, Some(1)] {
+        let err = compile(&spec(language, t.clone()), &schema(), &[]).unwrap_err();
+        assert_eq!(
+            err.message,
+            "acme orgs v1: fields[\"slug\"]: invalid argument for parse_date"
+        );
+    }
+    let plan = compile(&spec(None, json!("parse_date")), &schema(), &[]).unwrap();
+    assert_eq!(serde_json::to_value(&plan).unwrap()["format"], 1);
+    let plan = compile(&spec(Some(2), json!("parse_date")), &schema(), &[]).unwrap();
     assert_eq!(serde_json::to_value(&plan).unwrap()["format"], 1);
 }
 
@@ -267,6 +561,12 @@ fn plans_with_new_builtins_round_trip_as_format_2() {
         json!("title"),
         json!({"split": {"sep": "/", "index": -1}}),
         json!("to_string"),
+        json!({"format_date": "datetime_ms"}),
+        json!({"format_date": "epoch_s"}),
+        json!({"parse_date": {"formats": ["%B %Y", "%m/%d/%Y"]}}),
+        json!("parse_number"),
+        json!({"parse_number": {"units": true}}),
+        json!({"parse_range": "max"}),
     ];
     for t in all {
         let plan = compile(&spec(Some(2), t.clone()), &schema(), &[]).unwrap();
@@ -290,6 +590,12 @@ fn plans_with_new_builtins_round_trip_as_format_2() {
         plan.source(),
         "slug <- url | regex \"/company/([^/?#]+)\"\n"
     );
+    let t = json!({"parse_date": {"formats": ["%B %Y"]}});
+    let plan = compile(&spec(Some(2), t), &schema(), &[]).unwrap();
+    assert_eq!(
+        plan.source(),
+        "slug <- url | parse_date {\"formats\":[\"%B %Y\"]}\n"
+    );
 }
 
 /// Every new transform with a valid argument.
@@ -307,6 +613,16 @@ fn new_builtins() -> Vec<Builtin> {
         tx("title", None),
         tx("split", Some(json!({"sep": "a", "index": -1}))),
         tx("to_string", None),
+        tx("format_date", Some(json!("datetime_ms"))),
+        tx("format_date", Some(json!("epoch_ms"))),
+        tx(
+            "parse_date",
+            Some(json!({"formats": ["%b %d %Y", "%m/%Y"]})),
+        ),
+        tx("parse_number", None),
+        tx("parse_number", Some(json!({"units": true}))),
+        tx("parse_range", Some(json!("min"))),
+        tx("parse_range", Some(json!("max"))),
     ]
 }
 
@@ -343,7 +659,8 @@ fn json_values() -> impl Strategy<Value = J> {
 
 proptest! {
     /// No panic on any input. Containers give null everywhere. The string transforms also give
-    /// null on numbers and booleans. lookup, null_if and to_string read scalars.
+    /// null on numbers and booleans. lookup, null_if and to_string read scalars, and the date,
+    /// number and range transforms read numbers too.
     #[test]
     fn junk_gives_null(j in json_values()) {
         let v = leaf(&j);
@@ -353,8 +670,15 @@ proptest! {
                 b,
                 Builtin::Lookup { .. } | Builtin::NullIf(_) | Builtin::ToString
             );
+            let number_ok = matches!(
+                b,
+                Builtin::FormatDate(_)
+                    | Builtin::ParseDateFormats(_)
+                    | Builtin::ParseNumber { .. }
+                    | Builtin::ParseRange(_)
+            );
             let junk = matches!(j, J::Null | J::Array(_) | J::Object(_))
-                || (!scalar_ok && !j.is_string());
+                || (!scalar_ok && !j.is_string() && !(number_ok && j.is_number()));
             if junk {
                 prop_assert_eq!(out, Value::Null, "{:?} on {}", b, j);
             }

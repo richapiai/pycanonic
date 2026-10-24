@@ -388,7 +388,7 @@ fn builtin_arguments() {
         assert_eq!(b(name, None), Err(ArgError::UnknownTransform), "{name}");
     }
     // The nine of language 1. tests/transforms2.rs checks the language 2 ones.
-    for name in &default_transform_names()[..9] {
+    for name in &default_transform_names()[..canonic_core::LANGUAGE_1_TRANSFORMS] {
         let a = match *name {
             "cast" => arg("string"),
             "split_name" => arg("first"),
@@ -396,7 +396,7 @@ fn builtin_arguments() {
         };
         assert!(b(name, a).is_ok(), "{name}");
     }
-    assert_eq!(default_transform_names().len(), 19);
+    assert_eq!(default_transform_names().len(), 22);
 }
 
 #[test]

@@ -1,0 +1,77 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "founded_at": {"from": "founded", "transform": {"format_date": "datetime_ms"}},
+      "founded_ms": {"from": "founded", "transform": {"format_date": "epoch_ms"}},
+      "since": {"from": "since", "transform": {"parse_date": {"formats": ["%B %Y", "%m/%Y"]}}},
+      "revenue": {"from": "revenue", "transform": {"parse_number": {"units": true}}},
+      "staff": {"from": "staff", "transform": "parse_number"},
+      "size_min": {"from": "size", "transform": {"parse_range": "min"}},
+      "size_max": {"from": "size", "transform": {"parse_range": "max"}}
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "founded_at": {"type": "string"},
+      "founded_ms": {"type": "integer"},
+      "since": {"type": "string"},
+      "revenue": {"type": "number"},
+      "staff": {"type": "number"},
+      "size_min": {"type": "integer"},
+      "size_max": {"type": "integer"}
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "founded": "2021-03-01T23:30:00-05:00",
+        "since": "june 2014",
+        "revenue": "$3.2M",
+        "staff": "1,234",
+        "size": "51 - 200"
+      },
+      "context": null,
+      "expected": {
+        "founded_at": "2021-03-02T04:30:00.000Z",
+        "founded_ms": 1614659400000,
+        "since": "2014-06",
+        "revenue": 3200000,
+        "staff": 1234,
+        "size_min": 51,
+        "size_max": 200
+      }
+    },
+    {
+      "body": {"founded": "2021-03", "since": "03/2021", "revenue": "40k", "staff": "40k", "size": "10,001+"},
+      "context": null,
+      "expected": {
+        "founded_at": "2021-03-01T00:00:00.000Z",
+        "founded_ms": 1614556800000,
+        "since": "2021-03",
+        "revenue": 40000,
+        "staff": null,
+        "size_min": 10001,
+        "size_max": null
+      }
+    },
+    {
+      "body": {"founded": 1614556800, "since": [1], "revenue": true, "staff": 7, "size": "5"},
+      "context": null,
+      "expected": {
+        "founded_at": "2021-03-01T00:00:00.000Z",
+        "founded_ms": 1614556800000,
+        "since": null,
+        "revenue": null,
+        "staff": 7,
+        "size_min": 5,
+        "size_max": 5
+      }
+    }
+  ]
+}
