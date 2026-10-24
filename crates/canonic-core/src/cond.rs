@@ -117,8 +117,8 @@ fn empty<D: Doc>(d: &D) -> bool {
     }
 }
 
-/// A document value (`None`: missing or null) against a JSON value. Numbers compare by value,
-/// containers as JSON (object key order does not count), and nothing else crosses types.
+/// A document value (`None`: missing or null) against a JSON value. Numbers compare by value, also
+/// inside containers, which compare by their key text. Nothing else crosses types.
 fn equal<D: Doc>(d: Option<&D>, v: &Value) -> bool {
     let Some(d) = d else {
         return v.is_null();
@@ -131,13 +131,13 @@ fn equal<D: Doc>(d: Option<&D>, v: &Value) -> bool {
             number(&a) == b.as_f64()
         }
         (V::Container, Value::Array(_) | Value::Object(_)) => {
-            json(d, 0, &mut { MAX_NODES }).as_ref() == Some(v)
+            key_text(d).is_some_and(|t| t == text(v.clone()))
         }
         _ => false,
     }
 }
 
-fn number(v: &V) -> Option<f64> {
+pub(crate) fn number(v: &V) -> Option<f64> {
     match v {
         V::Int(i) => Some(*i as f64),
         V::Float(f) => Some(*f),
@@ -146,26 +146,38 @@ fn number(v: &V) -> Option<f64> {
     }
 }
 
-/// A value as JSON text with object keys sorted, so equal values give equal text. `None` past the
-/// copy limits (a host object that contains itself).
+/// A value as JSON text with object keys sorted and integral numbers written as integers, so
+/// values that `eq`, `unique` and grouping call equal give equal text (`{"a": 1.0}` is `{"a":1}`).
+/// `None` past the copy limits (a host object that contains itself).
 pub(crate) fn key_text<D: Doc>(d: &D) -> Option<String> {
-    fn sort(v: &mut Value) {
+    json(d, 0, &mut { MAX_NODES }).map(text)
+}
+
+/// `key_text` of a JSON value.
+fn text(mut v: Value) -> String {
+    fn canon(v: &mut Value) {
         match v {
             Value::Object(m) => {
                 m.sort_keys();
-                m.values_mut().for_each(sort);
+                m.values_mut().for_each(canon);
             }
-            Value::Array(a) => a.iter_mut().for_each(sort),
+            Value::Array(a) => a.iter_mut().for_each(canon),
+            Value::Number(n) => {
+                // past 2^63 an integral float stays float text, so it equals no integer.
+                if let Some(f) = n.as_f64().filter(|f| f.fract() == 0.0 && f.abs() < 9.2e18) {
+                    *v = Value::from(f as i64);
+                }
+            }
             _ => {}
         }
     }
-    let mut v = json(d, 0, &mut { MAX_NODES })?;
-    sort(&mut v);
-    Some(v.to_string())
+    canon(&mut v);
+    v.to_string()
 }
 
 /// A value's place in the shared order of sorting and `min`/`max`: numbers by value, then strings
-/// by code point, then booleans (`false` first), then containers by their key text, then null.
+/// by code point, then booleans (`false` first), then containers by their key text, then null
+/// (with a container past the copy limits).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Rank {
     Num(f64),
@@ -183,7 +195,8 @@ impl Rank {
             V::Null => Rank::Null,
             V::Bool(b) => Rank::Bool(b),
             V::Str(s) => Rank::Str(s.into_owned()),
-            V::Container => Rank::Text(key_text(d).unwrap_or_default()),
+            // Past the copy limits it has no text, so it ranks last, as null does.
+            V::Container => key_text(d).map_or(Rank::Null, Rank::Text),
             n => number(&n).map_or(Rank::Null, Rank::Num),
         }
     }
@@ -210,5 +223,50 @@ impl Rank {
             true => asc.reverse(),
             false => asc,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::doc::Key;
+    use std::borrow::Cow;
+
+    /// An array that holds itself, deeper than any copy limit.
+    #[derive(Clone)]
+    struct Deep;
+
+    impl Doc for Deep {
+        fn get(&self, _: &Key) -> Option<Self> {
+            None
+        }
+        fn idx(&self, _: usize) -> Option<Self> {
+            Some(Deep)
+        }
+        fn leaf(&self) -> V<'_> {
+            V::Container
+        }
+        fn is_null(&self) -> bool {
+            false
+        }
+        fn len(&self) -> Option<usize> {
+            Some(1)
+        }
+        fn item(&self, _: usize) -> Option<Self> {
+            Some(Deep)
+        }
+        fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>> {
+            None
+        }
+    }
+
+    #[test]
+    fn a_container_past_the_copy_limits_ranks_last() {
+        assert_eq!(key_text(&Deep), None);
+        let deep = Rank::of(Some(&Deep));
+        assert_eq!(deep, Rank::Null);
+        let empty = Rank::Text("[]".into());
+        assert_eq!(empty.cmp(&deep, false), Ordering::Less);
+        assert_eq!(Rank::Str(String::new()).cmp(&deep, true), Ordering::Less);
     }
 }

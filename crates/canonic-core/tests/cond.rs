@@ -96,3 +96,26 @@ fn missing_and_empty() {
         assert!(!empty(k), "{k} is not empty");
     }
 }
+
+#[test]
+fn eq_on_containers_compares_numbers_by_value_and_ignores_key_order() {
+    let all = Filter::all();
+    let root = parse(
+        br#"{"a": [1], "f": [1.0], "o": {"a": 1, "b": {"c": 2.0, "d": [3]}}, "s": ["1"]}"#,
+        &all,
+    )
+    .unwrap();
+    let root = Some(&&root);
+    let eq = |k: &str, v: serde_json::Value| holds(&Cond::Eq(path(&[k]), v), root, None, None);
+    assert!(eq("a", json!([1.0])));
+    assert!(eq("f", json!([1])));
+    assert!(eq("o", json!({"b": {"d": [3.0], "c": 2}, "a": 1.0})));
+    assert!(!eq("o", json!({"a": 1, "b": {"c": 2.5, "d": [3]}})));
+    assert!(!eq("s", json!([1])));
+    assert!(!eq("a", json!([true])));
+    let any = Cond::In(
+        path(&["o"]),
+        vec![json!([1]), json!({"b": {"c": 2, "d": [3]}, "a": 1})],
+    );
+    assert!(holds(&any, root, None, None));
+}

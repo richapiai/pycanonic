@@ -1,0 +1,61 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "n": {
+        "aggregate": "count",
+        "from": "$group"
+      },
+      "roles[]": {
+        "from": "$group",
+        "item": {
+          "title": "title"
+        }
+      },
+      "jobs[]": {
+        "from": "jobs",
+        "item": {
+          "m": {
+            "aggregate": "max",
+            "from": "$group[].x"
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "number"
+      },
+      "roles": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "jobs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "m": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"n\"].from: $group needs a group_by array; spec.fields[\"roles[]\"].from: $group needs a group_by array; spec.fields[\"jobs[]\"].item[\"m\"].from: $group needs a group_by array"
+}

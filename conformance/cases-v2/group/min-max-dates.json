@@ -1,0 +1,95 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "jobs[]": {
+        "from": "positions",
+        "group_by": "company_id",
+        "item": {
+          "company": "company_name",
+          "start": {
+            "aggregate": "min",
+            "from": "$group[].started"
+          },
+          "end": {
+            "aggregate": "max",
+            "from": "$group[].ended",
+            "nulls": "propagate"
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "jobs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "company": {
+              "type": "string"
+            },
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "positions": [
+          {
+            "company_id": "A",
+            "company_name": "Acme",
+            "started": "2020-07",
+            "ended": "2022-01"
+          },
+          {
+            "company_id": "A",
+            "company_name": "Acme",
+            "started": "2019-01",
+            "ended": "2020-06"
+          },
+          {
+            "company_id": "B",
+            "company_name": "Bolt",
+            "started": "2022-02",
+            "ended": "2023-05"
+          },
+          {
+            "company_id": "B",
+            "company_name": "Bolt",
+            "started": "2023-06"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "jobs": [
+          {
+            "company": "Acme",
+            "start": "2019-01",
+            "end": "2022-01"
+          },
+          {
+            "company": "Bolt",
+            "start": "2022-02",
+            "end": null
+          }
+        ]
+      }
+    }
+  ]
+}

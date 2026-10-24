@@ -3,7 +3,7 @@
 
 use crate::canonical::{Empty, Semantic};
 use crate::cond::Cond;
-use crate::spec::{Path, Source, Status, Step};
+use crate::spec::{Aggregate, Path, Source, Status, Step};
 use crate::transforms::{Builtin, CastTo, NamePart};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -87,6 +87,13 @@ pub struct ListOps<P = Path> {
     pub sort: Option<(P, bool)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
+    /// A5, after `limit`: the key path and whether groups are consecutive. Each group is mapped
+    /// once, its first element as the element and the group as `$group`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<(P, bool)>,
+    /// The source is `$group`: the group of the grouped item map around, not a path.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub from_group: bool,
 }
 
 impl<P> Default for ListOps<P> {
@@ -100,6 +107,8 @@ impl<P> Default for ListOps<P> {
             unique: None,
             sort: None,
             limit: None,
+            group: None,
+            from_group: false,
         }
     }
 }
@@ -119,6 +128,7 @@ impl<P> ListOps<P> {
             || self.unique.is_some()
             || self.sort.is_some()
             || self.limit.is_some()
+            || self.group.is_some()
     }
 }
 
@@ -150,6 +160,8 @@ pub enum Field {
     OmitNull(Box<Field>),
     /// Language 2: a value written as it is, whatever the body. Always a fill. The `usize` is the stat slot.
     Const(Value, usize),
+    /// Language 2: an aggregate over an array or a group. The `usize` is the stat slot.
+    Aggregate(Aggregate, usize),
     /// Language 2: a canonical field the spec does not map, written as its `x-empty`:
     /// `List` (`[]`) or `Object` (`{}`). An unmapped null or left-out field is `Null` or `OmitNull`.
     Empty(Empty),
@@ -297,7 +309,9 @@ impl Plan {
         fn field(f: &Field) -> bool {
             match f {
                 Field::Null | Field::Scalar(_) => false,
-                Field::Const(..) | Field::OmitNull(_) | Field::Empty(_) => true,
+                Field::Const(..) | Field::OmitNull(_) | Field::Empty(_) | Field::Aggregate(..) => {
+                    true
+                }
                 Field::Object {
                     members,
                     present,
@@ -379,16 +393,26 @@ fn line(out: &mut String, name: &str, field: &Field) {
             }
             _ = writeln!(out, "{line}");
         }
+        Field::Aggregate(a, _) => {
+            let mut from = flat(&a.from, &a.flatten);
+            if !a.pluck.is_empty() {
+                from += &format!("[].{}", path(&a.pluck)).replace(".[", "[");
+            } else if !a.flatten.is_empty() {
+                from += "[]";
+            }
+            let mut line = format!("{name} <- {}({from})", a.op.name());
+            if a.propagate {
+                line += " | nulls propagate";
+            }
+            if let Some(sep) = &a.sep {
+                line += &format!(" | sep {}", Value::from(sep.as_str()));
+            }
+            _ = writeln!(out, "{line}");
+        }
         Field::List {
             from, kind, ops, ..
         } => {
-            let mut from = path(from);
-            for p in &ops.flatten {
-                from += "[]";
-                if !p.is_empty() {
-                    from += &format!(".{}", path(p)).replace(".[", "[");
-                }
-            }
+            let from = flat(from, &ops.flatten);
             let mut opts = String::new();
             if ops.wrap {
                 opts += " | wrap";
@@ -405,6 +429,10 @@ fn line(out: &mut String, name: &str, field: &Field) {
             }
             if let Some(n) = ops.limit {
                 opts += &format!(" | limit {n}");
+            }
+            if let Some((p, consecutive)) = &ops.group {
+                let all = if *consecutive { "" } else { " all" };
+                opts += &format!(" | group_by {}{all}", path(p));
             }
             if ops.missing == Empty::List {
                 opts += " | missing []";
@@ -424,6 +452,18 @@ fn line(out: &mut String, name: &str, field: &Field) {
             }
         }
     }
+}
+
+/// A source path, then `[]` and each flatten path.
+fn flat(from: &Path, flatten: &[Path]) -> String {
+    let mut s = path(from);
+    for p in flatten {
+        s += "[]";
+        if !p.is_empty() {
+            s += &format!(".{}", path(p)).replace(".[", "[");
+        }
+    }
+    s
 }
 
 fn cond(c: &Cond) -> String {

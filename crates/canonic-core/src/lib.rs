@@ -7,6 +7,7 @@ pub mod doc;
 pub mod drift;
 pub mod exec;
 mod extract;
+pub mod group;
 pub mod json;
 pub mod plan;
 pub mod resolve;

@@ -1,0 +1,76 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "a[]": {
+        "from": "xs",
+        "group_by": "k[",
+        "consecutive": 1
+      },
+      "b[]": {
+        "from": "xs",
+        "consecutive": true
+      },
+      "c": {
+        "aggregate": "avg",
+        "from": "xs",
+        "nulls": "keep",
+        "sep": 1,
+        "x": 1
+      },
+      "d": {
+        "aggregate": "count",
+        "sep": ","
+      },
+      "e[]": {
+        "from": "xs",
+        "group_by": "k",
+        "item": {
+          "f": {
+            "aggregate": "count",
+            "from": "$group.x"
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "b": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "c": {
+        "type": "number"
+      },
+      "d": {
+        "type": "number"
+      },
+      "e": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "f": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"a[]\"].group_by: must be a path like a.b[0][\"c d\"]; spec.fields[\"a[]\"].consecutive: must be true or false; spec.fields[\"b[]\"].consecutive: needs group_by; spec.fields[\"c\"].x: unknown property; spec.fields[\"c\"].aggregate: must be one of first, last, min, max, count, sum, any, all, join; spec.fields[\"c\"].nulls: must be \"skip\" or \"propagate\"; spec.fields[\"c\"].sep: must be a string; spec.fields[\"d\"].from: must be a path like a.b[0][\"c d\"]; spec.fields[\"d\"].sep: needs join; spec.fields[\"e[]\"].item[\"f\"].from: use $group or $group[].<path>"
+}

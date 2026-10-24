@@ -8,7 +8,7 @@ use crate::extract::{ExtractStream, Extractor};
 use crate::json::{Filter, Node, parse};
 use crate::plan::{CompileError, Field, ListKind, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, RustSink, Sink};
-use crate::spec::{Path, Source, Step};
+use crate::spec::{Path, Source, Step, is_group};
 use crate::stats::Stats;
 use crate::transforms::Transform;
 use crate::value::Value;
@@ -173,6 +173,12 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
                 fields(f, members)
             }
             Field::Scalar(s) => scalar(f, s),
+            // An aggregate can write or compare its values whole.
+            Field::Aggregate(a, _) => {
+                let mut e = Filter::default();
+                node(&mut e, &a.pluck).all = true;
+                elements(f, &a.from, &a.flatten, false, is_group(&a.from), e);
+            }
             Field::List {
                 from, kind, ops, ..
             } => {
@@ -185,24 +191,34 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
                 // Conditions, `unique` and `sort_by` can compare whole values.
                 let filter = ops.filter.iter().flat_map(cond_paths);
                 let keys = ops.unique.iter().chain(ops.sort.iter().map(|(p, _)| p));
-                for p in filter.chain(keys) {
+                let group = ops.group.iter().map(|(p, _)| p);
+                for p in filter.chain(keys).chain(group) {
                     node(&mut e, p).all = true;
                 }
-                // Each flatten path holds the elements of the level below it.
-                for p in ops.flatten.iter().rev() {
-                    let mut up = Filter::default();
-                    node(&mut up, p).elems = Some(Box::new(e));
-                    e = up;
-                }
-                let src = node(f, from);
-                // A wrapped source can be the one element itself.
-                if ops.wrap {
-                    merge(src, &e);
-                }
-                merge(src.elems.get_or_insert_default(), &e);
+                elements(f, from, &ops.flatten, ops.wrap, ops.from_group, e);
             }
         }
     }
+}
+
+/// `e`, the filter of each element read from `from` through `flatten`, merged into `f`. The
+/// elements of `$group` are the elements of the grouped list, which `f` already is.
+fn elements(f: &mut Filter, from: &Path, flatten: &[Path], wrap: bool, group: bool, mut e: Filter) {
+    // Each flatten path holds the elements of the level below it.
+    for p in flatten.iter().rev() {
+        let mut up = Filter::default();
+        node(&mut up, p).elems = Some(Box::new(e));
+        e = up;
+    }
+    if group {
+        return merge(f, &e);
+    }
+    let src = node(f, from);
+    // A wrapped source can be the one element itself.
+    if wrap {
+        merge(src, &e);
+    }
+    merge(src.elems.get_or_insert_default(), &e);
 }
 
 /// The element paths a condition reads. `$input` paths read the context, not the body.

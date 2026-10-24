@@ -1,0 +1,107 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "jobs[]": {
+        "from": "positions",
+        "group_by": "company_id",
+        "consecutive": false,
+        "item": {
+          "company": "company_name",
+          "roles[]": {
+            "from": "$group",
+            "item": {
+              "title": "title"
+            }
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "jobs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "company": {
+              "type": "string"
+            },
+            "roles": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "positions": [
+          {
+            "company_id": "A",
+            "company_name": "Acme",
+            "title": "t1"
+          },
+          {
+            "company_id": "A",
+            "company_name": "Acme",
+            "title": "t2"
+          },
+          {
+            "company_id": "B",
+            "company_name": "Bolt",
+            "title": "t3"
+          },
+          {
+            "company_id": "A",
+            "company_name": "Acme",
+            "title": "t4"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "jobs": [
+          {
+            "company": "Acme",
+            "roles": [
+              {
+                "title": "t1"
+              },
+              {
+                "title": "t2"
+              },
+              {
+                "title": "t4"
+              }
+            ]
+          },
+          {
+            "company": "Bolt",
+            "roles": [
+              {
+                "title": "t3"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

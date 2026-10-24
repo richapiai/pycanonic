@@ -4,6 +4,7 @@
 
 use crate::canonical::Empty;
 use crate::cond::{self, Cond};
+use crate::group::{AGG_OPS, AggOp};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -64,6 +65,31 @@ pub struct ArrayRule {
     pub unique: Option<Path>,
     pub sort: Option<(Path, bool)>,
     pub limit: Option<usize>,
+    /// Language 2: `group_by` and whether groups are consecutive.
+    pub group: Option<(Path, bool)>,
+}
+
+/// A path that is `$group`, which language 2 reserves for the group of a grouped item map.
+pub fn is_group(p: &Path) -> bool {
+    matches!(p.as_slice(), [Step::Key(k)] if k == "$group")
+}
+
+/// Language 2: `{"aggregate": <op>, "from": <path>}`. `from` is split as an array `from` is:
+/// the source, then the `flatten` paths, then `pluck`, the path after the last `[]` (empty for
+/// the elements themselves). A source of `$group` is the group of a grouped item map.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Aggregate {
+    pub op: AggOp,
+    pub from: Path,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flatten: Vec<Path>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pluck: Path,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub propagate: bool,
+    /// `join` only. The default is a space, as for the `join` transform.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sep: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +104,7 @@ pub enum Rule {
         present: Vec<Path>,
         if_empty_null: bool,
     },
+    Aggregate(Aggregate),
 }
 
 /// Canonical field path to its rule, in spec order. A key ending in `[]` holds a `Rule::Array`.
@@ -108,7 +135,7 @@ impl fmt::Display for Issue {
 }
 
 /// The keys of an array rule. The ones from `missing` on are language 2.
-const ARRAY_KEYS: [&str; 12] = [
+const ARRAY_KEYS: [&str; 14] = [
     "from",
     "item",
     "pluck",
@@ -121,6 +148,8 @@ const ARRAY_KEYS: [&str; 12] = [
     "sort_by",
     "order",
     "limit",
+    "group_by",
+    "consecutive",
 ];
 
 const STATUSES: [&str; 4] = ["draft", "shadow", "promoted", "deprecated"];
@@ -280,6 +309,8 @@ struct Checker {
     issues: Vec<Issue>,
     /// Set by `header`, before any field is checked.
     language: u8,
+    /// Inside the item map of a `group_by` array, where `$group` names the group.
+    grouped: bool,
 }
 
 impl Checker {
@@ -392,7 +423,9 @@ impl Checker {
             self.fail(at, "item and pluck can't be combined");
         }
         if let Some(item) = item {
+            let outer = std::mem::replace(&mut self.grouped, r.contains_key("group_by"));
             self.fields(item, &format!("{at}.item"));
+            self.grouped = outer;
         }
         if pluck.is_some() {
             self.path(pluck, &format!("{at}.pluck"));
@@ -412,8 +445,12 @@ impl Checker {
                 if !s.last().unwrap().is_empty() {
                     self.fail(&format!("{at}.from"), "a path with [] must end in []");
                 }
+                self.group_source(&s[0], &format!("{at}.from"));
             }
             _ => self.path(r.get("from"), &format!("{at}.from")),
+        }
+        if let Some(p) = from.and_then(parse_path) {
+            self.group_source(&p, &format!("{at}.from"));
         }
         if r.get("wrap").is_some_and(|v| !v.is_boolean()) {
             self.fail(&format!("{at}.wrap"), "must be true or false");
@@ -448,6 +485,56 @@ impl Checker {
             .is_some_and(|l| l.as_u64().is_none_or(|n| n == 0))
         {
             self.fail(at, "limit must be a positive integer");
+        }
+        if r.contains_key("group_by") {
+            self.path(r.get("group_by"), &format!("{at}.group_by"));
+        }
+        match r.get("consecutive") {
+            Some(c) if !c.is_boolean() => {
+                self.fail(&format!("{at}.consecutive"), "must be true or false")
+            }
+            Some(_) if !r.contains_key("group_by") => {
+                self.fail(&format!("{at}.consecutive"), "needs group_by")
+            }
+            _ => {}
+        }
+    }
+    /// A source path that starts with `$group` (language 2): only inside a grouped item map, and
+    /// only as the whole path before `[]`.
+    fn group_source(&mut self, first: &Path, at: &str) {
+        if self.language != 2 || first.first() != Some(&Step::Key("$group".into())) {
+            return;
+        }
+        if !self.grouped {
+            self.fail(at, "$group needs a group_by array");
+        } else if first.len() > 1 {
+            self.fail(at, "use $group or $group[].<path>");
+        }
+    }
+    fn aggregate(&mut self, o: &Map<String, Value>, at: &str) {
+        self.lang2(at, "aggregate");
+        self.keys(o, at, &["aggregate", "from", "nulls", "sep"]);
+        let op = o.get("aggregate").and_then(Value::as_str).and_then(agg_op);
+        if op.is_none() {
+            let names: Vec<&str> = AGG_OPS.iter().map(|(n, _)| *n).collect();
+            let m = format!("must be one of {}", names.join(", "));
+            self.fail(&format!("{at}.aggregate"), &m);
+        }
+        match o.get("from").and_then(Value::as_str).and_then(parse_from) {
+            Some(s) => self.group_source(&s[0], &format!("{at}.from")),
+            None => self.path(None, &format!("{at}.from")),
+        }
+        if o.get("nulls")
+            .is_some_and(|n| n != "skip" && n != "propagate")
+        {
+            self.fail(&format!("{at}.nulls"), "must be \"skip\" or \"propagate\"");
+        }
+        match o.get("sep") {
+            Some(s) if !s.is_string() => self.fail(&format!("{at}.sep"), "must be a string"),
+            Some(_) if op.is_some_and(|op| op != AggOp::Join) => {
+                self.fail(&format!("{at}.sep"), "needs join")
+            }
+            _ => {}
         }
     }
     fn cond(&mut self, c: &Value, at: &str) {
@@ -502,6 +589,8 @@ impl Checker {
                 self.optional(o, &kat);
             } else if k.ends_with("[]") {
                 self.array(r, &kat);
+            } else if let Some(o) = r.as_object().filter(|o| o.contains_key("aggregate")) {
+                self.aggregate(o, &kat);
             } else {
                 self.scalar(r, &kat);
             }
@@ -588,6 +677,10 @@ fn language(v: Option<&Value>) -> Option<u8> {
 /// A rule object for an object node: it has `present` or `if_empty`.
 fn optional(o: &Map<String, Value>) -> bool {
     o.contains_key("present") || o.contains_key("if_empty")
+}
+
+fn agg_op(name: &str) -> Option<AggOp> {
+    AGG_OPS.iter().find(|(n, _)| *n == name).map(|(_, o)| *o)
 }
 
 /// An array rule's `missing` or `empty` value.
@@ -681,11 +774,29 @@ fn rule(key: &str, r: &Value) -> Rule {
                 .get("sort_by")
                 .map(|p| (path(p), r.get("order").is_some_and(|o| o == "desc"))),
             limit: r.get("limit").and_then(Value::as_u64).map(|n| n as usize),
+            group: r
+                .get("group_by")
+                .map(|p| (path(p), r.get("consecutive") != Some(&Value::Bool(false)))),
             item: r.get("item").map(field_map),
             pluck: r.get("pluck").map(path),
             transform: transform(r.get("transform")),
             missing: r.get("missing").and_then(list_empty),
             empty: r.get("empty").and_then(list_empty),
+        });
+    }
+    if let Some(op) = r.get("aggregate") {
+        let mut from = parse_from(r["from"].as_str().unwrap()).unwrap();
+        let pluck = match from.len() {
+            1 => Vec::new(),
+            _ => from.pop().unwrap(),
+        };
+        return Rule::Aggregate(Aggregate {
+            op: agg_op(op.as_str().unwrap()).unwrap(),
+            from: from.remove(0),
+            flatten: from,
+            pluck,
+            propagate: r.get("nulls").is_some_and(|n| n == "propagate"),
+            sep: r.get("sep").and_then(Value::as_str).map(String::from),
         });
     }
     let source = match r {

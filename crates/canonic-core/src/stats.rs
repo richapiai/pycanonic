@@ -40,7 +40,9 @@ fn walk(fields: &[Named<Field>], list: Option<usize>, within: &mut [Option<usize
             Field::Null | Field::Empty(_) => {}
             Field::OmitNull(_) => unreachable!("inner() unwraps it"),
             Field::Object { members, .. } => walk(members, list, within),
-            Field::Scalar(Scalar { stat, .. }) | Field::Const(_, stat) => {
+            Field::Scalar(Scalar { stat, .. })
+            | Field::Const(_, stat)
+            | Field::Aggregate(_, stat) => {
                 if let Some(w) = within.get_mut(*stat) {
                     *w = list;
                 }

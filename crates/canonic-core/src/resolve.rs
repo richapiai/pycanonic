@@ -7,7 +7,8 @@ use crate::plan::{
     CompileError, Field, Format, ListKind, ListOps, Meta, Named, Plan, RoutingField, Scalar, TxRef,
 };
 use crate::spec::{
-    ArrayRule, FieldMap, Rule, ScalarRule, Source, Step, TransformRef, field_key, parse_spec,
+    ArrayRule, FieldMap, Rule, ScalarRule, Source, Step, TransformRef, field_key, is_group,
+    parse_spec,
 };
 use crate::transforms::{ArgError, builtin};
 use serde_json::Value;
@@ -20,6 +21,8 @@ fn json(s: &str) -> String {
 
 struct Resolver<'c> {
     custom: &'c [String],
+    /// The spec language. Only language 2 reserves `$group`.
+    language: u8,
     stat_names: Vec<String>,
     names: Vec<String>,
     /// Top-level spec key to its scalar, `None` for an array rule. Anchors look fields up here.
@@ -152,6 +155,8 @@ impl Resolver<'_> {
             unique: r.unique.clone(),
             sort: r.sort.clone(),
             limit: r.limit,
+            group: r.group.clone(),
+            from_group: self.language == 2 && is_group(&r.from),
         };
         Ok(Field::List {
             from: r.from.clone(),
@@ -212,6 +217,20 @@ impl Resolver<'_> {
                     }
                 }
                 Rule::Array(r) => self.array(r, target, stat, &kat)?,
+                Rule::Aggregate(a) => match &target.kind {
+                    Kind::Scalar { routing: true, .. } => {
+                        return Err(format!("{kat}: routing fields can't be aggregates"));
+                    }
+                    Kind::Scalar { .. } | Kind::Object { open: true, .. } => {
+                        Field::Aggregate(a.clone(), stat)
+                    }
+                    Kind::Array { .. } => {
+                        return Err(format!("{kat}: canonical field is an array; add []"));
+                    }
+                    Kind::Object { .. } => {
+                        return Err(format!("{kat}: canonical field is an object"));
+                    }
+                },
                 Rule::Scalar(r) => Field::Scalar(self.scalar(r, target, stat, &kat)?),
             };
             if within.is_none() {
@@ -340,6 +359,7 @@ fn routing(fields: &[Named<Field>], stat_names: &[String], out: &mut Vec<Routing
             | Field::Null
             | Field::List { .. }
             | Field::Const(..)
+            | Field::Aggregate(..)
             | Field::Empty(_) => {}
             Field::OmitNull(_) => unreachable!("inner() unwraps it"),
         }
@@ -388,6 +408,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
     let canonical = load_schema(schema, s.language).map_err(|i| fail(i.to_string()))?;
     let mut r = Resolver {
         custom,
+        language: s.language,
         stat_names: Vec::new(),
         names: Vec::new(),
         top: HashMap::new(),

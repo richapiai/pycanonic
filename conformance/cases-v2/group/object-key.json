@@ -1,0 +1,123 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "groups[]": {
+        "from": "xs",
+        "group_by": "k",
+        "item": {
+          "first": "id",
+          "n": {
+            "aggregate": "count",
+            "from": "$group"
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "groups": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "first": {
+              "type": "number"
+            },
+            "n": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "xs": [
+          {
+            "id": 1,
+            "k": {
+              "a": 1,
+              "b": 2
+            }
+          },
+          {
+            "id": 2,
+            "k": {
+              "b": 2,
+              "a": 1
+            }
+          },
+          {
+            "id": 3,
+            "k": {
+              "a": 1
+            }
+          },
+          {
+            "id": 4,
+            "k": {
+              "a": 1.0
+            }
+          },
+          {
+            "id": 5,
+            "k": [
+              1,
+              {
+                "x": 2
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "k": [
+              1.0,
+              {
+                "x": 2.0
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "k": [
+              {
+                "x": 2
+              },
+              1
+            ]
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "groups": [
+          {
+            "first": 1,
+            "n": 2
+          },
+          {
+            "first": 3,
+            "n": 2
+          },
+          {
+            "first": 5,
+            "n": 2
+          },
+          {
+            "first": 7,
+            "n": 1
+          }
+        ]
+      }
+    }
+  ]
+}

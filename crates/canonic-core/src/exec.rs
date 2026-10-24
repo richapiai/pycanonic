@@ -21,13 +21,18 @@
 //! - Language 2: a list with `wrap`, flatten, `filter`, `unique`, `sort_by` or `limit`
 //!   collects its elements first (`collect`). Its `empty` applies to what is left. Other lists
 //!   stream the source array.
+//! - Language 2: a `group_by` list groups what `collect` leaves (`group::groups`) and maps
+//!   each group, its first element as the element and the group as `$group`. An aggregate folds
+//!   one path across an array or the group. A missing array is empty, one that is not an array
+//!   is null and an error, and so is a value an aggregate cannot fold.
 
 use crate::canonical::{Empty, Semantic};
 use crate::cond::{Cond, Rank, holds, key_text};
 use crate::doc::{Doc, Key, KeyPath as Path, KeyStep as Step, read};
+use crate::group::{Agg, AggOp, aggregate, groups};
 use crate::plan::{CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, Sink, copy};
-use crate::spec::{self, Source};
+use crate::spec::{self, Source, is_group};
 use crate::stats::Stats;
 use crate::transforms::{Transform, validate};
 use crate::value::Value;
@@ -139,14 +144,32 @@ impl Leaf {
     }
 }
 
+/// Where a list or an aggregate reads its elements: an array, or the group (`$group`).
+enum Input {
+    At(At),
+    Group,
+}
+
+struct Fold {
+    op: AggOp,
+    input: Input,
+    /// Only `flatten` is set.
+    ops: ListOps<Path>,
+    pluck: Path,
+    propagate: bool,
+    sep: String,
+    stat: usize,
+}
+
 enum Op {
     Null,
     Scalar(Leaf),
+    Aggregate(Box<Fold>),
     Object(Vec<(usize, Op)>),
     /// An item list maps each element with `Item`. Otherwise each element is read at `Elems.0`
     /// (empty for a plain list) and transformed.
     List {
-        from: At,
+        from: Input,
         kind: Kind,
         stat: usize,
         ops: Box<ListOps<Path>>,
@@ -254,6 +277,8 @@ impl Builder<'_> {
             unique: o.unique.as_ref().map(|p| self.path(p)),
             sort: o.sort.as_ref().map(|(p, desc)| (self.path(p), *desc)),
             limit: o.limit,
+            group: o.group.as_ref().map(|(p, c)| (self.path(p), *c)),
+            from_group: o.from_group,
         }
     }
 
@@ -327,13 +352,31 @@ impl Builder<'_> {
                 Op::Const(v, None)
             }
             Field::OmitNull(inner) => Op::OmitNull(Box::new(self.op(inner)?)),
+            Field::Aggregate(a, stat) => Op::Aggregate(Box::new(Fold {
+                op: a.op,
+                input: match is_group(&a.from) {
+                    true => Input::Group,
+                    false => Input::At(self.at(&a.from)),
+                },
+                ops: ListOps {
+                    flatten: a.flatten.iter().map(|p| self.path(p)).collect(),
+                    ..ListOps::default()
+                },
+                pluck: self.path(&a.pluck),
+                propagate: a.propagate,
+                sep: a.sep.clone().unwrap_or_else(|| " ".into()),
+                stat: self.stat(*stat)?,
+            })),
             Field::List {
                 from,
                 kind,
                 stat,
                 ops,
             } => Op::List {
-                from: self.at(from),
+                from: match ops.from_group {
+                    true => Input::Group,
+                    false => Input::At(self.at(from)),
+                },
                 kind: match kind {
                     ListKind::Item(c) => {
                         let outer = std::mem::take(&mut self.scope);
@@ -385,6 +428,8 @@ struct Frame<'s, D> {
     /// Per `Scope::slot`: `None` not resolved yet, `Some(v)` resolved. Empty for a one-field read
     /// (`execute_field`), where it does not pay.
     cache: Vec<Option<Option<D>>>,
+    /// Inside a grouped item map: the group, which `$group` reads.
+    group: Option<&'s [D]>,
 }
 
 impl<'s, D: Doc> Frame<'s, D> {
@@ -393,7 +438,12 @@ impl<'s, D: Doc> Frame<'s, D> {
             true => vec![None; scope.slots],
             false => Vec::new(),
         };
-        Frame { doc, scope, cache }
+        Frame {
+            doc,
+            scope,
+            cache,
+            group: None,
+        }
     }
 
     /// The value at prefix node `n`, null or not. Resolved once when cached.
@@ -457,11 +507,16 @@ pub(crate) const MAX_NODES: usize = 1_000_000;
 /// wrapped). Inside a filter, paths read the element, as in an item map.
 pub(crate) fn collect<D: Doc>(from: Option<D>, ops: &ListOps<Path>) -> Option<Vec<D>> {
     let x = from?;
-    let mut xs: Vec<D> = match x.len() {
+    let xs: Vec<D> = match x.len() {
         Some(n) => (0..n).filter_map(|i| x.item(i)).collect(),
         None if ops.wrap => vec![x],
         None => return None,
     };
+    Some(refine(xs, ops))
+}
+
+/// `collect` after the source: flatten, filter, unique, sort, limit.
+fn refine<D: Doc>(mut xs: Vec<D>, ops: &ListOps<Path>) -> Vec<D> {
     // A missing, null or non-array value on a flatten path adds nothing.
     for p in &ops.flatten {
         xs = (xs.iter())
@@ -491,7 +546,7 @@ pub(crate) fn collect<D: Doc>(from: Option<D>, ops: &ListOps<Path>) -> Option<Ve
     if let Some(n) = ops.limit {
         xs.truncate(n);
     }
-    Some(xs)
+    xs
 }
 
 /// A document value as JSON, for a custom transform's container input. `None` past `MAX_DEPTH`
@@ -693,8 +748,11 @@ impl<S: Sink> Exec<'_, S> {
                 }
                 // Known before anything is written: the key is left out.
                 Op::List {
-                    from, stat, ops, ..
-                } if ops.missing == Empty::Missing && f.read(*from).is_none() => {
+                    from: Input::At(at),
+                    stat,
+                    ops,
+                    ..
+                } if ops.missing == Empty::Missing && f.read(*at).is_none() => {
                     self.stats.miss(*stat)
                 }
                 op => {
@@ -711,12 +769,13 @@ impl<S: Sink> Exec<'_, S> {
             Op::Null => self.sink.scalar(Value::Null),
             Op::Object(c) => self.object(c, f),
             Op::Scalar(l) => self.scalar(l, f),
+            Op::Aggregate(a) => self.fold(a, f),
             Op::List {
                 from,
                 kind,
                 stat,
                 ops,
-            } => self.list(*from, kind, *stat, ops, f),
+            } => self.list(from, kind, *stat, ops, f),
             Op::Const(v, stat) => {
                 self.filled += (stat.is_some() && !v.is_null()) as usize;
                 self.sink.passthrough(&v)
@@ -753,6 +812,7 @@ impl<S: Sink> Exec<'_, S> {
             Op::Scalar(Leaf { stat, .. }) | Op::List { stat, .. } | Op::Const(_, Some(stat)) => {
                 self.stats.miss(*stat)
             }
+            Op::Aggregate(a) => self.stats.miss(a.stat),
             Op::Object(c) | Op::Optional { members: c, .. } => {
                 c.iter().for_each(|(_, op)| self.miss(op))
             }
@@ -838,26 +898,76 @@ impl<S: Sink> Exec<'_, S> {
 
     fn list<D: Doc>(
         &mut self,
-        from: At,
+        from: &Input,
         kind: &Kind,
         stat: usize,
         ops: &ListOps<Path>,
         f: &mut Frame<'_, D>,
     ) -> S::Out {
-        let Some(x) = f.read(from) else {
-            self.stats.miss(stat);
-            return self.empty(ops.missing, false);
+        let xs = match (from, f.group) {
+            (Input::Group, Some(g)) => refine(g.to_vec(), ops),
+            (Input::Group, None) => {
+                self.stats.miss(stat);
+                return self.empty(ops.missing, false);
+            }
+            (Input::At(at), _) => {
+                let Some(x) = f.read(*at) else {
+                    self.stats.miss(stat);
+                    return self.empty(ops.missing, false);
+                };
+                // Lists without A4, A5 or A6 options stream the source array, as in language 1.
+                if !ops.collects() {
+                    return match x.len() {
+                        Some(n) => self.elements(n, |i| x.item(i), None, kind, stat, ops),
+                        None => self.not_a_list(stat),
+                    };
+                }
+                match collect(Some(x), ops) {
+                    Some(xs) => xs,
+                    None => return self.not_a_list(stat),
+                }
+            }
         };
-        // Lists without A4 or A6 options stream the source array, as in language 1.
-        if !ops.collects() {
-            return match x.len() {
-                Some(n) => self.elements(n, |i| x.item(i), kind, stat, ops),
-                None => self.not_a_list(stat),
-            };
-        }
-        match collect(Some(x), ops) {
-            Some(xs) => self.elements(xs.len(), |i| xs.get(i).cloned(), kind, stat, ops),
-            None => self.not_a_list(stat),
+        let Some((key, consecutive)) = &ops.group else {
+            return self.elements(xs.len(), |i| xs.get(i).cloned(), None, kind, stat, ops);
+        };
+        let gs = groups(xs, key, *consecutive);
+        let first = |i: usize| gs.get(i).and_then(|g| g.first()).cloned();
+        self.elements(gs.len(), first, Some(&gs), kind, stat, ops)
+    }
+
+    /// An aggregate (`Fold`): its values, then `group::aggregate`.
+    fn fold<D: Doc>(&mut self, a: &Fold, f: &mut Frame<'_, D>) -> S::Out {
+        // None: not an array.
+        let xs = match &a.input {
+            Input::Group => Some(f.group.map(<[D]>::to_vec).unwrap_or_default()),
+            Input::At(at) => match f.read(*at) {
+                None => Some(Vec::new()),
+                Some(x) => (x.len()).map(|n| (0..n).filter_map(|i| x.item(i)).collect()),
+            },
+        };
+        let out = xs.and_then(|xs| {
+            let values = (refine(xs, &a.ops).iter())
+                .map(|e| read(Some(e), &a.pluck))
+                .collect();
+            aggregate(a.op, values, a.propagate, &a.sep)
+        });
+        match out {
+            Some(Agg::Doc(d)) => {
+                self.filled += 1;
+                self.sink.passthrough(&d)
+            }
+            Some(Agg::Value(v)) if !v.is_null() => {
+                self.filled += 1;
+                self.sink.scalar(v)
+            }
+            out => {
+                if out.is_none() {
+                    self.stats.error(a.stat);
+                }
+                self.stats.miss(a.stat);
+                self.sink.scalar(Value::Null)
+            }
         }
     }
 
@@ -867,11 +977,13 @@ impl<S: Sink> Exec<'_, S> {
         self.sink.scalar(Value::Null)
     }
 
-    /// A list of the `n` elements `get` gives.
+    /// A list of the `n` elements `get` gives. With `groups`, element `i` is the first of group `i`,
+    /// and an item map reads the group as `$group`.
     fn elements<D: Doc>(
         &mut self,
         n: usize,
         get: impl Fn(usize) -> Option<D>,
+        groups: Option<&[Vec<D>]>,
         kind: &Kind,
         stat: usize,
         ops: &ListOps<Path>,
@@ -889,7 +1001,9 @@ impl<S: Sink> Exec<'_, S> {
                 self.sink.next(None, i == 0);
                 match kind {
                     Kind::Item(fields, scope) => {
-                        self.object(fields, &mut Frame::new(get(i), scope, true))
+                        let mut f = Frame::new(get(i), scope, true);
+                        f.group = groups.and_then(|g| g.get(i)).map(Vec::as_slice);
+                        self.object(fields, &mut f)
                     }
                     Kind::Elems(path, tx) => self.element(read(get(i).as_ref(), path), tx, stat),
                 }

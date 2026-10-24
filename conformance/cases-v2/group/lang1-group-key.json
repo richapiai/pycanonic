@@ -1,0 +1,46 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "tags[]": {
+        "from": "$group"
+      },
+      "n": "$group[0]"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "n": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "$group": [
+          "a",
+          "b"
+        ]
+      },
+      "context": null,
+      "expected": {
+        "tags": [
+          "a",
+          "b"
+        ],
+        "n": "a"
+      }
+    }
+  ]
+}

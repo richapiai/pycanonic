@@ -1,0 +1,140 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "first": {
+        "aggregate": "first",
+        "from": "data.items[].name"
+      },
+      "last": {
+        "aggregate": "last",
+        "from": "data.items[].name"
+      },
+      "count": {
+        "aggregate": "count",
+        "from": "data.items"
+      },
+      "sum": {
+        "aggregate": "sum",
+        "from": "data.items[].n"
+      },
+      "any": {
+        "aggregate": "any",
+        "from": "data.items[].ok"
+      },
+      "all": {
+        "aggregate": "all",
+        "from": "data.items[].ok"
+      },
+      "join": {
+        "aggregate": "join",
+        "from": "data.items[].name",
+        "sep": ", "
+      },
+      "min": {
+        "aggregate": "min",
+        "from": "data.items[].v"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "first": {
+        "type": "string"
+      },
+      "last": {
+        "type": "string"
+      },
+      "count": {
+        "type": "number"
+      },
+      "sum": {
+        "type": "number"
+      },
+      "any": {
+        "type": "boolean"
+      },
+      "all": {
+        "type": "boolean"
+      },
+      "join": {
+        "type": "string"
+      },
+      "min": {
+        "type": "number"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "data": {
+          "items": [
+            {
+              "name": "a",
+              "n": 1,
+              "ok": true,
+              "v": 1
+            },
+            {
+              "name": "b",
+              "n": 2.5,
+              "ok": false,
+              "v": "x"
+            },
+            {
+              "name": null,
+              "ok": true
+            }
+          ]
+        }
+      },
+      "context": null,
+      "expected": {
+        "first": "a",
+        "last": "b",
+        "count": 3,
+        "sum": 3.5,
+        "any": true,
+        "all": false,
+        "join": "a, b",
+        "min": null
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "items": [
+            {
+              "name": "c",
+              "n": 1,
+              "ok": true,
+              "v": 3
+            },
+            {
+              "n": 2,
+              "ok": true,
+              "v": 2
+            }
+          ]
+        }
+      },
+      "context": null,
+      "expected": {
+        "first": "c",
+        "last": "c",
+        "count": 2,
+        "sum": 3,
+        "any": true,
+        "all": true,
+        "join": "c",
+        "min": 2
+      }
+    }
+  ]
+}

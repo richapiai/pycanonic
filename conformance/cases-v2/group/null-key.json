@@ -1,0 +1,116 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "runs[]": {
+        "from": "xs",
+        "group_by": "k",
+        "item": {
+          "n": {
+            "aggregate": "count",
+            "from": "$group"
+          }
+        }
+      },
+      "sets[]": {
+        "from": "xs",
+        "group_by": "k",
+        "consecutive": false,
+        "item": {
+          "n": {
+            "aggregate": "count",
+            "from": "$group"
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "runs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "sets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "xs": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2,
+            "k": null
+          },
+          {
+            "id": 3,
+            "k": "a"
+          },
+          {
+            "id": 4,
+            "k": "a"
+          },
+          {
+            "id": 5
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "runs": [
+          {
+            "n": 1
+          },
+          {
+            "n": 1
+          },
+          {
+            "n": 2
+          },
+          {
+            "n": 1
+          }
+        ],
+        "sets": [
+          {
+            "n": 1
+          },
+          {
+            "n": 1
+          },
+          {
+            "n": 2
+          },
+          {
+            "n": 1
+          }
+        ]
+      }
+    }
+  ]
+}

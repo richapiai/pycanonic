@@ -1,0 +1,33 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "a[]": {
+        "from": "xs",
+        "group_by": "k"
+      },
+      "n": {
+        "aggregate": "count",
+        "from": "xs"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "n": {
+        "type": "number"
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"a[]\"]: \"group_by\" needs \"language\": 2; spec.fields[\"n\"]: \"aggregate\" needs \"language\": 2"
+}
