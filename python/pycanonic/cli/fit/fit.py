@@ -184,9 +184,10 @@ class _Fitter:
         alt = next((a for a in f.alternatives if a["kind"] != "const" and a["support"] > 0), None)
         if alt is not None:
             outs = [apply_rule(alt["rule"], p.provider) for p in self.pairs]
+            raw = {k: v for k, v in alt["rule"].items() if k != "transform"}  # no rule is written, so show the provider's value
             live = [j for j, t in enumerate(targets) if t is not None]
             order = sorted(live, key=lambda j: same(outs[j], targets[j]))
-            examples = [{"pair": self.pairs[j].name, "want": targets[j], "got": outs[j]} for j in order[:3]]
+            examples = [{"pair": self.pairs[j].name, "want": targets[j], "got": apply_rule(raw, self.pairs[j].provider)} for j in order[:3]]
             note = f"Closest rule: {json.dumps(alt['rule'])} on {alt['support']} of {f.total} pairs."
             return Row(f.field, "", "disagree", None, 0, f.total, 0.0, examples, note)
         related = any(_related(o.value, t) for t, occs in zip(targets, self.sources) if t is not None for o in occs)

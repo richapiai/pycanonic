@@ -194,26 +194,30 @@ class _Search:
         return out
 
     def _lookups(self, live: list[int]) -> list[_Cand]:
-        """A table per path from its value to the target, when every value maps to one scalar target,
-        some value repeats (a table with one entry per pair is an ID, not an enum), and the targets
-        differ (one target is a constant)."""
+        """A table per path from its value to the target the most pairs give it (the first seen on
+        a tie), scored by support like any rule, so one noisy pair does not hide it.
+        Only for scalar targets, when some value repeats (a table with one entry per pair is an ID,
+        not an enum), and the targets differ (one target is a constant)."""
         out: list[_Cand] = []
         for path in dict.fromkeys(p for j in live for p in self.values[j]):
-            table: dict[str, Any] = {}
-            seen, ok = 0, True
+            votes: dict[str, Counter[str]] = {}
+            first: dict[str, Any] = {}
+            seen = 0
             for j in live:
                 v, t = self.values[j].get(path), self.targets[j]
                 if v is None:
                     continue
-                k = text(v)
-                if isinstance(t, (dict, list)) or (k in table and not same(table[k], t)):
-                    ok = False
+                if isinstance(t, (dict, list)):
                     break
-                table[k] = t
+                key = json.dumps(t, sort_keys=True)
+                first.setdefault(key, t)
+                votes.setdefault(text(v), Counter())[key] += 1
                 seen += 1
-            if ok and len(table) < seen and len({json.dumps(t, sort_keys=True) for t in table.values()}) > 1:
-                arg = {"table": dict(sorted(table.items())), "else": "null"}
-                out.append(_cand("lookup", (path,), Chain([("lookup", arg)])))
+            else:
+                table = {k: first[c.most_common(1)[0][0]] for k, c in votes.items()}
+                if len(table) < seen and len({json.dumps(t, sort_keys=True) for t in table.values()}) > 1:
+                    arg = {"table": dict(sorted(table.items())), "else": "null"}
+                    out.append(_cand("lookup", (path,), Chain([("lookup", arg)])))
         return out
 
 

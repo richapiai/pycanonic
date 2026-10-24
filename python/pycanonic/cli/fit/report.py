@@ -121,7 +121,9 @@ def to_md(result: FitResult) -> str:
         if r.tier == "auto":
             continue
         out += [f"## {r.field}: {r.tier}, {_kind(r)}", "", f"- rule: {_code(r.rule)}", f"- evidence: {r.support} of {r.total} pairs, holdout {r.holdout:.0%}"]
-        out += [f"- {e['pair']}: default {_code(e['want'])}, provider {_code(e['got'])}" for e in r.examples[:3]]
+        # with a rule, `got` is what the spec maps; without one, the provider's own value
+        side = "mapped" if r.rule is not None else "provider"
+        out += [f"- {e['pair']}: default {_code(e['want'])}, {side} {_code(e['got'])}" for e in r.examples[:3]]
         out += [f"- what can break: {r.risk()}", ""]
     return "\n".join(out)
 

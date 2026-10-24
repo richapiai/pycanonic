@@ -96,19 +96,26 @@ def test_coalesce() -> None:
 
 
 def test_lookup_learned() -> None:
-    enum = [("LIKE", "liked"), ("LOVE", "loved"), ("LIKE", "liked"), ("HATE", "hated"), ("LOVE", "loved")]
+    enum = [("UP", "liked"), ("STAR", "starred"), ("UP", "liked"), ("DOWN", "disliked"), ("STAR", "starred")]
     f = leaf("reaction", [(t, {"kind": s}) for s, t in enum])
     assert f.kind == "lookup"
-    assert f.rule == {"from": "kind", "transform": [{"lookup": {"table": {"HATE": "hated", "LIKE": "liked", "LOVE": "loved"}, "else": "null"}}]}
+    assert f.rule == {"from": "kind", "transform": [{"lookup": {"table": {"DOWN": "disliked", "STAR": "starred", "UP": "liked"}, "else": "null"}}]}
     assert f.support == 5
-    assert f.holdout < 1  # HATE is seen once
+    assert f.holdout < 1  # DOWN is seen once
     assert leaf("reaction", [(t, {"kind": s}) for s, t in enum], lookups=False).kind == "none"
 
 
-def test_lookup_conflict_rejected() -> None:
-    enum = [("LIKE", "liked"), ("LIKE", "fond"), ("LOVE", "loved"), ("LOVE", "loved"), ("HATE", "hated")]
-    f = leaf("reaction", [(t, {"kind": s}) for s, t in enum])
-    assert (f.kind, f.rule, f.support) == ("none", None, 0)
+def test_lookup_by_majority_lands_in_review() -> None:
+    """R44: one pair that disagrees does not hide the table. The majority wins per source value,
+    the rule scores 11 of 12, and the failing pair is the first example."""
+    enum = [("UP", "liked"), ("STAR", "starred"), ("DOWN", "disliked")] * 4
+    rows = [(t, {"kind": s, "n": i}) for i, (s, t) in enumerate(enum)]
+    rows[4] = ("fond", {"kind": "STAR", "n": 4})
+    f = leaf("reaction", rows)
+    assert f.kind == "lookup" and (f.support, f.total) == (11, 12)
+    assert f.rule == {"from": "kind", "transform": [{"lookup": {"table": {"DOWN": "disliked", "STAR": "starred", "UP": "liked"}, "else": "null"}}]}
+    assert f.examples[0] == {"pair": "p4.json", "want": "fond", "got": "starred"}
+    assert tier(f) == "review"
 
 
 def test_holdout_catches_overfit() -> None:
@@ -777,3 +784,17 @@ def test_fit_survives_nan_in_a_pair(tmp_path: Path) -> None:
     code = main([*args, "--out", str(tmp_path / "spec.json"), "--report", str(tmp_path / "report"), "--keep", str(tmp_path / "keep.json")])
     assert code in (1, 2)
     assert json.loads((tmp_path / "spec.json").read_text())["fields"]["tags[]"] == {"from": "scores", "sort_by": "v", "pluck": "v"}
+
+
+def test_report_names_mapped_and_raw_provider_values() -> None:
+    """R44: with a rule the example shows the mapped output; without one, the provider's raw value."""
+    md = report.to_md(fit_fixture())
+    jobs = md.split("## jobs[]: review, group")[1].split("\n## ")[0]
+    assert ", mapped `" in jobs and ", provider `" not in jobs
+    assert '- p03.json: default `"retired"`, provider `"inactive"`' in md
+    codes = [f"Q{i}X" for i in range(10)]
+    pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "code": c.lower() if i < 7 else f"z{i}"}, {"n": f"n{i}", "c": c}, None) for i, c in enumerate(codes)]
+    result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
+    row = next(r for r in result.fields if r.field == "code")
+    assert (row.kind, row.rule) == ("disagree", None)
+    assert row.examples[0] == {"pair": "p7.json", "want": "z7", "got": "Q7X"}  # raw, not lower-cased

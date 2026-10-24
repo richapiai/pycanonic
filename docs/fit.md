@@ -169,7 +169,7 @@ No tool here catches these problems:
 
 ## The report
 
-`report.md` has one line per auto field, in a table. Each review and manual field gets a section with the rule and the evidence (k of n pairs, and the holdout). The section also has up to three examples of the default's value against the provider's value, and the "what can break" text. `report.json` holds the same rows for tools: `field`, `tier`, `kind`, `rule`, `support`, `total`, `holdout`, `examples` and `risk`, plus a `summary` and the `skipped` pairs.
+`report.md` has one line per auto field, in a table. Each review and manual field gets a section with the rule and the evidence (k of n pairs, and the holdout). The section also has up to three examples, and the "what can break" text. An example puts the default's value next to the value the rule maps (`mapped`). A field with no rule shows the provider's own value instead (`provider`). `report.json` holds the same rows for tools: `field`, `tier`, `kind`, `rule`, `support`, `total`, `holdout`, `examples` and `risk`, plus a `summary` and the `skipped` pairs.
 
 ## The manual path
 
