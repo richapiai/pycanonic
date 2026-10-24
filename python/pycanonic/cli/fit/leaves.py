@@ -164,10 +164,9 @@ class _Search:
         if self.lookups and live and best < self.floor * len(live):
             for c in self._lookups(live):
                 scored[c] = support(c)
-        if live:
-            counts = Counter(json.dumps(self.targets[j], sort_keys=True) for j in live)
-            const = min(counts, key=lambda k: (-counts[k], k))
-            scored[_Cand("const", const=const)] = counts[const]
+        consts = {json.dumps(self.targets[j], sort_keys=True) for j in train}
+        if live and len(live) == len(train) and len(consts) == 1:  # a constant holds in every pair, null included
+            scored[_Cand("const", const=consts.pop())] = len(live)
         return sorted(scored.items(), key=lambda cs: self.rank(*cs))
 
     def _coalesces(self, scored: dict[_Cand, int], support: Callable[[_Cand], int]) -> list[_Cand]:

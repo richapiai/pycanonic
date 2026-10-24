@@ -126,11 +126,12 @@ def test_lookup_with_tied_votes_gets_no_table() -> None:
 
 
 def test_holdout_catches_overfit() -> None:
-    rows = [("person" if i else "company", {"n": i}) for i in range(6)]
+    rows = [(f"v{i}", {"a": f"v{i}" if i else "x", "n": i}) for i in range(6)]
     f = leaf("type", rows)
-    assert (f.rule, f.kind, f.support, f.total) == ({"const": "person"}, "const", 5, 6)
+    assert (f.rule, f.kind, f.support, f.total) == ({"from": "a"}, "path", 5, 6)
     assert f.holdout == 5 / 6
     assert leaf("type", rows, floor=0.9).kind == "none"
+    assert leaf("type", [("person" if i else "company", {"n": i}) for i in range(6)]).kind == "none"  # 5 of 6 is no constant
 
 
 def test_name_tiebreak() -> None:
@@ -458,6 +459,24 @@ def test_const_detected_only_without_source() -> None:
     assert (with_source.rule, with_source.kind) == ({"from": "type"}, "path")
     without = leaf("kind", [("person", {"n": i}) for i in range(6)])
     assert without.kind == "const"
+
+
+def test_const_must_hold_in_every_pair_null_included() -> None:
+    """A value the default sends in one pair of eight and leaves null in the rest is no constant."""
+    rows: list[tuple[Any, Any]] = [(None, {"n": i}) for i in range(7)] + [("1.8", {"n": 7})]
+    f = leaf("ver", rows)
+    assert f.kind != "const" and f.rule is None
+    assert fit_const("ver", [r[0] for r in rows]) is None
+    assert fit_const("ver", ["1.8"] + [None] * 7) is None
+    assert leaf("ver", [("1.8", {"n": i}) for i in range(8)]).rule == {"const": "1.8"}
+
+    def item(i: int) -> tuple[Any, Any]:
+        n = range(2)
+        return {"tools": [{"name": f"n{i}{k}", "ver": "1.8" if (i, k) == (0, 0) else None} for k in n]}, {"kit": [{"label": f"n{i}{k}"} for k in n]}
+
+    rule, fits = fit_array("tools[]", objs(name=S, ver=S), pairs_of([item(i) for i in range(4)]))
+    assert rule == {"from": "kit", "item": {"name": {"from": "label"}}}
+    assert {f.field: f.kind for f in fits}["tools[].ver"] != "const"
 
 
 def test_when_from_inputs() -> None:
