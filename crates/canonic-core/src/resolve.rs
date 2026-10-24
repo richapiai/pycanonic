@@ -6,7 +6,9 @@ use crate::canonical::{Kind, Node, load_schema};
 use crate::plan::{
     CompileError, Field, Format, ListKind, Meta, Named, Plan, RoutingField, Scalar, TxRef,
 };
-use crate::spec::{ArrayRule, FieldMap, Rule, ScalarRule, Source, Step, TransformRef, parse_spec};
+use crate::spec::{
+    ArrayRule, FieldMap, Rule, ScalarRule, Source, Step, TransformRef, field_key, parse_spec,
+};
 use crate::transforms::{ArgError, builtin};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -62,8 +64,10 @@ impl Resolver<'_> {
             Kind::Scalar {
                 semantic, routing, ..
             } => (*semantic, *routing),
-            Kind::Array(_) => return Err(format!("{at}: canonical field is an array; add []")),
-            Kind::Object(_) => return Err(format!("{at}: canonical field is an object")),
+            // An open map is copied as it is, like a scalar.
+            Kind::Object { open: true, .. } => (None, false),
+            Kind::Array { .. } => return Err(format!("{at}: canonical field is an array; add []")),
+            Kind::Object { .. } => return Err(format!("{at}: canonical field is an object")),
         };
         let tx = self.tx(&r.transform, at)?;
         // The validator step every routing field ends with.
@@ -106,13 +110,21 @@ impl Resolver<'_> {
         stat: usize,
         at: &str,
     ) -> Result<Field, String> {
-        let Kind::Array(items) = &node.kind else {
+        let Kind::Array { items, nested } = &node.kind else {
             return Err(format!("{at}: canonical field is not an array"));
         };
+        if *nested && (r.item.is_some() || r.pluck.is_some()) {
+            return Err(format!("{at}: arrays of arrays can only be copied whole"));
+        }
         let object = match items.as_deref() {
             Some(Node {
-                kind: Kind::Object(c),
-            }) => Some(c),
+                kind:
+                    Kind::Object {
+                        children,
+                        open: false,
+                    },
+                ..
+            }) => Some(children),
             _ => None,
         };
         let kind = if let Some(item) = &r.item {
@@ -147,16 +159,23 @@ impl Resolver<'_> {
     ) -> Result<Vec<Named<Field>>, String> {
         let mut mapped = HashMap::new();
         for (key, rule) in map {
-            let name = key.strip_suffix("[]").unwrap_or(key);
             let kat = format!("{at}[{}]", json(key));
-            let target = lookup(children, name)
-                .ok_or_else(|| format!("{kat}: canonical schema has no field {}", json(name)))?;
+            let path = field_key(key).expect("the grammar checked the key").0;
+            let target = lookup(children, &path).ok_or_else(|| {
+                let name = key.strip_suffix("[]").unwrap_or(key);
+                format!("{kat}: canonical schema has no field {}", json(name))
+            })?;
+            if mapped.contains_key(&path) {
+                return Err(format!("{kat}: canonical field is mapped twice"));
+            }
             let stat = self.stat_names.len();
             self.stat_names
                 .push(format!("{}{key}", within.unwrap_or("")));
             // The grammar puts an array rule exactly on the keys ending in [].
             let field = match rule {
-                Rule::Const(_) if key.ends_with("[]") && !matches!(target.kind, Kind::Array(_)) => {
+                Rule::Const(_)
+                    if key.ends_with("[]") && !matches!(target.kind, Kind::Array { .. }) =>
+                {
                     return Err(format!("{kat}: canonical field is not an array"));
                 }
                 Rule::Const(v) => Field::Const(v.clone(), stat),
@@ -170,13 +189,13 @@ impl Resolver<'_> {
                 };
                 self.top.insert(key.clone(), scalar);
             }
-            mapped.insert(name.to_string(), field);
+            mapped.insert(path, field);
         }
-        let built = self.build(children, "", &mut mapped);
+        let built = self.build(children, &[], &mut mapped);
         // A field left over sits inside a const object, which `build` does not walk into.
         if let Some((key, _)) = map
             .iter()
-            .find(|(k, _)| mapped.contains_key(k.strip_suffix("[]").unwrap_or(k)))
+            .find(|(k, _)| field_key(k).is_some_and(|(p, _)| mapped.contains_key(&p)))
         {
             return Err(format!("{at}[{}]: inside a const field", json(key)));
         }
@@ -187,18 +206,22 @@ impl Resolver<'_> {
     fn build(
         &mut self,
         children: &[(String, Node)],
-        prefix: &str,
-        mapped: &mut HashMap<String, Field>,
+        prefix: &[String],
+        mapped: &mut HashMap<Vec<String>, Field>,
     ) -> Vec<Named<Field>> {
         children
             .iter()
             .map(|(name, child)| {
-                let path = format!("{prefix}{name}");
+                let path = [prefix, std::slice::from_ref(name)].concat();
                 let value = match (mapped.remove(&path), &child.kind) {
                     (Some(f), _) => f,
-                    (None, Kind::Object(c)) => {
-                        Field::Object(self.build(c, &format!("{path}."), mapped))
-                    }
+                    (
+                        None,
+                        Kind::Object {
+                            children: c,
+                            open: false,
+                        },
+                    ) => Field::Object(self.build(c, &path, mapped)),
                     (None, _) => Field::Null,
                 };
                 Named {
@@ -211,12 +234,16 @@ impl Resolver<'_> {
     }
 }
 
-/// The node at a dotted canonical path, through objects only.
-fn lookup<'a>(mut children: &'a [(String, Node)], name: &str) -> Option<&'a Node> {
+/// The node at a canonical path, through objects that are not open maps only.
+fn lookup<'a>(mut children: &'a [(String, Node)], path: &[String]) -> Option<&'a Node> {
     let mut node: Option<&Node> = None;
-    for part in name.split('.') {
+    for part in path {
         if let Some(n) = node {
-            let Kind::Object(c) = &n.kind else {
+            let Kind::Object {
+                children: c,
+                open: false,
+            } = &n.kind
+            else {
                 return None;
             };
             children = c;
@@ -283,7 +310,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
         let all: Vec<String> = issues.iter().map(ToString::to_string).collect();
         fail(format!("invalid spec: {}", all.join("; ")))
     })?;
-    let canonical = load_schema(schema).map_err(|i| fail(i.to_string()))?;
+    let canonical = load_schema(schema, s.language).map_err(|i| fail(i.to_string()))?;
     let mut r = Resolver {
         custom,
         stat_names: Vec::new(),

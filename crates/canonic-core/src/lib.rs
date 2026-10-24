@@ -18,7 +18,7 @@ pub mod value;
 pub mod write;
 
 pub use artifact::{Artifact, filter_for};
-pub use canonical::{Kind, Node, Schema, Semantic, load_schema, validate_canonical};
+pub use canonical::{Empty, Kind, Node, Schema, Semantic, load_schema, validate_canonical};
 pub use doc::{Doc, Key};
 pub use drift::{
     AlertKind, FieldAlert, FillMonitor, FillMonitorOptions, fingerprint, hash_shape, shape,

@@ -1,0 +1,17 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"grid[]": {"from": "rows", "pluck": "x"}}
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "grid": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}}
+    }
+  },
+  "error": "acme people v1: fields[\"grid[]\"]: arrays of arrays can only be copied whole"
+}

@@ -1,0 +1,21 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"attrs": "labels"}
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "attrs": {"type": "object", "x-open": true},
+      "unmapped": {"type": "object", "x-open": true}
+    }
+  },
+  "inputs": [
+    {"body": {"labels": {"a": 1, "zz": 2}}, "context": null, "expected": {"attrs": {"a": 1, "zz": 2}, "unmapped": null}},
+    {"body": {}, "context": null, "expected": {"attrs": null, "unmapped": null}}
+  ]
+}

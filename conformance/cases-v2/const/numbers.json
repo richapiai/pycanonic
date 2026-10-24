@@ -1,0 +1,17 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"rate": {"const": 1.5}, "big": {"const": 18446744073709551615}}
+  },
+  "schema": {
+    "type": "object",
+    "properties": {"rate": {"type": "number"}, "big": {"type": "integer"}}
+  },
+  "inputs": [
+    {"body": {"rate": 9}, "context": null, "expected": {"rate": 1.5, "big": 18446744073709551615}}
+  ]
+}

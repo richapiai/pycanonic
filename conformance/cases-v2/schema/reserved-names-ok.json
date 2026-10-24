@@ -1,0 +1,14 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"toString": "label"}
+  },
+  "schema": {"type": "object", "properties": {"toString": {"type": "string"}}},
+  "inputs": [
+    {"body": {"label": "x"}, "context": null, "expected": {"toString": "x"}}
+  ]
+}

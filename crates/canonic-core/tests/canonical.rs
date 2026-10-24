@@ -118,7 +118,7 @@ fn a_routing_field_inside_an_array_is_rejected() {
 
 #[test]
 fn load_schema_returns_the_same_issue() {
-    let err = load_schema(&json!({ "type": "string" })).unwrap_err();
+    let err = load_schema(&json!({ "type": "string" }), 1).unwrap_err();
     assert_eq!(
         err.to_string(),
         "canonical schema: root must be an object with properties"
@@ -127,15 +127,18 @@ fn load_schema_returns_the_same_issue() {
 
 #[test]
 fn an_array_without_items_holds_any_elements() {
-    let s = load_schema(&json!({ "properties": { "a": { "type": "array" } } })).unwrap();
-    assert!(matches!(child(&s.root, "a").kind, Kind::Array(None)));
+    let s = load_schema(&json!({ "properties": { "a": { "type": "array" } } }), 1).unwrap();
+    assert!(matches!(
+        child(&s.root, "a").kind,
+        Kind::Array { items: None, .. }
+    ));
 }
 
 #[test]
 fn the_fixture_loads_in_property_order() {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/canonical.json");
     let v: Value = serde_json::from_str(&fs::read_to_string(p).unwrap()).unwrap();
-    let s = load_schema(&v).unwrap();
+    let s = load_schema(&v, 1).unwrap();
     let names: Vec<&str> = s.root.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(
         names,
@@ -182,7 +185,10 @@ fn the_fixture_loads_in_property_order() {
             ..
         }
     ));
-    let Kind::Object(company) = &child(&s.root, "company").kind else {
+    let Kind::Object {
+        children: company, ..
+    } = &child(&s.root, "company").kind
+    else {
         panic!()
     };
     assert!(matches!(
@@ -193,14 +199,23 @@ fn the_fixture_loads_in_property_order() {
             ..
         }
     ));
-    let Kind::Array(Some(exp)) = &child(&s.root, "experiences").kind else {
+    let Kind::Array {
+        items: Some(exp), ..
+    } = &child(&s.root, "experiences").kind
+    else {
         panic!()
     };
-    let Kind::Object(exp) = &exp.kind else {
+    let Kind::Object { children: exp, .. } = &exp.kind else {
         panic!()
     };
-    assert!(matches!(child(exp, "tags").kind, Kind::Array(Some(_))));
-    let Kind::Array(Some(skill)) = &child(&s.root, "skills").kind else {
+    assert!(matches!(
+        child(exp, "tags").kind,
+        Kind::Array { items: Some(_), .. }
+    ));
+    let Kind::Array {
+        items: Some(skill), ..
+    } = &child(&s.root, "skills").kind
+    else {
         panic!()
     };
     assert!(matches!(
@@ -227,6 +242,7 @@ fn every_semantic_parses_and_aliases_keep_only_strings() {
     for (tag, want) in tags {
         let s = load_schema(
             &json!({ "properties": { "x": { "semantic": tag, "aliases": ["a", 1, "b"] } } }),
+            1,
         )
         .unwrap();
         match &child(&s.root, "x").kind {
@@ -239,4 +255,61 @@ fn every_semantic_parses_and_aliases_keep_only_strings() {
             k => panic!("{k:?}"),
         }
     }
+}
+
+#[test]
+fn x_empty_parses_in_language_2() {
+    use canonic_core::Empty;
+    for (tag, want) in [
+        ("null", Empty::Null),
+        ("[]", Empty::List),
+        ("{}", Empty::Object),
+        ("missing", Empty::Missing),
+    ] {
+        let s = load_schema(
+            &json!({ "properties": { "x": { "type": "array", "x-empty": tag } } }),
+            2,
+        )
+        .unwrap();
+        assert_eq!(child(&s.root, "x").empty, Some(want));
+        // Language 1 ignores it.
+        let s = load_schema(&json!({ "properties": { "x": { "x-empty": tag } } }), 1).unwrap();
+        assert_eq!(child(&s.root, "x").empty, None);
+    }
+    let err =
+        load_schema(&json!({ "properties": { "x": { "x-empty": "maybe" } } }), 2).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "canonical schema: x: x-empty must be one of null, [], {}, missing"
+    );
+}
+
+#[test]
+fn language_2_schemas_take_any_name_open_maps_and_nested_arrays() {
+    let s = load_schema(
+        &json!({ "properties": {
+            "first-name": {},
+            "toString": {},
+            "attrs": { "type": "object", "x-open": true },
+            "grid": { "type": "array", "items": { "type": "array" } }
+        } }),
+        2,
+    )
+    .unwrap();
+    assert!(matches!(
+        child(&s.root, "first-name").kind,
+        Kind::Scalar { .. }
+    ));
+    assert!(matches!(
+        child(&s.root, "toString").kind,
+        Kind::Scalar { .. }
+    ));
+    assert!(matches!(
+        child(&s.root, "attrs").kind,
+        Kind::Object { open: true, .. }
+    ));
+    assert!(matches!(
+        child(&s.root, "grid").kind,
+        Kind::Array { nested: true, .. }
+    ));
 }

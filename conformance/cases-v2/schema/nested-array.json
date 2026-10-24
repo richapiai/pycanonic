@@ -1,0 +1,20 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"grid[]": {"from": "rows"}}
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "grid": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}}
+    }
+  },
+  "inputs": [
+    {"body": {"rows": [[1, 2], [], [3]]}, "context": null, "expected": {"grid": [[1, 2], [], [3]]}},
+    {"body": {}, "context": null, "expected": {"grid": null}}
+  ]
+}

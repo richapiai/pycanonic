@@ -1,0 +1,11 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"toString": "label"}
+  },
+  "schema": {"type": "object", "properties": {"toString": {"type": "string"}}},
+  "error": "canonical schema: field name \"toString\" is not allowed"
+}

@@ -24,3 +24,15 @@ def test_const_counts_as_hit():
         fields = a.stats_snapshot()["fields"]
         assert fields["kind"] == {"fill": 1, "errors": 0}
         assert fields["name"] == {"fill": 0, "errors": 0}
+
+
+def test_const_plan_round_trips():
+    a = pycanonic.compile_spec(_spec({"name": "org_name", "kind": {"const": "COMPANY"}}), SCHEMA)
+    plan = a.plan_json()
+    assert json.loads(plan)["format"] == 2
+    b = pycanonic.load(plan)
+    body = {"org_name": "Widget Works"}
+    want = {"name": "Widget Works", "kind": "COMPANY"}
+    assert b.map(json.dumps(body).encode()) == want
+    assert b.map(body) == want
+    assert json.loads(b.map_json(json.dumps(body).encode())) == want

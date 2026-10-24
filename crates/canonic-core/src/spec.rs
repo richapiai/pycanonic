@@ -195,6 +195,29 @@ fn is_canon(s: &str) -> bool {
     s.split('.').all(is_name)
 }
 
+/// A field key as canonical names and whether it ends in `[]`. Language 1 keys are dotted
+/// identifiers. Language 2 keys use the path grammar with keys only, so `["first-name"]` and
+/// `meta["@type"]` name any field. None for a key that is not valid in either. The resolver also
+/// reads language 1 keys with it, which gives the same names as splitting on dots.
+pub fn field_key(key: &str) -> Option<(Vec<String>, bool)> {
+    let (path, array) = match key.strip_suffix("[]") {
+        Some(p) => (p, true),
+        None => (key, false),
+    };
+    // A leading bare `$` is the response in a source path. It names no canonical field.
+    if matches!(path.as_bytes(), [b'$'] | [b'$', b'.' | b'[', ..]) {
+        return None;
+    }
+    let names = parse_path(path)?
+        .into_iter()
+        .map(|s| match s {
+            Step::Key(k) => Some(k),
+            Step::Idx(_) => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some((names, array))
+}
+
 fn json_string(s: &str) -> String {
     Value::String(s.to_string()).to_string()
 }
@@ -324,19 +347,25 @@ impl Checker {
         };
         for (k, r) in o {
             let kat = format!("{at}[{}]", json_string(k));
-            let canon = is_canon(k) || k.strip_suffix("[]").is_some_and(is_canon);
-            if let Some(o) = r.as_object().filter(|o| canon && o.contains_key("const")) {
-                self.lang2(&kat, "const");
-                self.keys(o, &kat, &["const"]);
-            } else if is_canon(k) {
-                self.scalar(r, &kat);
-            } else if k.strip_suffix("[]").is_some_and(is_canon) {
-                self.array(r, &kat);
-            } else {
+            let canon = match self.language {
+                1 => is_canon(k) || k.strip_suffix("[]").is_some_and(is_canon),
+                _ => field_key(k).is_some(),
+            };
+            if !canon {
                 self.fail(
                     &kat,
-                    "canonical field must be dotted identifiers, optionally ending in []",
+                    match self.language {
+                        1 => "canonical field must be dotted identifiers, optionally ending in []",
+                        _ => "canonical field must be a path of keys, optionally ending in []",
+                    },
                 );
+            } else if let Some(o) = r.as_object().filter(|o| o.contains_key("const")) {
+                self.lang2(&kat, "const");
+                self.keys(o, &kat, &["const"]);
+            } else if k.ends_with("[]") {
+                self.array(r, &kat);
+            } else {
+                self.scalar(r, &kat);
             }
         }
     }

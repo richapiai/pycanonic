@@ -117,6 +117,17 @@ fn const_compile_errors() {
         "tags": {"type": "array", "items": {"type": "string"}},
         "name": {"type": "string"}}});
     assert_eq!(
+        compile_err(
+            json!({"tags": {"const": []}, "tags[]": {"from": "x"}}),
+            obj.clone()
+        ),
+        r#"acme people v1: fields["tags[]"]: canonical field is mapped twice"#
+    );
+    assert_eq!(
+        compile_err(json!({"name": "a", "[\"name\"]": "b"}), obj.clone()),
+        r#"acme people v1: fields["[\"name\"]"]: canonical field is mapped twice"#
+    );
+    assert_eq!(
         compile_err(json!({"meta": {"const": {}}, "meta.v": "x"}), obj.clone()),
         r#"acme people v1: fields["meta.v"]: inside a const field"#
     );
@@ -149,4 +160,47 @@ fn const_inside_an_item_fills_per_element() {
     let kind = &a.stats.snapshot().fields[1];
     assert_eq!(kind.0, "jobs[].kind");
     assert_eq!((kind.1.fill, kind.1.total), (2, Some(2)));
+}
+
+#[test]
+fn arrays_of_arrays_are_copied_whole_only() {
+    let schema = json!({"type": "object", "properties": {"grid": {"type": "array", "items": {
+        "type": "array", "items": {"type": "object", "properties": {"x": {"type": "integer"}}}}}}});
+    assert_eq!(
+        compile_err(
+            json!({"grid[]": {"from": "rows", "item": {"x": "x"}}}),
+            schema
+        ),
+        r#"acme people v1: fields["grid[]"]: arrays of arrays can only be copied whole"#
+    );
+}
+
+#[test]
+fn language_2_field_keys_use_the_path_grammar() {
+    let bad = |k: &str| {
+        let mut spec = spec_with_language(json!(2));
+        spec["fields"] = json!({k: {"from": "x"}});
+        validate_spec(&spec)
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    };
+    for k in ["a[0]", "$", "$.a", "[]", "a..b", "[\"a\"]x"] {
+        assert_eq!(
+            bad(k),
+            [format!(
+                "spec.fields[{}]: canonical field must be a path of keys, optionally ending in []",
+                J::from(k)
+            )],
+            "{k}"
+        );
+    }
+    for k in [
+        "[\"first-name\"]",
+        "meta[\"@type\"]",
+        "[\"@graph\"][]",
+        "a.b",
+    ] {
+        assert!(bad(k).is_empty(), "{k}");
+    }
 }

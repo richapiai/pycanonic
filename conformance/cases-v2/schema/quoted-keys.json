@@ -1,0 +1,30 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "[\"first-name\"]": "given",
+      "meta[\"@type\"]": "kind",
+      "[\"@graph\"][]": {"from": "nodes", "item": {"[\"@id\"]": "ref"}}
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "first-name": {"type": "string"},
+      "meta": {"type": "object", "properties": {"@type": {"type": "string"}}},
+      "@graph": {"type": "array", "items": {"type": "object", "properties": {"@id": {"type": "string"}}}}
+    }
+  },
+  "inputs": [
+    {
+      "body": {"given": "Ada", "kind": "Person", "nodes": [{"ref": "n1"}, {}]},
+      "context": null,
+      "expected": {"first-name": "Ada", "meta": {"@type": "Person"}, "@graph": [{"@id": "n1"}, {"@id": null}]}
+    },
+    {"body": {}, "context": null, "expected": {"first-name": null, "meta": {"@type": null}, "@graph": null}}
+  ]
+}
