@@ -10,10 +10,10 @@ import sys
 from collections.abc import Callable
 from types import ModuleType
 
-from .commands import bench, build, diff, infer, test
+from .commands import bench, build, diff, infer, schema, test
 from .io import Transforms, UsageError
 
-COMMANDS: dict[str, ModuleType] = {"infer": infer, "test": test, "diff": diff, "build": build, "bench": bench}
+COMMANDS: dict[str, ModuleType] = {"infer": infer, "test": test, "diff": diff, "build": build, "bench": bench, "schema": schema}
 
 USAGE = f"""usage: canonic <command> [options]
 
