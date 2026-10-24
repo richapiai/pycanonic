@@ -28,19 +28,27 @@ impl Key {
 #[derive(Debug, Clone, PartialEq)]
 pub enum KeyStep {
     Key(Key),
+    /// A key of a `"keys": "case_insensitive"` plan: the exact key, else `Doc::get_ci`.
+    KeyCi(Key),
     Idx(usize),
 }
 
 pub type KeyPath = Vec<KeyStep>;
 
+/// One step down from `d`, null or not.
+pub(crate) fn step<D: Doc>(d: &D, s: &KeyStep) -> Option<D> {
+    match s {
+        KeyStep::Key(k) => d.get(k),
+        KeyStep::KeyCi(k) => d.get(k).or_else(|| d.get_ci(k)),
+        KeyStep::Idx(i) => d.idx(*i),
+    }
+}
+
 /// The value at `path`, `None` when it or any step is missing or null.
 pub(crate) fn read<D: Doc>(doc: Option<&D>, path: &[KeyStep]) -> Option<D> {
     let mut cur = doc?.clone();
     for s in path {
-        cur = match s {
-            KeyStep::Key(k) => cur.get(k)?,
-            KeyStep::Idx(i) => cur.idx(*i)?,
-        };
+        cur = step(&cur, s)?;
     }
     (!cur.is_null()).then_some(cur)
 }
@@ -51,6 +59,14 @@ pub(crate) fn read<D: Doc>(doc: Option<&D>, path: &[KeyStep]) -> Option<D> {
 pub trait Doc: Clone {
     /// The member `key` of an object (not an array). The last occurrence wins, as in `JSON.parse`.
     fn get(&self, key: &Key) -> Option<Self>;
+    /// The first member, in document order, whose key equals `key` in Unicode lowercase. Only a
+    /// `"keys": "case_insensitive"` plan calls it, after `get` finds no exact match.
+    fn get_ci(&self, key: &Key) -> Option<Self> {
+        let want = key.s.to_lowercase();
+        (self.members()?.into_iter())
+            .find(|(k, _)| k.to_lowercase() == want)
+            .map(|(_, v)| v)
+    }
     /// Element `i` of an array.
     fn idx(&self, i: usize) -> Option<Self>;
     /// The value as a scalar. `Value::Container` for an object or array.
@@ -208,6 +224,13 @@ impl<A: Doc, B: Doc> Doc for Either<A, B> {
         match self {
             Either::Body(a) => a.get(key).map(Either::Body),
             Either::Ctx(b) => b.get(key).map(Either::Ctx),
+        }
+    }
+
+    fn get_ci(&self, key: &Key) -> Option<Self> {
+        match self {
+            Either::Body(a) => a.get_ci(key).map(Either::Body),
+            Either::Ctx(b) => b.get_ci(key).map(Either::Ctx),
         }
     }
 

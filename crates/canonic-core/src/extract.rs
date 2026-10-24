@@ -11,10 +11,14 @@
 //! container is matched by `json::simd::skip` from its opening bracket, so nothing past the last
 //! wanted value is read. A stage-1 index of the whole input reads the whole body.
 //!
+//! A `"keys": "case_insensitive"` plan has no anchors and does not scan: `extract` parses the whole
+//! body and reads the paths as `map` does, and `stream` holds every chunk until `result`.
+//!
 //! Captured values are decoded like the parser does (`unescape`, the `Node::Num` rule) and go
 //! through the field's transforms and validator with the executor's own functions, so `extract`
 //! equals the routing fields of `map`.
 
+use crate::doc::{Key, KeyPath, KeyStep, read};
 use crate::exec::{transform, transform_many};
 use crate::json::{ALL, Filter, Node, parse, simd, unescape};
 use crate::plan::{Plan, Scalar, TxRef};
@@ -118,6 +122,8 @@ pub(crate) struct Extractor {
     /// Slot and finder of each anchored field, in the spec's `anchors` order.
     anchors: Vec<(usize, Finder<'static>)>,
     custom: Vec<Arc<dyn Transform>>,
+    /// Each path slot with case-insensitive keys, in a case-insensitive plan. `None` otherwise.
+    ci: Option<Vec<KeyPath>>,
 }
 
 impl Extractor {
@@ -142,7 +148,17 @@ impl Extractor {
                 Some((slots[i][0], Finder::new(token).into_owned()))
             })
             .collect();
+        let ci = plan.case_insensitive.then(|| {
+            let step = |s: &Step| match s {
+                Step::Key(k) => KeyStep::KeyCi(Key::new(k.clone(), 0)),
+                Step::Idx(i) => KeyStep::Idx(*i),
+            };
+            (paths.iter())
+                .map(|p| p.iter().map(step).collect())
+                .collect()
+        });
         Extractor {
+            ci,
             trie: Trie::new(&paths),
             routing: plan.routing.iter().map(|r| r.scalar.clone()).collect(),
             slots,
@@ -153,6 +169,17 @@ impl Extractor {
 
     /// Anchors first, then one scan for what they missed.
     pub(crate) fn extract(&self, raw: &[u8]) -> Vec<Option<Value<'static>>> {
+        if let Some(paths) = &self.ci {
+            // A body that does not parse reads as absent, as in `map`.
+            let doc = parse(raw, &ALL).ok();
+            let found: Vec<Option<&Node>> = (paths.iter())
+                .map(|p| read(doc.as_ref().as_ref(), p))
+                .collect();
+            return self.results_with(|i, full| match found[i]? {
+                Node::Arr(_) | Node::Obj(_) | Node::Indexed(_) if !full => Some(Node::Skipped),
+                n => Some(n.clone()),
+            });
+        }
         let mut s = State::new(self.trie.len);
         let mut r = Run {
             s: &mut s,
@@ -177,15 +204,20 @@ impl Extractor {
     /// when its transforms or validator reject what was found.
     /// `text(slot)` is the raw text captured for a path slot.
     fn results<'b>(&self, text: impl Fn(usize) -> Option<&'b [u8]>) -> Vec<Option<Value<'static>>> {
+        self.results_with(|i, full| text(i).and_then(|v| node(v, full)))
+    }
+
+    /// `results` over the decoded value of each path slot. `full`: a container is needed whole.
+    fn results_with<'b>(
+        &self,
+        value: impl Fn(usize, bool) -> Option<Node<'b>>,
+    ) -> Vec<Option<Value<'static>>> {
         let fields = self.routing.iter().zip(&self.slots);
         fields
             .map(|(s, slots)| {
                 // A custom transform first in line gets a container whole. Nothing else reads one.
                 let full = matches!(s.tx.first(), Some(TxRef::Custom { .. }));
-                let found = |&i: &usize| {
-                    let n = text(i).and_then(|v| node(v, full));
-                    n.filter(|n| !matches!(n, Node::Null))
-                };
+                let found = |&i: &usize| value(i, full).filter(|n| !matches!(n, Node::Null));
                 let v = match s.source {
                     Source::FromMany(_) => {
                         let docs: Vec<Option<Node>> = slots.iter().map(found).collect();
@@ -253,6 +285,9 @@ impl ExtractStream {
             return true;
         }
         self.buf.extend_from_slice(chunk);
+        if self.ex.ci.is_some() {
+            return false;
+        }
         self.run().run();
         self.compact();
         self.s.st == St::Done
@@ -260,6 +295,9 @@ impl ExtractStream {
 
     /// Ends the input. Unresolved fields are `None`.
     pub fn result(mut self) -> Vec<Option<Value<'static>>> {
+        if self.ex.ci.is_some() {
+            return self.ex.extract(&self.buf);
+        }
         self.run().end();
         let (s, buf, kept) = (&self.s, &self.buf, &self.kept);
         self.ex.results(|i| match s.slots[i] {

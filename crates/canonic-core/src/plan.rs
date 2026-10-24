@@ -296,6 +296,10 @@ pub struct Plan {
     /// Language 2: the first that holds on the root stops the map.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reject: Vec<Reject>,
+    /// Language 2: source keys also match without regard to case, an exact match first.
+    /// `$input` paths and canonical keys stay exact.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub case_insensitive: bool,
 }
 
 /// A `reject` condition and its spec JSON text, the reason `Rejected` gives.
@@ -370,7 +374,10 @@ impl Plan {
             t.iter()
                 .any(|t| matches!(t, TxRef::Builtin(b) if b.is_language_2()))
         }
-        self.context || !self.reject.is_empty() || self.fields.iter().any(|n| field(&n.value))
+        self.context
+            || self.case_insensitive
+            || !self.reject.is_empty()
+            || self.fields.iter().any(|n| field(&n.value))
     }
 
     /// One line per canonical field, in schema order, e.g.

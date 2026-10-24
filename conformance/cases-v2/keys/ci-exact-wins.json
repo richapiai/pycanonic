@@ -1,0 +1,62 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "keys": "case_insensitive",
+    "fields": {
+      "email": "email",
+      "name": "name"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "email": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "EMAIL": "upper",
+        "email": "lower",
+        "Name": "first",
+        "NAME": "second"
+      },
+      "context": null,
+      "expected": {
+        "email": "lower",
+        "name": "first"
+      }
+    },
+    {
+      "body": {
+        "Email": null,
+        "email": "exact"
+      },
+      "context": null,
+      "expected": {
+        "email": "exact",
+        "name": null
+      }
+    },
+    {
+      "body": {
+        "email": null,
+        "Email": "other"
+      },
+      "context": null,
+      "expected": {
+        "email": null,
+        "name": null
+      }
+    }
+  ]
+}

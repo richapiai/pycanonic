@@ -524,3 +524,84 @@ fn reject_writes_format_2_and_loads_back() {
             .is_none()
     );
 }
+
+fn keys_artifact(keys: Option<&str>) -> canonic_core::Artifact {
+    let mut spec = spec_with_language(json!(2));
+    if let Some(k) = keys {
+        spec["keys"] = json!(k);
+    }
+    spec["fields"] = json!({"email": "contact.email", "city": "contact.city"});
+    let schema = json!({"type": "object", "properties": {
+        "email": {"type": "string", "semantic": "email", "routing": true},
+        "city": {"type": "string"}}});
+    canonic_core::Artifact::new(compile(&spec, &schema, &[]).unwrap(), Default::default()).unwrap()
+}
+
+/// A body whose `contact` object has more than `json::INDEXED` keys, so the exact plan's filter
+/// keeps a pruned, indexed object there.
+fn wide_body(email_key: &str) -> Vec<u8> {
+    let filler: String = (0..12).map(|i| format!(r#""k{i}": {i}, "#)).collect();
+    format!(r#"{{"Contact": {{{filler}"{email_key}": "a@b.co", "CITY": "Oslo"}}}}"#).into_bytes()
+}
+
+#[test]
+fn case_insensitive_keys_survive_the_parse_filter() {
+    let body = wide_body("eMail");
+    let ci = keys_artifact(Some("case_insensitive"));
+    assert_eq!(
+        canonic_core::filter_for(&ci.plan),
+        canonic_core::Filter::all()
+    );
+    assert_eq!(
+        ci.map_json(&body, None).unwrap(),
+        br#"{"email":"a@b.co","city":"Oslo"}"#
+    );
+    let exact = keys_artifact(None);
+    assert_ne!(
+        canonic_core::filter_for(&exact.plan),
+        canonic_core::Filter::all()
+    );
+    assert_eq!(
+        exact.map_json(&body, None).unwrap(),
+        br#"{"email":null,"city":null}"#
+    );
+}
+
+#[test]
+fn case_insensitive_extract_and_stream_read_by_case() {
+    let a = keys_artifact(Some("case_insensitive"));
+    let want = [Some(canonic_core::Value::Str("a@b.co".into()))];
+    let body = wide_body("EMAIL");
+    assert_eq!(a.extract(&body), want);
+    let mut s = a.stream();
+    for c in body.chunks(3) {
+        assert!(!s.push(c));
+    }
+    assert_eq!(s.result(), want);
+    // Exact wins, as in `map`, and a body that does not parse reads as absent.
+    let both = br#"{"contact": {"EMAIL": "x@y.co", "email": "a@b.co"}}"#;
+    assert_eq!(a.extract(both), want);
+    assert_eq!(a.extract(b"{\"contact\": "), [None]);
+    // Without the option, the scanner still matches exact keys only.
+    assert_eq!(keys_artifact(None).extract(&body), [None]);
+}
+
+#[test]
+fn case_insensitive_keys_write_format_2_and_load_back() {
+    let a = keys_artifact(Some("case_insensitive"));
+    let text = serde_json::to_value(&*a.plan).unwrap();
+    assert_eq!(text["format"], 2);
+    assert_eq!(text["case_insensitive"], true);
+    let loaded: Plan = serde_json::from_value(text.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&loaded).unwrap(), text);
+    let b = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
+    assert_eq!(
+        b.map_json(br#"{"Contact": {"Email": "a@b.co"}}"#, None)
+            .unwrap(),
+        br#"{"email":"a@b.co","city":null}"#
+    );
+    // "exact" is the default: format 1, no key in the plan.
+    let exact = serde_json::to_value(&*keys_artifact(Some("exact")).plan).unwrap();
+    assert_eq!(exact["format"], 1);
+    assert!(exact.get("case_insensitive").is_none());
+}

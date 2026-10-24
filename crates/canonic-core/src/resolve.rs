@@ -659,6 +659,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
             .into_iter()
             .map(|(cond, reason)| Reject { cond, reason })
             .collect(),
+        case_insensitive: s.case_insensitive,
     };
     if plan.needs_v2() {
         plan.format = Format(2);

@@ -89,6 +89,18 @@ impl Doc for PyDoc<'_, '_> {
             .map(|(_, v)| self.wrap(v))
     }
 
+    /// Only `str` keys match, as in `get`. `members` would also turn a key like `1` into text.
+    fn get_ci(&self, key: &Key) -> Option<Self> {
+        let d = self.obj.cast::<PyDict>().ok()?;
+        let want = key.s.to_lowercase();
+        d.iter()
+            .find(|(k, _)| {
+                k.cast::<PyString>()
+                    .is_ok_and(|s| text(s).to_lowercase() == want)
+            })
+            .map(|(_, v)| self.wrap(v))
+    }
+
     fn idx(&self, i: usize) -> Option<Self> {
         let v = if let Ok(l) = self.obj.cast::<PyList>() {
             l.get_item(i).ok()

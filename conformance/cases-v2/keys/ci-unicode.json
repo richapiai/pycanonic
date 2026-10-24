@@ -1,0 +1,38 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "keys": "case_insensitive",
+    "fields": {
+      "email": "[\"émail\"]",
+      "city": "[\"straße\"]"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "email": {
+        "type": "string"
+      },
+      "city": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "Émail": "a@b.co",
+        "STRAßE": "Berlin"
+      },
+      "context": null,
+      "expected": {
+        "email": "a@b.co",
+        "city": "Berlin"
+      }
+    }
+  ]
+}

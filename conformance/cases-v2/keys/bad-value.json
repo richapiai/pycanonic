@@ -1,0 +1,22 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "keys": "lower",
+    "fields": {
+      "email": "email"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "email": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "invalid spec: spec.keys: must be \"exact\" or \"case_insensitive\""
+}

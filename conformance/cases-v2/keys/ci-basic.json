@@ -1,0 +1,88 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "keys": "case_insensitive",
+    "fields": {
+      "email": "email",
+      "name": "profile.name",
+      "jobs[]": {
+        "from": "jobs",
+        "item": {
+          "title": "title"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "email": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "jobs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "Email": "a@b.co",
+        "PROFILE": {
+          "Name": "Ann"
+        },
+        "Jobs": [
+          {
+            "TITLE": "cto"
+          },
+          {
+            "title": "dev"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "email": "a@b.co",
+        "name": "Ann",
+        "jobs": [
+          {
+            "title": "cto"
+          },
+          {
+            "title": "dev"
+          }
+        ]
+      }
+    },
+    {
+      "body": {
+        "email": "x@y.co",
+        "profile": {
+          "name": "Bo"
+        },
+        "jobs": []
+      },
+      "context": null,
+      "expected": {
+        "email": "x@y.co",
+        "name": "Bo",
+        "jobs": []
+      }
+    }
+  ]
+}

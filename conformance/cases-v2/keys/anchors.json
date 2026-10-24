@@ -1,0 +1,27 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "keys": "case_insensitive",
+    "anchors": {
+      "email": "\"email\""
+    },
+    "fields": {
+      "email": "email"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "email": {
+        "type": "string",
+        "semantic": "email",
+        "routing": true
+      }
+    }
+  },
+  "error": "invalid spec: spec.anchors: not allowed with \"keys\": \"case_insensitive\""
+}

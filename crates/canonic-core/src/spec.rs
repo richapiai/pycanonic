@@ -135,6 +135,9 @@ pub struct Spec {
     pub reject: Vec<(Cond, String)>,
     /// Language 2: named item maps, in spec order.
     pub definitions: Vec<(String, FieldMap)>,
+    /// Language 2: `"keys": "case_insensitive"`. Source keys also match without regard to
+    /// case, an exact match first.
+    pub case_insensitive: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -735,9 +738,25 @@ impl Checker {
                 "fields",
                 "reject",
                 "definitions",
+                "keys",
             ],
         );
         self.header(s);
+        if let Some(k) = s.get("keys") {
+            self.lang2("spec", "keys");
+            match k.as_str() {
+                Some("exact") => {}
+                Some("case_insensitive") if s.contains_key("anchors") => {
+                    // An anchor is a byte search for one exact key token.
+                    self.fail(
+                        "spec.anchors",
+                        "not allowed with \"keys\": \"case_insensitive\"",
+                    )
+                }
+                Some("case_insensitive") => {}
+                _ => self.fail("spec.keys", "must be \"exact\" or \"case_insensitive\""),
+            }
+        }
         if let Some(a) = s.get("anchors") {
             self.anchors(a);
         }
@@ -1033,6 +1052,7 @@ pub fn parse_spec(spec: &Value) -> Result<Spec, Vec<Issue>> {
             .flatten()
             .map(|(name, map)| (name.clone(), field_map(map)))
             .collect(),
+        case_insensitive: spec.get("keys").and_then(Value::as_str) == Some("case_insensitive"),
     })
 }
 

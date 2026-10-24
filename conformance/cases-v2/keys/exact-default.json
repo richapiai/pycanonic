@@ -1,0 +1,40 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "email": "email"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "email": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "Email": "a@b.co"
+      },
+      "context": null,
+      "expected": {
+        "email": null
+      }
+    },
+    {
+      "body": {
+        "email": "a@b.co"
+      },
+      "context": null,
+      "expected": {
+        "email": "a@b.co"
+      }
+    }
+  ]
+}

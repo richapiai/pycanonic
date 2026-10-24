@@ -31,7 +31,7 @@
 
 use crate::canonical::{Empty, Node, Semantic};
 use crate::cond::{Cond, Rank, holds, key_text};
-use crate::doc::{Doc, Key, KeyPath as Path, KeyStep as Step, read};
+use crate::doc::{Doc, Key, KeyPath as Path, KeyStep as Step, read, step as step_of};
 use crate::group::{Agg, AggOp, aggregate, groups};
 use crate::plan::{CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, Sink, copy};
@@ -81,6 +81,17 @@ enum StepId {
     Idx(usize),
 }
 
+impl StepId {
+    /// A parent's children are all exact or all case-insensitive (`Builder::path`), so the tag
+    /// alone tells two keys apart.
+    fn of(s: &Step) -> StepId {
+        match s {
+            Step::Key(k) | Step::KeyCi(k) => StepId::Key(k.tag),
+            Step::Idx(i) => StepId::Idx(*i),
+        }
+    }
+}
+
 impl ScopeBuilder {
     fn at(&mut self, steps: Path) -> At {
         let mut node = 0;
@@ -89,17 +100,10 @@ impl ScopeBuilder {
             if node > 0 && i < last {
                 self.through[node - 1] += 1;
             }
-            let id = match &step {
-                Step::Key(k) => StepId::Key(k.tag),
-                Step::Idx(i) => StepId::Idx(*i),
-            };
-            node = match self.index.get(&(node, id)) {
+            node = match self.index.get(&(node, StepId::of(&step))) {
                 Some(&n) => n,
                 None => {
-                    let id = match &step {
-                        Step::Key(k) => StepId::Key(k.tag),
-                        Step::Idx(i) => StepId::Idx(*i),
-                    };
+                    let id = StepId::of(&step);
                     self.nodes.push((node, step));
                     self.through.push(0);
                     self.index.insert((node, id), self.nodes.len());
@@ -265,7 +269,11 @@ impl Builder<'_> {
         Ok(tx.to_vec())
     }
 
+    /// `p` with interned keys. In a case-insensitive plan its keys are `KeyCi`, except on a
+    /// `$input` path: the context keeps exact keys.
     fn path(&mut self, p: &spec::Path) -> Path {
+        let ci = self.plan.case_insensitive
+            && !matches!(p.first(), Some(spec::Step::Key(k)) if k == "$input");
         p.iter()
             .map(|s| match s {
                 spec::Step::Idx(i) => Step::Idx(*i),
@@ -277,7 +285,11 @@ impl Builder<'_> {
                             self.keys.len() - 1
                         }
                     };
-                    Step::Key(Key::new(k.clone(), tag as u64))
+                    let key = Key::new(k.clone(), tag as u64);
+                    match ci {
+                        true => Step::KeyCi(key),
+                        false => Step::Key(key),
+                    }
                 }
             })
             .collect()
@@ -554,13 +566,6 @@ impl<'s, D: Doc> Frame<'s, D> {
             }
         };
         v.filter(|d| !d.is_null())
-    }
-}
-
-fn step_of<D: Doc>(d: &D, s: &Step) -> Option<D> {
-    match s {
-        Step::Key(k) => d.get(k),
-        Step::Idx(i) => d.idx(*i),
     }
 }
 

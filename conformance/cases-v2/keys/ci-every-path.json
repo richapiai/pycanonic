@@ -1,0 +1,194 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "keys": "case_insensitive",
+    "fields": {
+      "name": {
+        "coalesce": [
+          "nick",
+          "name"
+        ]
+      },
+      "titles[]": {
+        "from": "jobs",
+        "filter": {
+          "path": "LEVEL",
+          "in": [
+            1,
+            2
+          ]
+        },
+        "sort_by": "level",
+        "pluck": "title"
+      },
+      "skills[]": {
+        "from": "jobs[].skills[]",
+        "unique": "nm",
+        "pluck": "nm"
+      },
+      "companies[]": {
+        "from": "jobs",
+        "group_by": "co",
+        "item": {
+          "company": "co",
+          "count": {
+            "aggregate": "count",
+            "from": "$group"
+          },
+          "titles[]": {
+            "from": "$group",
+            "pluck": "title"
+          },
+          "levels": {
+            "aggregate": "sum",
+            "from": "$group[].level"
+          }
+        }
+      },
+      "total": {
+        "aggregate": "sum",
+        "from": "jobs[].level"
+      },
+      "on": {
+        "const": true,
+        "when": {
+          "path": "status",
+          "eq": "on"
+        }
+      },
+      "page": "$input.page"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "titles": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "companies": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "company": {
+              "type": "string"
+            },
+            "count": {
+              "type": "number"
+            },
+            "titles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "levels": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "total": {
+        "type": "number"
+      },
+      "on": {
+        "type": "boolean"
+      },
+      "page": {
+        "type": "number"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "Name": "Ann",
+        "Status": "on",
+        "Jobs": [
+          {
+            "Co": "a",
+            "Title": "t1",
+            "Level": 2,
+            "Skills": [
+              {
+                "NM": "x"
+              }
+            ]
+          },
+          {
+            "CO": "a",
+            "title": "t2",
+            "LEVEL": 1,
+            "skills": [
+              {
+                "Nm": "y"
+              }
+            ]
+          },
+          {
+            "co": "b",
+            "TITLE": "t3",
+            "level": 3,
+            "SKILLS": [
+              {
+                "nm": "x"
+              }
+            ]
+          }
+        ]
+      },
+      "context": {
+        "Page": 3
+      },
+      "expected": {
+        "name": "Ann",
+        "titles": [
+          "t2",
+          "t1"
+        ],
+        "skills": [
+          "x",
+          "y"
+        ],
+        "companies": [
+          {
+            "company": "a",
+            "count": 2,
+            "titles": [
+              "t1",
+              "t2"
+            ],
+            "levels": 3
+          },
+          {
+            "company": "b",
+            "count": 1,
+            "titles": [
+              "t3"
+            ],
+            "levels": 3
+          }
+        ],
+        "total": 6,
+        "on": true,
+        "page": null
+      }
+    }
+  ]
+}
