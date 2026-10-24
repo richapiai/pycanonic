@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 import pycanonic
 
 SCHEMA = {"type": "object", "properties": {"name": {"type": "string"}, "kind": {"type": "string"}}}
@@ -343,6 +345,11 @@ def test_array_root_three_paths():
             assert way() == want
     assert list(a.stats_snapshot()["fields"]) == ["[]", "[].name"]
     assert a.extract(b'[{"n": "a"}]') == {}
+    r = pycanonic.compile_spec({**_spec({"[]": {"from": "$", "item": {"name": "n"}}}), "reject": [{"empty": "$"}]}, schema)
+    for way in _ways(r, []):
+        with pytest.raises(pycanonic.Rejected):
+            way()
+    assert r.stats_snapshot()["rejected"] == 3
     s = a.stream()
     s.push(b'[{"n": "a"}]')
     assert s.result() == {}

@@ -173,8 +173,10 @@ class ShadowDiff:
     """Compares a candidate's `map()` output with the promoted one's, field by field, response by response."""
 
     def __init__(self, routing: Sequence[str]) -> None: ...
-    def add(self, promoted: Mapping[str, Any], candidate: Mapping[str, Any]) -> None:
-        """Records one response. A value nested deeper than 512 containers or with more than 1,000,000 values
+    def add(
+        self, promoted: Mapping[str, Any] | Sequence[Any] | None, candidate: Mapping[str, Any] | Sequence[Any] | None
+    ) -> None:
+        """Records one response. An array root's output (a list or `None`) is one field, `"[]"`. A value nested deeper than 512 containers or with more than 1,000,000 values
         (a cyclic one) raises `ValueError` and records nothing."""
 
     def snapshot(self) -> _ShadowReport: ...

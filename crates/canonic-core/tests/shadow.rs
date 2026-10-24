@@ -591,3 +591,46 @@ fn add_stops_at_512_nested_containers_as_the_parser_does() {
     assert!(!d.add_bounded(&Deep(max + 1), &Deep(1)));
     assert_eq!(d.snapshot().responses, 1);
 }
+
+// An array root (language 2) maps to a list: the whole output is one leaf, "[]", its stat slot.
+#[test]
+fn an_array_root_is_one_leaf() {
+    let changed = {
+        let mut d = ShadowDiff::new(vec![]);
+        add(
+            &mut d,
+            &json!([{"name": "a"}]),
+            &json!([{"name": "ZZZ"}, {"name": "b"}]),
+        );
+        add(&mut d, &J::Null, &json!([{"name": "x"}]));
+        d.snapshot()
+    };
+    assert_eq!(changed.fields, [("[]".to_string(), diff(2, 0, 1, 0, 1))]);
+    assert_eq!(
+        gate(&changed),
+        result(false, &["[]: 0 regressions and 1 conflicts in 2 compared"])
+    );
+    let mut d = ShadowDiff::new(vec![]);
+    add(&mut d, &json!([{"name": "a"}]), &json!([{"name": "a"}]));
+    add(&mut d, &json!([{"name": null}]), &json!([{"name": "b"}]));
+    add(&mut d, &J::Null, &J::Null);
+    let r = d.snapshot();
+    assert_eq!(r.fields, [("[]".to_string(), diff(2, 1, 1, 0, 0))]);
+    assert_eq!(gate(&r), result(true, &[]));
+    // Known entities check routing fields, which an array root has none of: list output passes,
+    // and output with unresolved names still blocks.
+    let opts = |known| GateOptions {
+        known,
+        ..GateOptions::default()
+    };
+    let k = known(&json!([{"name": "a"}]), &json!([{"name": "b"}]));
+    assert_eq!(merge_gate(&r, &opts(vec![k])), result(true, &[]));
+    let raw = (Out::List(vec![Out::Obj(vec![])]), out(&json!([])));
+    assert_eq!(
+        merge_gate(&r, &opts(vec![raw])),
+        result(
+            false,
+            &["known entity 0: output has unresolved names. Use Artifact::map_named"]
+        )
+    );
+}

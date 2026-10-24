@@ -70,7 +70,8 @@ fn order(k: &str) -> (u8, u32) {
     index(k).map_or((1, 0), |n| (0, n))
 }
 
-/// Canonical leaves by dotted path, in first-seen order. An array is one leaf. A repeated path
+/// Canonical leaves by dotted path, in first-seen order. An array is one leaf, and so is a list
+/// root, at `"[]"`. A repeated path
 /// (a key "a.b" next to "a": {"b": ..}) keeps its first place and its last value, as a JavaScript Map.
 struct Leaves<'a> {
     list: Vec<(String, &'a Out)>,
@@ -83,7 +84,11 @@ impl<'a> Leaves<'a> {
             list: Vec::new(),
             at: HashMap::new(),
         };
-        l.collect(o, "");
+        match o {
+            // An array root's output (language 2): one leaf, named as its stat slot.
+            Out::List(_) | Out::Null => l.collect_one("[]".into(), o),
+            _ => l.collect(o, ""),
+        }
         l
     }
 
@@ -94,12 +99,16 @@ impl<'a> Leaves<'a> {
                 self.collect(v, &format!("{path}."));
                 continue;
             }
-            match self.at.entry(path) {
-                Entry::Occupied(e) => self.list[*e.get()].1 = v,
-                Entry::Vacant(e) => {
-                    self.list.push((e.key().clone(), v));
-                    e.insert(self.list.len() - 1);
-                }
+            self.collect_one(path, v);
+        }
+    }
+
+    fn collect_one(&mut self, path: String, v: &'a Out) {
+        match self.at.entry(path) {
+            Entry::Occupied(e) => self.list[*e.get()].1 = v,
+            Entry::Vacant(e) => {
+                self.list.push((e.key().clone(), v));
+                e.insert(self.list.len() - 1);
             }
         }
     }

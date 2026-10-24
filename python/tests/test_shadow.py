@@ -301,3 +301,15 @@ def test_a_bench_soak_with_real_fill_alerts(bench_spec: tuple[dict[str, Any], di
             "title: fill alert on the candidate (0.000 vs 1.000)",
         ],
     )
+
+
+def test_array_root_output_is_one_field() -> None:
+    d = ShadowDiff([])
+    d.add([{"name": "a"}], [{"name": "ZZZ"}, {"name": "b"}])
+    d.add(None, [{"name": "x"}])
+    report = d.snapshot()
+    assert report["fields"] == {"[]": {"compared": 2, "same": 0, "improvements": 1, "regressions": 0, "conflicts": 1}}
+    assert merge_gate(report).merge is False
+    same = ShadowDiff([])
+    same.add([{"name": "a"}], [{"name": "a"}])
+    assert merge_gate(same.snapshot()) == GateResult(merge=True, reasons=[])

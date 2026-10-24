@@ -401,10 +401,11 @@ impl Resolver<'_> {
                 "{at}: an array root needs an array rule without when"
             ));
         };
+        let stat = self.stat_names.len();
         self.stat_names.push("[]".into());
-        let value = match self.container(rule, node, 0, at)? {
+        let value = match self.container(rule, node, stat, at)? {
             Some(f) => f,
-            None => self.array(a, node, 0, at)?,
+            None => self.array(a, node, stat, at)?,
         };
         let name_idx = self.intern("[]");
         Ok(vec![Named {
