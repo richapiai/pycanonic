@@ -404,10 +404,10 @@ fn dates_numbers_and_ranges() {
         (
             "parse_range",
             Some(json!("max")),
-            s("1,001-5,000"),
-            Int(5000),
+            s("1,000-4,999"),
+            Int(4999),
         ),
-        ("parse_range", Some(json!("min")), s("51-"), Null),
+        ("parse_range", Some(json!("min")), s("100-"), Null),
         ("parse_range", Some(json!("min")), s("a-b"), Null),
         ("parse_range", Some(json!("min")), s("+"), Null),
         ("parse_range", Some(json!("min")), Bool(true), Null),
