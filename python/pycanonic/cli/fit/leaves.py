@@ -194,9 +194,9 @@ class _Search:
         return out
 
     def _lookups(self, live: list[int]) -> list[_Cand]:
-        """A table per path from its value to the target the most pairs give it (the first seen on
-        a tie), scored by support like any rule, so one noisy pair does not hide it.
-        Only for scalar targets, when some value repeats (a table with one entry per pair is an ID,
+        """A table per path from its value to the target most pairs give it, scored by support like
+        any rule, so one noisy pair does not hide it. A value whose targets tie has no
+        majority, so the path gets no table. Only for scalar targets, when some value repeats (a table with one entry per pair is an ID,
         not an enum), and the targets differ (one target is a constant)."""
         out: list[_Cand] = []
         for path in dict.fromkeys(p for j in live for p in self.values[j]):
@@ -214,7 +214,10 @@ class _Search:
                 votes.setdefault(text(v), Counter())[key] += 1
                 seen += 1
             else:
-                table = {k: first[c.most_common(1)[0][0]] for k, c in votes.items()}
+                tops = {k: c.most_common(2) for k, c in votes.items()}
+                if any(len(t) > 1 and t[0][1] == t[1][1] for t in tops.values()):
+                    continue  # a tie is no majority: the pairs disagree, so the path is not an enum
+                table = {k: first[t[0][0]] for k, t in tops.items()}
                 if len(table) < seen and len({json.dumps(t, sort_keys=True) for t in table.values()}) > 1:
                     arg = {"table": dict(sorted(table.items())), "else": "null"}
                     out.append(_cand("lookup", (path,), Chain([("lookup", arg)])))

@@ -118,6 +118,13 @@ def test_lookup_by_majority_lands_in_review() -> None:
     assert tier(f) == "review"
 
 
+def test_lookup_with_tied_votes_gets_no_table() -> None:
+    """A value whose targets tie has no majority: the path is not an enum (a memorized table)."""
+    enum = [("UP", "liked"), ("UP", "fond"), ("STAR", "starred"), ("STAR", "starred"), ("DOWN", "disliked")]
+    f = leaf("reaction", [(t, {"kind": s}) for s, t in enum])
+    assert (f.kind, f.rule, f.support) == ("none", None, 0)
+
+
 def test_holdout_catches_overfit() -> None:
     rows = [("person" if i else "company", {"n": i}) for i in range(6)]
     f = leaf("type", rows)
