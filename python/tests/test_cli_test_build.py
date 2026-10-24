@@ -228,3 +228,12 @@ def test_build_and_test_language_2(capsys: pytest.CaptureFixture[str], tmp_path:
         f"bad.json#1 expected rejected {reason}, got an output",
         f"bad.json#2 expected rejected {{\"missing\":\"other\"}}, got rejected {reason}",
     ]
+
+
+def test_rejected_null_means_any_reason(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    """`"$rejected": null` expects a rejection with any reason, not a field named `$rejected`."""
+    schema, spec = write(tmp_path / "teams-canonical.json", GROUP_CANONICAL), write(tmp_path / "teams.json", GROUP_SPEC)
+    cases = [{"payload": {}, "expected": {"$rejected": None}}, {"payload": {"staff": []}, "expected": {"$rejected": None}}]
+    fixture = write(tmp_path / "any.json", {"cases": cases})
+    code, out, err = run(capsys, "test", "--schema", schema, spec, fixture)
+    assert (code, out, err) == (1, "2 cases, 1 failed\n", "any.json#1 expected rejected, got an output\n")

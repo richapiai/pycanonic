@@ -16,7 +16,8 @@ USAGE = """canonic test --schema <canonical.json> [--transforms <module.py>] <sp
   Maps each fixture's payload through the spec and checks the fields its "expected" names.
   A fixture file is {"payload": ..., "expected": ...} or {"cases": [{"payload", "expected"}, ...]}.
   A case may add "context": {...}, the request inputs that $input paths read. "expected":
-  {"$rejected": "<reason>"} means the spec must reject the payload with that reason.
+  {"$rejected": "<reason>"} means the spec must reject the payload with that reason, and
+  {"$rejected": null} with any reason.
   Fields left out of "expected" aren't checked, inside list items too. Exits 1 if any case fails."""
 
 
@@ -39,15 +40,16 @@ def mismatches(expected: Any, actual: Any, at: str = "") -> list[str]:
 def check(artifact: Artifact, case: Any) -> list[str]:
     """Mismatches of one fixture case, a rejection included."""
     want = case["expected"]
-    rejected = want.get("$rejected") if isinstance(want, dict) else None
+    expects_reject = isinstance(want, dict) and "$rejected" in want
+    rejected = want["$rejected"] if expects_reject else None  # null: any reason
     try:
         got = artifact.map(case["payload"], context=case.get("context"))
     except Rejected as e:
-        if rejected is None:
+        if not expects_reject:
             return [f"rejected {e.reason}"]
-        return [] if e.reason == rejected else [f"expected rejected {rejected}, got rejected {e.reason}"]
-    if rejected is not None:
-        return [f"expected rejected {rejected}, got an output"]
+        return [] if rejected is None or e.reason == rejected else [f"expected rejected {rejected}, got rejected {e.reason}"]
+    if expects_reject:
+        return [f"expected rejected {rejected}, got an output" if rejected is not None else "expected rejected, got an output"]
     return mismatches(want, got)
 
 
