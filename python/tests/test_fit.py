@@ -6,16 +6,16 @@ from typing import Any
 
 from pycanonic.cli.fit.chains import Chain, apply, candidates
 from pycanonic.cli.fit.index import Occurrence, scalars
-from pycanonic.cli.fit.leaves import LeafFit, fit_leaf
+from pycanonic.cli.fit.leaves import LeafFit, _related, fit_leaf
 from pycanonic.cli.fit.pairs import Pair
 
 # --- leaf section ---
 
 
-def leaf(field: str, rows: list[tuple[Any, Any]], lookups: bool = True) -> LeafFit:
+def leaf(field: str, rows: list[tuple[Any, Any]], lookups: bool = True, **kw: Any) -> LeafFit:
     """fit_leaf over pairs built from (target, provider body) rows."""
     pairs = [Pair(f"p{i}.json", {field: t}, body, None) for i, (t, body) in enumerate(rows)]
-    return fit_leaf(field, pairs, [t for t, _ in rows], [scalars(p.provider) for p in pairs], lookups)
+    return fit_leaf(field, pairs, [t for t, _ in rows], [scalars(p.provider) for p in pairs], lookups, **kw)
 
 
 def test_index_paths() -> None:
@@ -42,19 +42,19 @@ def test_chain_apply_and_candidates() -> None:
 
 def test_exact_path() -> None:
     f = leaf("title", [(f"t{i}", {"job": {"title": f"t{i}"}, "x": i}) for i in range(6)])
-    assert (f.rule, f.kind, f.support, f.total, f.holdout) == ({"from": "job.title"}, "exact", 6, 6, 1.0)
+    assert (f.rule, f.kind, f.support, f.total, f.holdout) == ({"from": "job.title"}, "path", 6, 6, 1.0)
 
 
 def test_cast_integer() -> None:
     f = leaf("size", [(42 + i, {"size": str(42 + i)}) for i in range(6)])
     assert f.rule == {"from": "size", "transform": [{"cast": "integer"}]}
-    assert (f.kind, f.support) == ("transform", 6)
+    assert (f.kind, f.support) == ("cast", 6)
 
 
 def test_strip_prefix_learned() -> None:
     f = leaf("id", [(f"{i}a{i}", {"urn": f"urn:x:{i}a{i}"}) for i in range(6)])
     assert f.rule == {"from": "urn", "transform": [{"strip_prefix": "urn:x:"}]}
-    assert f.holdout == 1.0
+    assert (f.kind, f.holdout) == ("strip_prefix", 1.0)
 
 
 def test_date_layout_learned() -> None:
@@ -95,8 +95,9 @@ def test_lookup_conflict_rejected() -> None:
 def test_holdout_catches_overfit() -> None:
     rows = [("person" if i else "company", {"n": i}) for i in range(6)]
     f = leaf("type", rows)
-    assert (f.rule, f.kind, f.support, f.total) == ({"const": "person"}, "constant", 5, 6)
+    assert (f.rule, f.kind, f.support, f.total) == ({"const": "person"}, "const", 5, 6)
     assert f.holdout == 5 / 6
+    assert leaf("type", rows, floor=0.9).kind == "none"
 
 
 def test_name_tiebreak() -> None:
@@ -122,3 +123,47 @@ def test_deterministic() -> None:
     a, b = leaf("x", rows), leaf("x", rows)
     assert a == b
     assert a.alternatives == b.alternatives and a.alternatives
+
+
+def test_date_text_to_epoch() -> None:
+    f = leaf("at", [(1614556800 + 86400 * i, {"day": f"2021-03-0{i + 1}"}) for i in range(6)])
+    assert (f.rule, f.kind) == ({"from": "day", "transform": [{"format_date": "epoch_s"}]}, "format_date")
+    f = leaf("at", [(1614556800000 + 86400000 * i, {"day": f"2021-03-0{i + 1}T00:00:00Z"}) for i in range(6)])
+    assert (f.rule, f.kind) == ({"from": "day", "transform": [{"format_date": "epoch_ms"}]}, "format_date")
+
+
+def test_epoch_string_to_date() -> None:
+    f = leaf("at", [(f"2021-03-0{i + 1}T00:00:00.000Z", {"ts": str(1614556800 + 86400 * i)}) for i in range(6)])
+    assert f.rule == {"from": "ts", "transform": [{"cast": "integer"}, {"format_date": "datetime_ms"}]}
+    assert f.kind == "format_date"  # two safe steps: the second names the kind
+
+
+def test_boolean_to_number() -> None:
+    """The filter lets a boolean through for a number target. The runtime's cast gives null for a
+    boolean, so no chain exists, and the learned lookup is what remains."""
+    assert _related(True, 1) and _related(False, 0)
+    assert candidates(1, True) == []
+    f = leaf("n", [(i % 2, {"flag": i % 2 == 1}) for i in range(6)])
+    assert (f.rule, f.kind) == ({"from": "flag", "transform": [{"lookup": {"table": {"false": 0, "true": 1}, "else": "null"}}]}, "lookup")
+
+
+def test_two_step_kind_names_the_review_step() -> None:
+    f = leaf("first", [(f"N{i}", {"name": f"n{i} l{i}"}) for i in range(6)])
+    assert f.rule is not None and len(f.rule["transform"]) == 2
+    assert f.kind == "split"  # the step off the safe list names the kind
+
+
+def test_coalesce_scored_by_runtime() -> None:
+    """The runtime's coalesce takes an object at the first path, so that pair does not count."""
+    rows: list[tuple[Any, Any]] = [("v0", {"a": {"k": 1}, "b": "v0"})]
+    rows += [(f"v{i}", {"a": f"v{i}"}) for i in range(1, 5)] + [("v5", {"b": "v5"})]
+    f = leaf("value", rows)
+    assert (f.rule, f.kind, f.support, f.total) == ({"coalesce": ["a", "b"]}, "coalesce", 5, 6)
+
+
+def test_alternatives_skip_case_only_steps() -> None:
+    f = leaf("ok", [(i % 2 == 0, {"ok": "yes" if i % 2 == 0 else "no"}) for i in range(6)])
+    assert f.rule == {"from": "ok", "transform": [{"cast": "boolean"}]}
+    for alt in f.alternatives:
+        steps = alt["rule"].get("transform", [])
+        assert not ({"cast": "boolean"} in steps and ({"upper", "lower", "title"} & {s for s in steps if isinstance(s, str)})), alt

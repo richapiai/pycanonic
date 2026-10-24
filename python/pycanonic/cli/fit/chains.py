@@ -66,6 +66,20 @@ def apply(chain: Chain, v: Any) -> Any:
     return art.map({f"v{i}": x for i, x in enumerate(v)} if many else {"v": v})["v"]
 
 
+def apply_rule(rule: dict[str, Any], body: Any) -> Any:
+    """What the runtime maps for one field `rule` over a whole provider body. None if it does not compile."""
+    key = repr(rule)
+    art = _compiled.get(key, False)
+    if art is False:
+        spec = {"language": 2, "provider": "fit", "endpoint": "rule", "version": 1, "status": "draft", "fields": {"v": rule}}
+        try:
+            art = _api.compile_spec(spec, _SCHEMA)
+        except ValueError:
+            art = None
+        _compiled[key] = art
+    return None if art is None else art.map(body)["v"]
+
+
 def _kind(v: Any) -> str:
     if isinstance(v, bool):
         return "boolean"
