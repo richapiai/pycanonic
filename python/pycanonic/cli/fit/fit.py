@@ -19,7 +19,7 @@ from ..infer.score import Leaf
 from ..infer.sources import collect
 from ..io import Transforms, read_json
 from . import decide
-from .arrays import MISSING, fit_array, get
+from .arrays import MISSING, agree, fit_array, get
 from .chains import apply_rule
 from .compare import same
 from .derive import _child, derive_schema
@@ -247,6 +247,15 @@ def _map(art: Any, p: Pair) -> Any:
     return art.map(p.provider) if p.inputs is None else art.map(p.provider, context=p.inputs)
 
 
+def _hit(rows: list[Row], key: str, got: Any, want: Any) -> bool:
+    """The runtime reproduces the default's value. An array is judged as fit_array judges it: on the
+    item leaves that have a rule, so an item leaf the provider lacks does not fail it."""
+    if not key.endswith("[]"):
+        return _eq(got, want)
+    keys = [r.field[len(key) + 1 :] for r in rows if r.field.startswith(key + ".") and r.rule is not None]
+    return agree(got, want, keys) if keys else _eq(got, want)
+
+
 def _check(f: _Fitter) -> None:
     """Maps every pair through the compiled spec. A field whose runtime output disagrees with what
     fit reported loses its rule and becomes manual, kind none, until the spec agrees with itself.
@@ -277,7 +286,7 @@ def _check(f: _Fitter) -> None:
                 support = sum(_empty(g) == _empty(w) for g, w in zip(got, want))
             else:
                 live = [j for j in range(n) if want[j] is not MISSING and want[j] is not None]
-                support = sum(_eq(got[j], want[j]) for j in live)
+                support = sum(_hit(f.rows, r.field, got[j], want[j]) for j in live)
                 if r.kind == "kept":
                     r.support, r.total = support, len(live)
             if f.drift and support > r.support:  # fit searched exact keys, the runtime also matches other cases
@@ -288,7 +297,7 @@ def _check(f: _Fitter) -> None:
             return
         for r, support, got, want in bad:
             r.note = f"Runtime check: the rule {json.dumps(r.rule)} maps {support} pairs, fit found {r.support}."
-            wrong = [j for j in range(n) if not _eq(got[j], want[j]) and not _empty(want[j])]
+            wrong = [j for j in range(n) if not _hit(f.rows, r.field, got[j], want[j]) and not _empty(want[j])]
             r.examples = [{"pair": pairs[j].name, "want": want[j], "got": None if got[j] is MISSING else got[j]} for j in wrong[:3]]
             del f.fields[r.field]
             r.kind, r.rule, r.support, r.holdout = "none", None, 0, 0.0

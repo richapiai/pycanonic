@@ -20,7 +20,7 @@ from ..infer.tokens import SEED
 from .chains import apply_rule, text
 from .compare import same
 from .index import scalars
-from .leaves import LeafFit, _segs, fit_leaf
+from .leaves import LeafFit, _related, _segs, fit_leaf
 from .pairs import Pair
 
 FLOOR = 0.8
@@ -43,6 +43,30 @@ def get(doc: Any, segs: list[Seg]) -> Any:
         else:
             return MISSING
     return doc
+
+
+def agree(out: Any, want: Any, keys: list[str]) -> bool:
+    """`out` reproduces the default's array `want` on the item leaves that have a rule: the same
+    element count, and on every element each key in `keys` (relative item keys such as `name`,
+    `school.id`, `roles[]`, `roles[].title`) gives the default's value, null and missing alike.
+    Item leaves without a rule are not compared, as top-level fields without one are not. With no
+    keys (scalar items, a const or kept rule) the arrays compare whole."""
+    out, want = (None if v is MISSING else v for v in (out, want))
+    if not keys or not isinstance(out, list) or not isinstance(want, list):
+        return same(out, want)
+    if len(out) != len(want):
+        return False
+    for x, y in zip(out, want):
+        for k in keys:
+            if "[]" not in k:
+                a, b = get(x, _segs(k)), get(y, _segs(k))
+                if not same(None if a is MISSING else a, None if b is MISSING else b):
+                    return False
+            elif k.endswith("[]") and k.count("[]") == 1:  # a nested array, judged the same way
+                sub = [s[len(k) + 1 :] for s in keys if s.startswith(k + ".")]
+                if not agree(get(x, _segs(k[:-2])), get(y, _segs(k[:-2])), sub):
+                    return False
+    return True
 
 
 def at(doc: Any, field: str) -> Any:
@@ -273,6 +297,8 @@ def _object(props: dict[str, Any], eps: list[Pair], owners: list[int], groups: l
             f = fit_leaf(key, eps, targets, [scalars(e.provider) for e in eps], True, owners=owners)
             if groups is not None:
                 f = _aggregate(f, key, eps, owners, targets, groups)
+            if f.rule is None and f.total and not any(_related(o.value, t) for e, t in zip(eps, targets) if t is not None for o in scalars(e.provider)):
+                f = replace(f, kind="absent")  # nothing in the provider looks like it, as for top-level fields
             if f.rule is not None:
                 item[key] = f.rule
             fits.append(f)
@@ -343,7 +369,8 @@ def fit_array(field: str, node: dict[str, Any], pairs: list[Pair], owners: list[
             return
         full = {**rule, **it.part}
         outs = [apply_rule(full, p.provider, node) for p in pairs]
-        tried.append(_Tried(kind, full, it, frozenset(j for j in live if same(outs[j], wants[j])), outs))
+        keys = [f.field for f in it.fits if f.rule is not None]
+        tried.append(_Tried(kind, full, it, frozenset(j for j in live if agree(outs[j], wants[j], keys)), outs))
 
     for kind in KINDS:
         # only the best source by shared values gets the full item fit; try

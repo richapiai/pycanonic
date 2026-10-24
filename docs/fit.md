@@ -75,7 +75,7 @@ The spec has `"status": "draft"`. Exit codes:
 1. It indexes every scalar in the provider's body by path.
 2. It tries chains in order of simplicity: no transform, then one transform, then two. It learns the arguments from the data: a prefix, a date layout, a join separator, a regex, a lookup table.
 3. It scores a candidate by the share of pairs that it reproduces exactly, out of the pairs where the default has a value. Ties go to the simpler chain, then to name similarity, then to the shorter path.
-4. Arrays: it aligns the default's array with a provider array by their element values. It tries a plain path, `wrap`, a flatten path, `group_by` and `filter`, in that order.
+4. Arrays: it aligns the default's array with a provider array by their element values. It tries a plain path, `wrap`, a flatten path, `group_by` and `filter`, in that order. A pair holds when the element counts (or the groups) match and every item leaf that has a rule gives the default's value on every element. An item leaf the provider lacks does not fail the array. It gets its own row, `absent` or manual, like a top-level field.
 5. Structure: an optional object (`present`) for an object that is null in exactly the pairs where a provider path is missing. A constant where the default's value never changes and nothing in the provider gives it. An empty form from the schema's `x-empty`.
 6. Inputs: some fields appear only in pairs whose inputs meet a condition. Such a field gets a `when`. If the default leaves the key out in the other pairs, it also gets `omit`.
 7. Rejects: it proposes a `reject` rule for a leaf that the default always fills and the provider can leave missing.

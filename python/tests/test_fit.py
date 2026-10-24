@@ -377,6 +377,68 @@ def test_filter_picks_best_source() -> None:
     assert (fits[0].kind, fits[0].support) == ("filter", 6)
 
 
+def _code(i: int, k: int) -> str:
+    """A value no provider body in these tests shares a token, a digit or a substring with."""
+    return "zz" + "uvwxy"[i % 5] + "uvwxy"[k % 5]
+
+
+def _fit_rows(key: str, node: dict[str, Any], rows: list[tuple[Any, Any]]) -> dict[str, Row]:
+    res = fit_pairs(pairs_of(rows), {"type": "object", "properties": {key: node}}, FitOptions("acme", "e"))
+    return {r.field: r for r in res.fields}
+
+
+def test_item_leaves_the_provider_lacks_do_not_block_the_array() -> None:
+    """The default's elements carry `ref` and `page`, which the provider never sends. The three
+    leaves it does send fit, so the array has a rule, and the other two are absent rows."""
+
+    def row(i: int) -> tuple[Any, Any]:
+        n = range(i % 3 + 1)
+        d = {"jobs": [{"title": f"t{i}{k}", "org": f"o{i}{k}", "start": f"2020-0{k + i % 2 + 1}", "ref": _code(i, k), "page": _code(k, i)} for k in n]}
+        return d, {"work": [{"role": f"t{i}{k}", "orgName": f"o{i}{k}", "from": f"2020-0{k + i % 2 + 1}"} for k in n]}
+
+    rows = [row(i) for i in range(6)]
+    node = objs(title=S, org=S, start=S, ref=S, page=S)
+    rule, fits = fit_array("jobs[]", node, pairs_of(rows))
+    assert rule == {"from": "work", "item": {"title": {"from": "role"}, "org": {"from": "orgName"}, "start": {"from": "from"}}}
+    kinds = {f.field: (f.kind, f.support) for f in fits}
+    assert kinds["jobs[]"] == ("path", 6)
+    assert [kinds[f"jobs[].{k}"][0] for k in ("title", "org", "start", "ref", "page")] == ["path", "path", "path", "absent", "absent"]
+    by = _fit_rows("jobs", node, rows)  # the runtime check keeps the array
+    assert (by["jobs[]"].kind, by["jobs[]"].support, by["jobs[]"].total) == ("path", 6, 6)
+    assert (by["jobs[].ref"].kind, by["jobs[].page"].kind) == ("absent", "absent")
+
+
+def test_nested_item_object_with_a_leaf_the_provider_lacks() -> None:
+    def row(i: int) -> tuple[Any, Any]:
+        n = range(i % 2 + 1)
+        d = {"edu": [{"degree": f"d{i}{k}", "school": {"name": f"s{i}{k}", "id": _code(i, k)}} for k in n]}
+        return d, {"studies": [{"title": f"d{i}{k}", "schoolName": f"s{i}{k}"} for k in n]}
+
+    rows = [row(i) for i in range(6)]
+    node = objs(degree=S, school={"type": "object", "properties": {"name": S, "id": S}})
+    rule, fits = fit_array("edu[]", node, pairs_of(rows))
+    assert rule == {"from": "studies", "item": {"degree": {"from": "title"}, "school.name": {"from": "schoolName"}}}
+    kinds = {f.field: f.kind for f in fits}
+    assert (kinds["edu[]"], kinds["edu[].school.name"], kinds["edu[].school.id"]) == ("path", "path", "absent")
+    by = _fit_rows("edu", node, rows)
+    assert (by["edu[]"].kind, by["edu[]"].support) == ("path", 6)
+
+
+def test_grouped_array_with_a_group_leaf_the_provider_lacks() -> None:
+    rows = [grouped(i, k) for i, k in enumerate(GROUPS)]
+    for i, (d, _) in enumerate(rows):
+        for n, job in enumerate(d["jobs"]):
+            job["slug"] = _code(i, n)
+    node = objs(company_id=S, start=S, end=S, slug=S, roles=objs(title=S))
+    rule, fits = fit_array("jobs[]", node, pairs_of(rows))
+    assert rule is not None and rule["group_by"] == "company_id" and "slug" not in rule["item"]
+    kinds = {f.field: (f.kind, f.support) for f in fits}
+    assert kinds["jobs[]"] == ("group", 6)
+    assert kinds["jobs[].slug"][0] == "absent"
+    by = _fit_rows("jobs", node, rows)
+    assert (by["jobs[]"].kind, by["jobs[]"].support) == ("group", 6)
+
+
 # --- structure section ---
 
 
