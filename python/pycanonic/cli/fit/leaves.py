@@ -34,6 +34,7 @@ class LeafFit:
     holdout: float
     examples: list[dict[str, Any]]
     alternatives: list[dict[str, Any]]
+    mixed_empty: bool = False  # the default's samples disagree on the empty form: never auto
 
 
 @dataclass(frozen=True)

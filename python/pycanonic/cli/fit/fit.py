@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ... import _api
+from ... import Rejected, _api
 from ..infer.ask import MAX_SOURCES, Ask, answer, ask_with, question, rule_for
 from ..infer.score import Leaf
 from ..infer.sources import collect
@@ -27,7 +27,7 @@ from .index import Occurrence, scalars
 from .leaves import LeafFit, _related, _segs, fit_leaf
 from .pairs import Pair, load_pairs
 from .report import FitResult, Row, to_md, write_json, write_md
-from .structure import _rejects, fit_const, fit_object_presence, fit_when, propose_reject
+from .structure import _paths, _rejects, fit_const, fit_object_presence, fit_when, propose_reject
 
 FLOOR = 0.8
 
@@ -88,24 +88,33 @@ def _row(f: LeafFit) -> Row:
 
 
 class _Fitter:
-    def __init__(self, pairs: list[Pair], schema: dict[str, Any], opts: FitOptions) -> None:
-        self.pairs, self.schema, self.opts = pairs, schema, opts
+    def __init__(self, pairs: list[Pair], schema: dict[str, Any], opts: FitOptions, reject: list[Any]) -> None:
+        self.pairs, self.schema, self.opts, self.reject = pairs, schema, opts, reject
         self.sources: list[list[Occurrence]] = [scalars(p.provider) for p in pairs]
         self.fields: dict[str, Any] = {}
         self.rows: list[Row] = []
         self.inputs = any(p.inputs for p in pairs)
 
     def node(self, key: str, node: dict[str, Any]) -> None:
+        start = len(self.rows)
+        self._node(key, node)
+        for r in self.rows[start:]:
+            if r.field == key and node.get("x-mixed-empty"):
+                r.mixed_empty = True
+                r.note = r.note or "The default's samples disagree on the empty form."
+
+    def _node(self, key: str, node: dict[str, Any]) -> None:
         if key in self.opts.keep:
             self.fields[key] = self.opts.keep[key]
             self.rows.append(Row(key, "", "kept", self.opts.keep[key], 0, 0, 1.0, []))
             return
         vals = [_val(p.default, key) for p in self.pairs]
         if all(map(_empty, vals)):  # the default never sends a value: leave it to x-empty
-            mixed = "The default's samples disagree on the empty form." if node.get("x-mixed-empty") else ""
-            self.rows.append(Row(key, "", "empty", None, 0, 0, 1.0, [], mixed))
+            self.rows.append(Row(key, "", "empty", None, 0, 0, 1.0, []))
         elif key.endswith("[]"):
             self.array(key, node, vals)
+        elif node.get("x-open"):
+            self.open_map(key, [None if v is MISSING else v for v in vals])
         elif "properties" in node:
             rule = fit_object_presence(key, self.pairs)
             if rule:
@@ -113,6 +122,27 @@ class _Fitter:
                 self.rows.append(Row(key, "", "presence", rule, len(self.pairs), len(self.pairs), 1.0, []))
         else:
             self.leaf(key, node, [None if v is MISSING else v for v in vals])
+
+    def open_map(self, key: str, targets: list[Any]) -> None:
+        """An x-open map: the provider object that the runtime copies to the default's map."""
+        live = [j for j, t in enumerate(targets) if t is not None]
+        hits: dict[str, set[int]] = {}
+        for path in dict.fromkeys(x for p in self.pairs for x in _paths(p.provider)):
+            hits[path] = {j for j in live if same(apply_rule({"from": path}, self.pairs[j].provider, {"type": "object", "x-open": True}), targets[j])}
+
+        def best(skip: int | None = None) -> str | None:
+            top = max(hits, key=lambda p: len(hits[p] - {skip}), default=None)  # first seen wins a tie
+            return top if top is not None and len(hits[top] - {skip}) >= FLOOR * (len(live) - (skip is not None)) else None
+
+        chosen = best()
+        if chosen is None:
+            self.rows.append(Row(key, "", "none", None, 0, len(live), 0.0, [{"pair": self.pairs[j].name, "want": targets[j], "got": None} for j in live[:3]]))
+            return
+        held = sum(j in hits.get(best(j) or "", set()) for j in live) / len(live)
+        wrong = [j for j in live if j not in hits[chosen]]
+        examples = [{"pair": self.pairs[j].name, "want": targets[j], "got": apply_rule({"from": chosen}, self.pairs[j].provider)} for j in wrong[:3]]
+        self.fields[key] = chosen
+        self.rows.append(Row(key, "", "path", chosen, len(hits[chosen]), len(live), held, examples))
 
     def array(self, key: str, node: dict[str, Any], vals: list[Any]) -> None:
         rule, fits = fit_array(key, node, self.pairs)
@@ -186,7 +216,7 @@ def _check(f: _Fitter) -> None:
     fit reported loses its rule and becomes manual, kind none, until the spec agrees with itself."""
     pairs, n = f.pairs, len(f.pairs)
     while f.fields:
-        art = _api.compile_spec(_spec(f.opts, f.fields), f.schema, transforms=f.opts.transforms)
+        art = _api.compile_spec(_spec(f.opts, f.fields, f.reject), f.schema, transforms=f.opts.transforms)
         outs = [art.map(p.provider) if p.inputs is None else art.map(p.provider, context=p.inputs) for p in pairs]
         bad: list[tuple[Row, int, list[Any], list[Any]]] = []
         for r in f.rows:
@@ -218,6 +248,11 @@ def _check(f: _Fitter) -> None:
                 f.rows = [x for x in f.rows if not x.field.startswith(r.field + ".")]
 
 
+def _doc(line: str) -> str:
+    """Docstring text that reads back as `line`: backslashes and quotes escaped."""
+    return line.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _stub_name(key: str) -> str:
     name = re.sub(r"\W+", "_", key).strip("_") or "field"
     return f"f_{name}" if name[0].isdigit() or keyword.iskeyword(name) else name
@@ -238,30 +273,41 @@ def stubs(rows: list[Row], pairs: list[Pair], provider: str, endpoint: str) -> s
         if r.kind != "none" or "[]" in r.field or r.field.startswith("reject["):
             continue
         name = _stub_name(r.field)
-        # repr() of the bodies; a body string holding three double quotes breaks the docstring.
         tests = [line for e in r.examples[:3] if e["pair"] in by for line in (f"    >>> {name}({by[e['pair']].provider!r})", f"    {e['want']!r}")]
-        out += ["", "", f"def {name}(body):", f'    r"""The canonical field {r.field}.', "", *tests, '    """', "    return None"]
+        doc = [_doc(t) for t in [f"The canonical field {r.field}.", "", *tests]]
+        out += ["", "", f"def {name}(body):", f'    """{doc[0]}', *doc[1:], '    """', "    return None"]
     return "\n".join(out) + "\n"
 
 
 def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) -> FitResult:
-    """The in-process core of `run`: fit, decide, prove. Writes nothing."""
-    f = _Fitter(pairs, schema, options)
+    """The in-process core of `run`: fit, decide, prove. Writes nothing.
+
+    Proposed rejects come first. A pair that they reject is a failover: it is named in
+    the reject row and left out of every field's support and total."""
+    reject = propose_reject(schema, pairs) if schema.get("type") != "array" else []
+    failover = [p for p in pairs if any(_rejects(c, p.provider) for c in reject)]
+    if len(failover) == len(pairs):  # a reject that throws every answer away is no proposal
+        reject, failover = [], []
+    f = _Fitter([p for p in pairs if p not in failover], schema, options, reject)
     for key, node in _nodes(schema):
         f.node(key, node)
     _check(f)
-    reject = propose_reject(schema, pairs) if schema.get("type") != "array" else []
-    for i, cond in enumerate(reject):
-        hit = [p.name for p in pairs if _rejects(cond, p.provider)]
-        f.rows.append(Row(f"reject[{i}]", "", "reject", cond, len(hit), len(pairs), 1.0, [], f"Rejects {len(hit)} of {len(pairs)} pairs: {', '.join(hit)}."))
     spec = _spec(options, f.fields, reject) if f.fields else None
-    if spec is not None:
-        _api.compile_spec(spec, schema, transforms=options.transforms)  # never write a spec that does not compile
+    if spec is not None:  # never write a spec that has not mapped every pair, rejects included
+        art = _api.compile_spec(spec, schema, transforms=options.transforms)
+        for p in failover:
+            try:
+                art.map(p.provider) if p.inputs is None else art.map(p.provider, context=p.inputs)
+            except Rejected:
+                continue
+            raise RuntimeError(f"fit: the written spec does not reject {p.name}")
+    for i, cond in enumerate(reject):
+        hit = [p.name for p in failover if _rejects(cond, p.provider)]
+        note = f"Rejects {len(hit)} of {len(pairs)} pairs: rejects {', '.join(hit)}, where the default answered. Those pairs are left out of every other field's support."
+        f.rows.append(Row(f"reject[{i}]", "", "reject", cond, len(hit), len(pairs), 1.0, [], note))
     for r in f.rows:
-        lf = LeafFit(r.field, None, r.kind, r.support, r.total, r.holdout, [], [])
+        lf = LeafFit(r.field, None, r.kind, r.support, r.total, r.holdout, [], [], r.mixed_empty)
         r.tier = decide.tier(lf, min_auto=options.min_auto, min_pairs=options.min_pairs, floor=FLOOR)
-        if r.tier == "auto" and r.kind == "empty" and r.note:  # mixed empty forms go to review
-            r.tier = "review"
     return FitResult(options.provider, options.endpoint, len(pairs), f.rows, spec, stubs(f.rows, pairs, options.provider, options.endpoint))
 
 
@@ -302,8 +348,8 @@ def run(args: argparse.Namespace, transforms: Transforms | None = None) -> int:
                     print(f"fit: {key} changed since the last spec; add it to --keep to hold it", file=sys.stderr)
         out.write_text(json.dumps(result.spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if args.report:
-        write_md(result, Path(args.report).with_suffix(".md"))
-        write_json(result, Path(args.report).with_suffix(".json"))
+        write_md(result, f"{args.report}.md")
+        write_json(result, f"{args.report}.json")
     else:
         sys.stdout.write(to_md(result))
     if args.transforms_out:

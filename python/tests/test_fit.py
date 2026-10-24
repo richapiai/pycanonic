@@ -446,6 +446,16 @@ def test_tier_auto_needs_5_pairs() -> None:
 @pytest.mark.parametrize("kind", NEVER_AUTO)
 def test_tier_never_auto_kinds(kind: str) -> None:
     assert tier(lf(kind, 20, 20)) == "review"
+    if kind in ("absent", "reject"):  # support is not a match share for these: never manual either
+        assert tier(lf(kind, 1, 30)) == "review"
+
+
+def test_tier_mixed_empty_never_auto() -> None:
+    assert tier(replace(lf("empty", 10, 10), mixed_empty=True)) == "review"
+    assert tier(replace(lf("path", 10, 10), mixed_empty=True)) == "review"
+    pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "tags": None if i % 2 else []}, {"n": f"n{i}"}, None) for i in range(10)]
+    rows = {r.field: r for r in fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e")).fields}
+    assert (rows["tags[]"].kind, rows["tags[]"].tier, rows["name"].tier) == ("empty", "review", "auto")
 
 
 def test_exit_codes() -> None:
@@ -619,3 +629,54 @@ def test_array_root_field_key() -> None:
     result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
     assert result.spec is not None and result.spec["fields"] == {"[]": {"from": "results", "item": {"name": "n"}}}
     assert [(r.field, r.tier) for r in result.fields] == [("[]", "auto"), ("[].name", "auto")]
+
+
+def test_reject_failover() -> None:
+    """p0 lacks full_name, the reject fails it over, and no field counts it."""
+    pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "email": f"e{i}@x.test"}, {**({"full_name": f"n{i}"} if i else {}), "mail": f"e{i}@x.test"}, None) for i in range(30)]
+    result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
+    assert result.spec is not None and result.spec["reject"] == [{"missing": "full_name"}]
+    rows = {r.field: r for r in result.fields}
+    assert (rows["reject[0]"].tier, rows["reject[0]"].support, rows["reject[0]"].total) == ("review", 1, 30)
+    assert "rejects p0.json, where the default answered" in rows["reject[0]"].note
+    assert [(rows[k].tier, rows[k].support, rows[k].total) for k in ("name", "email")] == [("auto", 29, 29)] * 2
+    art = pycanonic.compile_spec(result.spec, derive_schema([p.default for p in pairs]))
+    with pytest.raises(pycanonic.Rejected):
+        art.map(pairs[0].provider)
+    assert all(same(art.map(p.provider), p.default) for p in pairs[1:])
+
+
+def test_open_map_fitted_as_path() -> None:
+    """an x-open node maps to the provider object that equals it."""
+    attrs = [{f"k{i}{j}": j for j in range(3)} for i in range(10)]
+    pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "attrs": a}, {"n": f"n{i}", "meta": {"extra": a, "id": i}}, None) for i, a in enumerate(attrs)]
+    schema = derive_schema([p.default for p in pairs])
+    assert schema["properties"]["attrs"] == {"type": "object", "x-open": True}
+    result = fit_pairs(pairs, schema, FitOptions("acme", "e"))
+    row = {r.field: r for r in result.fields}["attrs"]
+    assert (row.kind, row.tier, row.rule, row.support, row.holdout) == ("path", "auto", "meta.extra", 10, 1.0)
+    assert result.spec is not None and result.spec["fields"]["attrs"] == "meta.extra"
+    none = fit_pairs([replace(p, provider={"n": p.provider["n"]}) for p in pairs], schema, FitOptions("acme", "e"))
+    assert [(r.kind, r.tier) for r in none.fields if r.field == "attrs"] == [("none", "manual")]
+
+
+def test_stub_escapes_quotes_and_backslashes(tmp_path: Path) -> None:
+    """provider text with triple quotes and backslashes still gives a module that imports."""
+    pairs = [replace(p, provider={**p.provider, "note": 'say """hi""" \\ back\\slash \n "end"'}) for p in handle_pairs()]
+    result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
+    (tmp_path / "stubs2.py").write_text(result.transforms)
+    module = importlib.util.module_from_spec(spec := importlib.util.spec_from_file_location("stubs2", tmp_path / "stubs2.py"))  # type: ignore[arg-type]
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+    tests = doctest.DocTestFinder().find(module.handle)
+    assert len(tests[0].examples) == 3 and tests[0].examples[0].source.startswith("handle({")
+    runner = doctest.DocTestRunner()
+    for t in tests:
+        t.globs["handle"] = lambda body: f"{body['person']['last'].lower()}.{body['person']['first'].lower()}"
+        runner.run(t, out=lambda _: None)
+    assert (runner.failures, runner.tries) == (0, 3)  # the examples read back exactly
+
+
+def test_report_suffix_appended(tmp_path: Path) -> None:
+    cli(tmp_path, "--report", str(tmp_path / "report.v2"))
+    assert (tmp_path / "report.v2.md").exists() and (tmp_path / "report.v2.json").exists()
