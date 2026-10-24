@@ -69,8 +69,8 @@ fn map_json_matches_map_bytes_and_the_poc_outputs_in_order() {
     assert_eq!(raws.len(), 64);
     for (i, (raw, want)) in raws.iter().zip(expected).enumerate() {
         let body = raw.as_str().unwrap().as_bytes();
-        let got: J = serde_json::from_slice(&a.map_json(body)).unwrap();
-        let tree = to_json(&a.map_bytes(body), &a.plan.names);
+        let got: J = serde_json::from_slice(&a.map_json(body, None).unwrap()).unwrap();
+        let tree = to_json(&a.map_bytes(body, None).unwrap(), &a.plan.names);
         assert_eq!(got, tree, "body {i}");
         assert_eq!(&got, want, "body {i}");
         assert_eq!(got.to_string(), want.to_string(), "body {i} key order");
@@ -80,8 +80,11 @@ fn map_json_matches_map_bytes_and_the_poc_outputs_in_order() {
 #[test]
 fn unparseable_body_writes_the_all_null_object() {
     let a = bench();
-    let got: J = serde_json::from_slice(&a.map_json(b"{nope")).unwrap();
-    assert_eq!(got, to_json(&a.map_bytes(b"{nope"), &a.plan.names));
+    let got: J = serde_json::from_slice(&a.map_json(b"{nope", None).unwrap()).unwrap();
+    assert_eq!(
+        got,
+        to_json(&a.map_bytes(b"{nope", None).unwrap(), &a.plan.names)
+    );
 }
 
 #[test]

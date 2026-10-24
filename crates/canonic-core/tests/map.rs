@@ -84,7 +84,10 @@ fn artifact(spec: &J, schema: &J) -> Artifact {
 }
 
 fn map(a: &Artifact, payload: &J) -> J {
-    to_json(&a.map_bytes(payload.to_string().as_bytes()), &a.plan.names)
+    to_json(
+        &a.map_bytes(payload.to_string().as_bytes(), None).unwrap(),
+        &a.plan.names,
+    )
 }
 
 fn spec(fields: J) -> J {
@@ -395,7 +398,7 @@ fn bench_bodies_map_to_the_poc_outputs() {
     let expected = bodies["expected"].as_array().unwrap();
     assert_eq!(raws.len(), 64);
     for (i, (raw, want)) in raws.iter().zip(expected).enumerate() {
-        let out = a.map_bytes(raw.as_str().unwrap().as_bytes());
+        let out = a.map_bytes(raw.as_str().unwrap().as_bytes(), None).unwrap();
         let got = to_json(&out, &a.plan.names);
         assert_eq!(&got, want, "body {i}");
         assert_eq!(got.to_string(), want.to_string(), "body {i} key order");
@@ -414,7 +417,7 @@ fn map_field_maps_one_field_by_index_path_and_counts_nothing() {
     for raw in bodies["raws"].as_array().unwrap() {
         let node = a.parse(raw.as_str().unwrap().as_bytes());
         let doc = node.as_ref();
-        let Out::Obj(whole) = a.map_with(doc.as_ref(), &mut RustSink) else {
+        let Out::Obj(whole) = a.map_with(doc.as_ref(), None, &mut RustSink) else {
             panic!("map gives an object")
         };
         a.stats.reset();
@@ -536,7 +539,7 @@ fn from_many_without_a_transform_is_the_list_and_with_one_null_when_all_missing(
 fn a_leaf_without_transforms_passes_containers_and_numbers_through() {
     let a = artifact(&spec(json!({ "full_name": "$" })), &canonical());
     let body = br#"{"o":{"k":[1,"two",null]},"big":12345678901234567890,"f":1.5,"e":1e2,"z":-0}"#;
-    let out = a.map_bytes(body);
+    let out = a.map_bytes(body, None).unwrap();
     let Out::Obj(fields) = out else { panic!() };
     let name = a.plan.names.iter().position(|n| n == "full_name").unwrap();
     let got = &fields.iter().find(|(i, _)| *i == name).unwrap().1;
@@ -564,7 +567,7 @@ fn an_unparseable_body_maps_to_all_null_and_counts_misses() {
         &spec(json!({ "email": "e", "skills[]": { "from": "t" } })),
         &canonical(),
     );
-    let out = to_json(&a.map_bytes(b"{nope"), &a.plan.names);
+    let out = to_json(&a.map_bytes(b"{nope", None).unwrap(), &a.plan.names);
     assert_eq!(out, full(&json!({}), &canonical()));
     assert_eq!(
         a.stats.snapshot(),
@@ -665,7 +668,7 @@ fn passing_through_an_object_with_many_keys_is_linear() {
 }
 
 fn map_raw(a: &Artifact, body: &[u8]) -> J {
-    to_json(&a.map_bytes(body), &a.plan.names)
+    to_json(&a.map_bytes(body, None).unwrap(), &a.plan.names)
 }
 
 /// Renders what it is given as JSON text, so a test can see a container input.

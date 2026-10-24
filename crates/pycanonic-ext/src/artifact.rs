@@ -1,7 +1,7 @@
 //! The `Artifact` class: a compiled plan with its stats, mapping Python objects or JSON text
 //! (`bytes`, `str`, `bytearray`, `memoryview`).
 
-use crate::pydoc::{PyDoc, text};
+use crate::pydoc::{PyDoc, json, text};
 use crate::pysink::{PySink, value};
 use crate::transforms::{PyTransform, take_pending};
 use crate::view::{Level, View, levels};
@@ -27,6 +27,8 @@ pub struct Artifact {
     pub(crate) levels: Vec<Level>,
     /// Interned routing field names, in `plan.routing` order: the keys of `extract`'s dict.
     pub(crate) routing: Vec<Py<PyString>>,
+    /// The plan uses a language 2 rule (`Plan::needs_v2`), which `view` does not support.
+    lang2: bool,
 }
 
 /// Python callables by transform name.
@@ -99,6 +101,34 @@ pub(crate) fn object_root<'py>(src: &Bound<'py, PyAny>) -> PyResult<Bound<'py, P
     }
 }
 
+/// A `context=` argument: `None`, or any `Mapping`, read as a `dict` (copied one level when it is
+/// not one). Anything else is a `TypeError`.
+fn context<'py>(ctx: Option<&Bound<'py, PyAny>>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    match ctx {
+        Some(c) if !c.is_none() => {
+            if c.is_instance_of::<PyDict>() || c.cast::<PyMapping>().is_ok() {
+                object_root(c).map(Some)
+            } else {
+                Err(PyTypeError::new_err(format!(
+                    "context must be a Mapping or None, not {}",
+                    c.get_type().name()?
+                )))
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
+/// A context as JSON, for the bytes path.
+fn context_json(ctx: Option<&Bound<'_, PyAny>>) -> PyResult<Option<serde_json::Value>> {
+    context(ctx)?.map(|c| json(&c, 0)).transpose()
+}
+
+/// Task 9 raises `pycanonic.Rejected` here. Until then no map rejects.
+fn rejected(_: canonic_core::Rejected) -> PyErr {
+    PyValueError::new_err("rejected")
+}
+
 impl Artifact {
     pub fn new(
         py: Python<'_>,
@@ -112,6 +142,7 @@ impl Artifact {
             names: inner.plan.names.iter().map(intern).collect(),
             routing: inner.plan.routing.iter().map(|r| intern(&r.name)).collect(),
             levels: levels(py, &inner.plan.names, &inner.plan.fields),
+            lang2: inner.plan.needs_v2(),
             inner,
         })
     }
@@ -161,38 +192,48 @@ impl Artifact {
 
     /// JSON text (`bytes`, `str`, `bytearray`, `memoryview`) is parsed with the GIL released, then
     /// mapped straight into Python objects. A `dict`, `list`, `tuple` or `Mapping` is read as is.
-    fn map<'py>(&self, py: Python<'py>, src: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    /// `$input` paths read `context`: as JSON next to text, as it is next to an object.
+    #[pyo3(signature = (src, context=None))]
+    fn map<'py>(
+        &self,
+        py: Python<'py>,
+        src: &Bound<'py, PyAny>,
+        context: Option<&Bound<'py, PyAny>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let mut sink = PySink {
+            py,
+            names: &self.names,
+        };
         let out = if let Some(body) = body_of(src)? {
+            let ctx = context_json(context)?;
             let node = py.detach(|| self.inner.parse(&body));
-            let mut sink = PySink {
-                py,
-                names: &self.names,
-            };
-            self.inner.map_with(node.as_ref().as_ref(), &mut sink)
+            (self.inner).map_with_ctx(node.as_ref().as_ref(), ctx.as_ref(), &mut sink)
         } else {
-            let doc = PyDoc {
-                obj: object_root(src)?,
+            let doc = |obj| PyDoc {
+                obj,
                 keys: &self.keys,
             };
-            let mut sink = PySink {
-                py,
-                names: &self.names,
-            };
-            self.inner.map_with(Some(&doc), &mut sink)
+            let ctx = self::context(context)?.map(doc);
+            let body = doc(object_root(src)?);
+            self.inner.map_with(Some(&body), ctx.as_ref(), &mut sink)
         };
         take_pending().map_or(Ok(out), Err)
     }
 
     /// The canonical object as JSON text, without building Python objects. Runs with the GIL released.
+    #[pyo3(signature = (raw, context=None))]
     fn map_json<'py>(
         &self,
         py: Python<'py>,
         raw: &Bound<'py, PyAny>,
+        context: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyBytes>> {
         let body = body_of(raw)?.ok_or_else(|| {
             PyTypeError::new_err("map_json takes bytes, str, bytearray or memoryview")
         })?;
-        let out = py.detach(|| self.inner.map_json(&body));
+        let ctx = context_json(context)?;
+        let out = py.detach(|| self.inner.map_json(&body, ctx.as_ref()));
+        let out = out.map_err(rejected)?;
         take_pending().map_or(Ok(PyBytes::new(py, &out)), Err)
     }
 
@@ -210,7 +251,12 @@ impl Artifact {
     }
 
     /// A lazy canonical object over `src` (as `map` takes it): each field is mapped on first read.
+    /// Language 1 plans only: a view reads each field alone, which `present`, `omit` and the other
+    /// language 2 rules do not allow.
     fn view(slf: Py<Self>, py: Python<'_>, src: &Bound<'_, PyAny>) -> PyResult<View> {
+        if slf.get().lang2 {
+            return Err(PyValueError::new_err("view supports language 1 specs only"));
+        }
         View::new(py, slf, src)
     }
 

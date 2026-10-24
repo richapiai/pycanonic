@@ -36,4 +36,4 @@ An error case has `spec`, `schema` and `error`. Compiling must fail with exactly
 {"spec": {}, "schema": {}, "error": "invalid spec: spec.language: must be 1 or 2"}
 ```
 
-`context` and `Rejected` do not exist yet. Until they do, a runner fails these inputs: an input with a `context` that is not `null`, and an input with a `$rejected` expectation. The failure says that the feature is not implemented yet.
+The runners give `context` to every way in. `Rejected` does not exist yet. Until it does, a runner fails an input with a `$rejected` expectation. The failure says that the feature is not implemented yet.

@@ -1,8 +1,10 @@
 //! `Doc` over a Python object tree: `dict` members by interned key, `list`/`tuple` elements, scalars.
 
 use canonic_core::{Doc, Key, Value};
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
+use serde_json::Value as J;
 use std::any::Any;
 use std::borrow::Cow;
 
@@ -153,5 +155,50 @@ impl Doc for PyDoc<'_, '_> {
 
     fn host(&self) -> Option<&dyn Any> {
         Some(self.obj.as_unbound())
+    }
+}
+
+/// Deep enough for any spec, schema or request context. A cyclic object fails instead of overflowing the stack.
+const MAX_DEPTH: usize = 256;
+
+/// A Python value as JSON, `dict` key order kept.
+pub(crate) fn json(o: &Bound<'_, PyAny>, depth: usize) -> PyResult<J> {
+    if depth > MAX_DEPTH {
+        return Err(PyValueError::new_err("nested too deeply (or cyclic)"));
+    }
+    if o.is_none() {
+        Ok(J::Null)
+    } else if let Ok(s) = o.cast::<PyString>() {
+        Ok(J::String(text(s).into_owned()))
+    } else if let Ok(b) = o.cast::<PyBool>() {
+        Ok(J::Bool(b.is_true()))
+    } else if o.is_instance_of::<PyInt>() {
+        // Past i64 and u64 a number is an f64, as JSON.parse reads it.
+        Ok(match (o.extract::<i64>(), o.extract::<u64>()) {
+            (Ok(i), _) => J::from(i),
+            (_, Ok(u)) => J::from(u),
+            _ => J::from(o.extract::<f64>()?),
+        })
+    } else if let Ok(f) = o.cast::<PyFloat>() {
+        serde_json::Number::from_f64(f.value())
+            .map(J::Number)
+            .ok_or_else(|| PyValueError::new_err("NaN and infinity are not JSON"))
+    } else if let Ok(d) = o.cast::<PyDict>() {
+        let mut m = serde_json::Map::with_capacity(d.len());
+        for (k, v) in d.iter() {
+            let k = k
+                .cast::<PyString>()
+                .map_err(|_| PyTypeError::new_err("JSON object keys must be str"))?;
+            m.insert(text(k).into_owned(), json(&v, depth + 1)?);
+        }
+        Ok(J::Object(m))
+    } else if o.is_instance_of::<PyList>() || o.is_instance_of::<PyTuple>() {
+        let items = o.try_iter()?.map(|x| json(&x?, depth + 1));
+        Ok(J::Array(items.collect::<PyResult<_>>()?))
+    } else {
+        Err(PyTypeError::new_err(format!(
+            "{} is not JSON",
+            o.get_type().name()?
+        )))
     }
 }

@@ -1,0 +1,53 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "page": "$input.page",
+      "name": "name"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "page": {
+        "type": "number"
+      },
+      "name": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "name": "a"
+      },
+      "context": {
+        "page": 3
+      },
+      "expected": {
+        "page": 3,
+        "name": "a"
+      }
+    },
+    {
+      "body": {
+        "name": "a",
+        "$input": {
+          "page": 9
+        }
+      },
+      "context": {
+        "size": 1
+      },
+      "expected": {
+        "page": null,
+        "name": "a"
+      }
+    }
+  ]
+}

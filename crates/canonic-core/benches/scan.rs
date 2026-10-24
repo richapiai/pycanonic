@@ -63,7 +63,7 @@ fn parse_bench_filter(b: Bencher) {
 #[divan::bench]
 fn map_bytes(b: Bencher) {
     b.counter(BytesCount::of_slice(&*BODY))
-        .bench(|| ARTIFACT.map_bytes(black_box(&BODY)));
+        .bench(|| ARTIFACT.map_bytes(black_box(&BODY), None).unwrap());
 }
 
 #[divan::bench]

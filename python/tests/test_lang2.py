@@ -48,13 +48,34 @@ def test_x_empty_missing_leaves_the_key_out():
         assert json.loads(text) == a.map(raw) == a.map(body) == {"name": "a"}
 
 
-def test_view_reads_an_optional_object_whole():
+def test_view_rejects_language_2():
+    import pytest
+
     schema = {"type": "object", "properties": {"hq": {"type": "object", "properties": {"city": {"type": "string"}}}}}
     a = pycanonic.compile_spec(_spec({"hq": {"present": "d"}, "hq.city": "d.city"}), schema)
-    for body in [{}, {"d": {"city": "x"}}]:
-        want = a.map(body)
-        for src in [body, json.dumps(body).encode()]:
-            v = a.view(src)
-            assert v.hq == want["hq"]
-            assert v.to_dict() == want
-    assert a.view({}).hq is None
+    for src in [{}, b"{}"]:
+        with pytest.raises(ValueError) as e:
+            a.view(src)
+        assert str(e.value) == "view supports language 1 specs only"
+    # A language 2 spec without a language 2 rule still has a view.
+    plain = pycanonic.compile_spec(_spec({"name": "n"}), SCHEMA)
+    assert plain.view({"n": "a"}).name == "a"
+
+
+def test_context_mapping_and_errors():
+    import types
+
+    import pytest
+
+    a = pycanonic.compile_spec(_spec({"name": "$input.who", "kind": {"from": "k", "when": {"path": "$input.on", "eq": True}}}), SCHEMA)
+    body = {"k": "x"}
+    raw = json.dumps(body).encode()
+    ctx = types.MappingProxyType({"who": "Ada", "on": True})
+    want = {"name": "Ada", "kind": "x"}
+    assert a.map(raw, context=ctx) == a.map(body, context=ctx) == json.loads(a.map_json(raw, context=ctx)) == want
+    assert a.map(raw) == a.map(body) == json.loads(a.map_json(raw)) == {"name": None, "kind": None}
+    for bad in [[1], "x"]:
+        with pytest.raises(TypeError):
+            a.map(raw, context=bad)
+        with pytest.raises(TypeError):
+            a.map(body, context=bad)

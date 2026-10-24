@@ -35,6 +35,41 @@
             "from": "$group.x"
           }
         }
+      },
+      "g[]": {
+        "from": "xs",
+        "group_by": "k",
+        "item": {
+          "h": "$group.x",
+          "i": {
+            "coalesce": [
+              "a",
+              "$group"
+            ]
+          },
+          "j[]": {
+            "from": "$group",
+            "filter": {
+              "path": "$group.k",
+              "eq": 1
+            },
+            "sort_by": "$group",
+            "unique": "$group.u",
+            "group_by": "$group.g",
+            "pluck": "$group.p"
+          },
+          "k": {
+            "present": "$group"
+          },
+          "k.z": "z",
+          "m": {
+            "from": "a",
+            "when": {
+              "path": "$group",
+              "present": true
+            }
+          }
+        }
       }
     }
   },
@@ -69,8 +104,39 @@
             }
           }
         }
+      },
+      "g": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "h": {
+              "type": "string"
+            },
+            "i": {
+              "type": "string"
+            },
+            "j": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "k": {
+              "type": "object",
+              "properties": {
+                "z": {
+                  "type": "string"
+                }
+              }
+            },
+            "m": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   },
-  "error": "invalid spec: spec.fields[\"a[]\"].group_by: must be a path like a.b[0][\"c d\"]; spec.fields[\"a[]\"].consecutive: must be true or false; spec.fields[\"b[]\"].consecutive: needs group_by; spec.fields[\"c\"].x: unknown property; spec.fields[\"c\"].aggregate: must be one of first, last, min, max, count, sum, any, all, join; spec.fields[\"c\"].nulls: must be \"skip\" or \"propagate\"; spec.fields[\"c\"].sep: must be a string; spec.fields[\"d\"].from: must be a path like a.b[0][\"c d\"]; spec.fields[\"d\"].sep: needs join; spec.fields[\"e[]\"].item[\"f\"].from: use $group or $group[].<path>"
+  "error": "invalid spec: spec.fields[\"a[]\"].group_by: must be a path like a.b[0][\"c d\"]; spec.fields[\"a[]\"].consecutive: must be true or false; spec.fields[\"b[]\"].consecutive: needs group_by; spec.fields[\"c\"].x: unknown property; spec.fields[\"c\"].aggregate: must be one of first, last, min, max, count, sum, any, all, join; spec.fields[\"c\"].nulls: must be \"skip\" or \"propagate\"; spec.fields[\"c\"].sep: must be a string; spec.fields[\"d\"].from: must be a path like a.b[0][\"c d\"]; spec.fields[\"d\"].sep: needs join; spec.fields[\"e[]\"].item[\"f\"].from: use $group or $group[].<path>; spec.fields[\"g[]\"].item[\"h\"]: $group is only a list or aggregate from; spec.fields[\"g[]\"].item[\"i\"].coalesce[1]: $group is only a list or aggregate from; spec.fields[\"g[]\"].item[\"j[]\"].filter.path: $group is only a list or aggregate from; spec.fields[\"g[]\"].item[\"j[]\"].unique: $group is only a list or aggregate from; spec.fields[\"g[]\"].item[\"j[]\"].sort_by: $group is only a list or aggregate from; spec.fields[\"g[]\"].item[\"j[]\"].group_by: $group is only a list or aggregate from; spec.fields[\"g[]\"].item[\"j[]\"].pluck: $group is only a list or aggregate from; spec.fields[\"g[]\"].item[\"k\"].present: $group is only a list or aggregate from; spec.fields[\"g[]\"].item[\"m\"].when.path: $group is only a list or aggregate from"
 }

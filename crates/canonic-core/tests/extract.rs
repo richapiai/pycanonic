@@ -116,7 +116,7 @@ fn ex(a: &Artifact, raw: &[u8]) -> J {
 
 /// The routing fields of `map_bytes(raw)`, keyed like `extract`.
 fn map_routing(a: &Artifact, raw: &[u8]) -> J {
-    let out = a.map_bytes(raw);
+    let out = a.map_bytes(raw, None).unwrap();
     let at = |name: &str| {
         let mut cur = &out;
         for part in name.split('.') {

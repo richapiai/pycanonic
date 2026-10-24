@@ -1,0 +1,105 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "people[]": {
+        "from": "people",
+        "filter": {
+          "path": "$input.status",
+          "eq": "active"
+        },
+        "item": {
+          "name": "name"
+        }
+      },
+      "mine[]": {
+        "from": "people",
+        "filter": [
+          {
+            "path": "role",
+            "eq": "x"
+          },
+          {
+            "path": "$input.full",
+            "present": true
+          }
+        ],
+        "pluck": "name"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "people": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "mine": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "people": [
+          {
+            "name": "a",
+            "role": "x"
+          },
+          {
+            "name": "b",
+            "role": "y"
+          }
+        ]
+      },
+      "context": {
+        "status": "active",
+        "full": 1
+      },
+      "expected": {
+        "people": [
+          {
+            "name": "a"
+          },
+          {
+            "name": "b"
+          }
+        ],
+        "mine": [
+          "a"
+        ]
+      }
+    },
+    {
+      "body": {
+        "people": [
+          {
+            "name": "a",
+            "role": "x"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "people": [],
+        "mine": []
+      }
+    }
+  ]
+}

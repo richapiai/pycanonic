@@ -69,19 +69,19 @@ fn exec_x64(b: Bencher) {
     let nodes: Vec<_> = BODIES.iter().map(|x| parse(x, &filter).unwrap()).collect();
     b.bench(|| {
         for n in &nodes {
-            black_box(ARTIFACT.map_doc(&black_box(n)));
+            black_box(ARTIFACT.map_doc(&black_box(n), None).unwrap());
         }
     });
 }
 
 #[divan::bench]
 fn map_bytes_x64(b: Bencher) {
-    cycle(b, |x| ARTIFACT.map_bytes(x));
+    cycle(b, |x| ARTIFACT.map_bytes(x, None).unwrap());
 }
 
 #[divan::bench]
 fn map_json_x64(b: Bencher) {
-    cycle(b, |x| ARTIFACT.map_json(x));
+    cycle(b, |x| ARTIFACT.map_json(x, None).unwrap());
 }
 
 #[divan::bench]

@@ -11,11 +11,11 @@ use pyo3::prelude::*;
 #[pymodule]
 mod _core {
     use crate::artifact::{custom, value_error};
-    use crate::pydoc::{leaf, text};
+    use crate::pydoc::{json, leaf};
     use canonic_core::{ArgError, Issue, Plan, Semantic, Transform, Value};
-    use pyo3::exceptions::{PyTypeError, PyValueError};
+    use pyo3::exceptions::PyValueError;
     use pyo3::prelude::*;
-    use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
+    use pyo3::types::{PyBytes, PyDict, PyList, PyString, PyTuple};
     use serde_json::Value as J;
 
     #[pymodule_export]
@@ -30,51 +30,6 @@ mod _core {
     #[pyfunction]
     fn version() -> &'static str {
         canonic_core::version()
-    }
-
-    /// Deep enough for any spec or schema. A cyclic object fails instead of overflowing the stack.
-    const MAX_DEPTH: usize = 256;
-
-    /// A Python value as JSON, `dict` key order kept.
-    fn json(o: &Bound<'_, PyAny>, depth: usize) -> PyResult<J> {
-        if depth > MAX_DEPTH {
-            return Err(PyValueError::new_err("nested too deeply (or cyclic)"));
-        }
-        if o.is_none() {
-            Ok(J::Null)
-        } else if let Ok(s) = o.cast::<PyString>() {
-            Ok(J::String(text(s).into_owned()))
-        } else if let Ok(b) = o.cast::<PyBool>() {
-            Ok(J::Bool(b.is_true()))
-        } else if o.is_instance_of::<PyInt>() {
-            // Past i64 and u64 a number is an f64, as JSON.parse reads it.
-            Ok(match (o.extract::<i64>(), o.extract::<u64>()) {
-                (Ok(i), _) => J::from(i),
-                (_, Ok(u)) => J::from(u),
-                _ => J::from(o.extract::<f64>()?),
-            })
-        } else if let Ok(f) = o.cast::<PyFloat>() {
-            serde_json::Number::from_f64(f.value())
-                .map(J::Number)
-                .ok_or_else(|| PyValueError::new_err("NaN and infinity are not JSON"))
-        } else if let Ok(d) = o.cast::<PyDict>() {
-            let mut m = serde_json::Map::with_capacity(d.len());
-            for (k, v) in d.iter() {
-                let k = k
-                    .cast::<PyString>()
-                    .map_err(|_| PyTypeError::new_err("JSON object keys must be str"))?;
-                m.insert(text(k).into_owned(), json(&v, depth + 1)?);
-            }
-            Ok(J::Object(m))
-        } else if o.is_instance_of::<PyList>() || o.is_instance_of::<PyTuple>() {
-            let items = o.try_iter()?.map(|x| json(&x?, depth + 1));
-            Ok(J::Array(items.collect::<PyResult<_>>()?))
-        } else {
-            Err(PyTypeError::new_err(format!(
-                "{} is not JSON",
-                o.get_type().name()?
-            )))
-        }
     }
 
     /// A spec or schema given as a `dict`, or as JSON text (`str` or `bytes`, read by `json.loads`).

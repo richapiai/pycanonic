@@ -21,8 +21,10 @@ fn json(s: &str) -> String {
 
 struct Resolver<'c> {
     custom: &'c [String],
-    /// The spec language. Only language 2 reserves `$group`.
+    /// The spec language. Only language 2 reserves `$group` and `$input`.
     language: u8,
+    /// A scalar reads `$input` (language 2).
+    context: bool,
     stat_names: Vec<String>,
     names: Vec<String>,
     /// Top-level spec key to its scalar, `None` for an array rule. Anchors look fields up here.
@@ -62,7 +64,13 @@ impl Resolver<'_> {
             .collect()
     }
 
-    fn scalar(&self, r: &ScalarRule, node: &Node, stat: usize, at: &str) -> Result<Scalar, String> {
+    fn scalar(
+        &mut self,
+        r: &ScalarRule,
+        node: &Node,
+        stat: usize,
+        at: &str,
+    ) -> Result<Scalar, String> {
         let (semantic, routing) = match &node.kind {
             Kind::Scalar {
                 semantic, routing, ..
@@ -96,6 +104,12 @@ impl Resolver<'_> {
         } else {
             None
         };
+        let paths = match &r.source {
+            Source::From(p) => std::slice::from_ref(p),
+            Source::FromMany(ps) | Source::Coalesce(ps) => ps.as_slice(),
+        };
+        let input = Step::Key("$input".into());
+        self.context |= self.language == 2 && paths.iter().any(|p| p.first() == Some(&input));
         let (source, default) = (r.source.clone(), r.default.clone());
         Ok(Scalar {
             source,
@@ -177,6 +191,10 @@ impl Resolver<'_> {
         let mut mapped = HashMap::new();
         for (key, rule) in map {
             let kat = format!("{at}[{}]", json(key));
+            let (rule, when) = match rule {
+                Rule::When { when, omit, rule } => (&**rule, Some((when, *omit))),
+                rule => (rule, None),
+            };
             let path = field_key(key).expect("the grammar checked the key").0;
             let target = lookup(children, &path).ok_or_else(|| {
                 let name = key.strip_suffix("[]").unwrap_or(key);
@@ -202,10 +220,10 @@ impl Resolver<'_> {
                 } => {
                     let open = !matches!(target.kind, Kind::Object { open: false, .. });
                     if key.ends_with("[]") || open {
-                        let rule = if present.is_empty() {
-                            "if_empty"
-                        } else {
-                            "present"
+                        let rule = match (present.is_empty(), if_empty_null) {
+                            (false, _) => "present",
+                            (true, true) => "if_empty",
+                            (true, false) => "when",
                         };
                         return Err(format!("{kat}: {rule} needs an object node"));
                     }
@@ -232,6 +250,7 @@ impl Resolver<'_> {
                     }
                 },
                 Rule::Scalar(r) => Field::Scalar(self.scalar(r, target, stat, &kat)?),
+                Rule::When { .. } => unreachable!("spec::rule wraps a rule once"),
             };
             if within.is_none() {
                 let scalar = match &field {
@@ -240,6 +259,14 @@ impl Resolver<'_> {
                 };
                 self.top.insert(key.clone(), scalar);
             }
+            let field = match when {
+                Some((when, omit)) => Field::When {
+                    when: when.clone(),
+                    omit,
+                    field: Box::new(field),
+                },
+                None => field,
+            };
             // After the rule, so a language 1 pair keeps the TypeScript message of its failing rule.
             if mapped.contains_key(&path) {
                 return Err(format!("{kat}: canonical field is mapped twice"));
@@ -273,7 +300,12 @@ impl Resolver<'_> {
                 let x_empty = child
                     .empty
                     .filter(|e| matches!(e, Empty::Null | Empty::Object));
-                let value = match (mapped.remove(&path), &child.kind) {
+                // A `when` wraps the field once it is built.
+                let (field, when) = match mapped.remove(&path) {
+                    Some(Field::When { when, omit, field }) => (Some(*field), Some((when, omit))),
+                    f => (f, None),
+                };
+                let value = match (field, &child.kind) {
                     (
                         Some(Field::Object {
                             present, if_empty, ..
@@ -304,6 +336,14 @@ impl Resolver<'_> {
                         Some(e @ (Empty::List | Empty::Object)) => Field::Empty(e),
                         _ => Field::Null,
                     },
+                };
+                let value = match when {
+                    Some((when, omit)) => Field::When {
+                        when,
+                        omit,
+                        field: Box::new(value),
+                    },
+                    None => value,
                 };
                 // A mapped array handles `x-empty: "missing"` itself (`ListOps::missing`).
                 let value = match (child.empty, value) {
@@ -361,7 +401,7 @@ fn routing(fields: &[Named<Field>], stat_names: &[String], out: &mut Vec<Routing
             | Field::Const(..)
             | Field::Aggregate(..)
             | Field::Empty(_) => {}
-            Field::OmitNull(_) => unreachable!("inner() unwraps it"),
+            Field::OmitNull(_) | Field::When { .. } => unreachable!("inner() unwraps it"),
         }
     }
 }
@@ -409,6 +449,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
     let mut r = Resolver {
         custom,
         language: s.language,
+        context: false,
         stat_names: Vec::new(),
         names: Vec::new(),
         top: HashMap::new(),
@@ -450,6 +491,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
         stat_names: r.stat_names,
         custom_names: custom.to_vec(),
         names: r.names,
+        context: r.context,
     };
     if plan.needs_v2() {
         plan.format = Format(2);

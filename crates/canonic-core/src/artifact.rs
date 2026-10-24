@@ -2,7 +2,7 @@
 //! filter. Port of the `map` and `stats` half of canonic/packages/canonic/src/artifact.ts.
 
 use crate::cond::Cond;
-use crate::doc::Doc;
+use crate::doc::{Doc, Either};
 use crate::exec::{Program, execute, execute_field};
 use crate::extract::{ExtractStream, Extractor};
 use crate::json::{Filter, Node, parse};
@@ -15,6 +15,11 @@ use crate::value::Value;
 use crate::write::{JsonSink, member_keys};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// A response that a `reject` rule refuses. Task 9 adds the rules: until then no call
+/// returns it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rejected {}
 
 pub struct Artifact {
     pub plan: Arc<Plan>,
@@ -67,38 +72,68 @@ impl Artifact {
     }
 
     /// Parses `body` with the plan's filter and maps it. A body that does not parse reads as absent:
-    /// every field null, counted as misses.
-    pub fn map_bytes(&self, body: &[u8]) -> Out {
+    /// every field null, counted as misses. `$input` paths read `ctx`, the request context. Without
+    /// one they read as absent.
+    pub fn map_bytes(&self, body: &[u8], ctx: Option<&serde_json::Value>) -> Result<Out, Rejected> {
         let node = self.parse(body);
-        self.map_with(node.as_ref().as_ref(), &mut RustSink)
+        Ok(self.map_with_ctx(node.as_ref().as_ref(), ctx, &mut RustSink))
     }
 
     /// `map_bytes` written straight to JSON text, no intermediate Python objects: the plan runs into
     /// a `JsonSink`, so not even an `Out` tree is built.
-    pub fn map_json(&self, body: &[u8]) -> Vec<u8> {
+    pub fn map_json(
+        &self,
+        body: &[u8],
+        ctx: Option<&serde_json::Value>,
+    ) -> Result<Vec<u8>, Rejected> {
         let node = self.parse(body);
         let mut sink = JsonSink {
             buf: Vec::with_capacity(body.len()),
             open: Vec::new(),
             keys: &self.json_keys,
         };
-        let root = self.map_with(node.as_ref().as_ref(), &mut sink);
-        sink.finish(root)
+        let root = self.map_with_ctx(node.as_ref().as_ref(), ctx, &mut sink);
+        Ok(sink.finish(root))
     }
 
-    pub fn map_doc<D: Doc>(&self, doc: &D) -> Out {
-        self.map_with(Some(doc), &mut RustSink)
+    pub fn map_doc<D: Doc>(
+        &self,
+        doc: &D,
+        ctx: Option<&serde_json::Value>,
+    ) -> Result<Out, Rejected> {
+        Ok(self.map_with_ctx(Some(doc), ctx, &mut RustSink))
     }
 
     /// `map_bytes` with every canonical object's keys by name (`Out::Map` all the way down), as
     /// `ShadowDiff::add_out` and `GateOptions::known` read output.
-    pub fn map_named(&self, body: &[u8]) -> Out {
-        named(self.map_bytes(body), &self.plan.names)
+    pub fn map_named(&self, body: &[u8], ctx: Option<&serde_json::Value>) -> Result<Out, Rejected> {
+        Ok(named(self.map_bytes(body, ctx)?, &self.plan.names))
     }
 
     /// `map_doc`, keys by name as `map_named`.
-    pub fn map_doc_named<D: Doc>(&self, doc: &D) -> Out {
-        named(self.map_doc(doc), &self.plan.names)
+    pub fn map_doc_named<D: Doc>(
+        &self,
+        doc: &D,
+        ctx: Option<&serde_json::Value>,
+    ) -> Result<Out, Rejected> {
+        Ok(named(self.map_doc(doc, ctx)?, &self.plan.names))
+    }
+
+    /// `map_with` for a context given as JSON. With no context, the body's own document type runs
+    /// alone. With one, body and context run as `Either`.
+    pub fn map_with_ctx<D: Doc, S: Sink>(
+        &self,
+        doc: Option<&D>,
+        ctx: Option<&serde_json::Value>,
+        sink: &mut S,
+    ) -> S::Out {
+        match ctx {
+            None => self.map_with(doc, None, sink),
+            Some(c) => {
+                let doc = doc.map(|d| Either::Body(d.clone()));
+                self.map_with(doc.as_ref(), Some(&Either::Ctx(c)), sink)
+            }
+        }
     }
 
     /// The routing fields read straight from `raw`, aligned with `plan.routing`: `None` when not
@@ -129,8 +164,14 @@ impl Artifact {
         execute_field(&self.program, path, doc, sink, &self.custom)
     }
 
-    pub fn map_with<D: Doc, S: Sink>(&self, doc: Option<&D>, sink: &mut S) -> S::Out {
-        execute(&self.program, doc, sink, &self.stats, &self.custom)
+    /// Maps `doc` into `sink`. `$input` paths read `ctx`, a document of the same type.
+    pub fn map_with<D: Doc, S: Sink>(
+        &self,
+        doc: Option<&D>,
+        ctx: Option<&D>,
+        sink: &mut S,
+    ) -> S::Out {
+        execute(&self.program, doc, ctx, sink, &self.stats, &self.custom)
     }
 }
 
@@ -159,10 +200,26 @@ pub fn filter_for(plan: &Plan) -> Filter {
 
 fn fields(f: &mut Filter, fs: &[Named<Field>]) {
     for x in fs {
-        match x.value.inner() {
+        let mut field = &x.value;
+        loop {
+            match field {
+                Field::OmitNull(inner) => field = inner,
+                // A condition can compare whole values.
+                Field::When {
+                    when, field: inner, ..
+                } => {
+                    for p in cond_paths(when) {
+                        node(f, p).all = true;
+                    }
+                    field = inner;
+                }
+                _ => break,
+            }
+        }
+        match field {
             // A const reads nothing.
             Field::Null | Field::Const(..) | Field::Empty(_) => {}
-            Field::OmitNull(_) => unreachable!("inner() unwraps it"),
+            Field::OmitNull(_) | Field::When { .. } => unreachable!("the loop unwraps it"),
             Field::Object {
                 members, present, ..
             } => {

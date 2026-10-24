@@ -160,7 +160,7 @@ fn aggregates_count_errors_and_round_trip() {
     let a = Artifact::new(serde_json::from_str(&text).unwrap(), Default::default()).unwrap();
     let body = br#"{"xs": [{"k": 1, "v": 1, "e": "b"}, {"k": 2, "v": "x"}, {"k": 1, "e": "a"}]}"#;
     assert_eq!(
-        a.map_json(body),
+        a.map_json(body, None).unwrap(),
         br#"{"low":null,"jobs":[{"n":2,"end":"b"},{"n":1,"end":null}]}"#
     );
     let s = a.stats.snapshot();

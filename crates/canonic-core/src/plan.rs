@@ -162,6 +162,13 @@ pub enum Field {
     Const(Value, usize),
     /// Language 2: an aggregate over an array or a group. The `usize` is the stat slot.
     Aggregate(Aggregate, usize),
+    /// Language 2: `field` when `when` holds. Otherwise null, or left out of its object with
+    /// `omit`. Nothing inside it is read then, and every field inside it is a miss.
+    When {
+        when: Cond,
+        omit: bool,
+        field: Box<Field>,
+    },
     /// Language 2: a canonical field the spec does not map, written as its `x-empty`:
     /// `List` (`[]`) or `Object` (`{}`). An unmapped null or left-out field is `Null` or `OmitNull`.
     Empty(Empty),
@@ -272,6 +279,10 @@ pub struct Plan {
     pub custom_names: Vec<String>,
     /// Interned canonical field names. `Named::name_idx` points here.
     pub names: Vec<String>,
+    /// Language 2: a scalar reads the request context, so a path that starts with `$input`
+    /// reads the context and not the body.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub context: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -293,10 +304,10 @@ fn present<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
 }
 
 impl Field {
-    /// The field an `OmitNull` wraps, or the field itself.
+    /// The field an `OmitNull` or a `When` wraps, or the field itself.
     pub fn inner(&self) -> &Field {
         match self {
-            Field::OmitNull(f) => f.inner(),
+            Field::OmitNull(f) | Field::When { field: f, .. } => f.inner(),
             f => f,
         }
     }
@@ -309,9 +320,11 @@ impl Plan {
         fn field(f: &Field) -> bool {
             match f {
                 Field::Null | Field::Scalar(_) => false,
-                Field::Const(..) | Field::OmitNull(_) | Field::Empty(_) | Field::Aggregate(..) => {
-                    true
-                }
+                Field::Const(..)
+                | Field::OmitNull(_)
+                | Field::Empty(_)
+                | Field::Aggregate(..)
+                | Field::When { .. } => true,
                 Field::Object {
                     members,
                     present,
@@ -330,7 +343,7 @@ impl Plan {
                 }
             }
         }
-        self.fields.iter().any(|n| field(&n.value))
+        self.context || self.fields.iter().any(|n| field(&n.value))
     }
 
     /// One line per canonical field, in schema order, e.g.
@@ -354,6 +367,11 @@ fn line(out: &mut String, name: &str, field: &Field) {
         Field::OmitNull(f) => {
             _ = writeln!(out, "{name}: left out when null");
             line(out, name, f);
+        }
+        Field::When { when, omit, field } => {
+            let not = if *omit { "left out" } else { "null" };
+            _ = writeln!(out, "{name}: {not} unless {}", cond(when));
+            line(out, name, field);
         }
         Field::Const(v, _) => _ = writeln!(out, "{name} <- const {v}"),
         Field::Empty(e) => {

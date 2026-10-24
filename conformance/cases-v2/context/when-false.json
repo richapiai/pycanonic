@@ -1,0 +1,118 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "name": {
+        "from": "name",
+        "when": {
+          "path": "kind",
+          "eq": "person"
+        }
+      },
+      "tag": {
+        "const": "T",
+        "when": [
+          {
+            "path": "$input.full",
+            "eq": true
+          },
+          {
+            "path": "kind",
+            "in": [
+              "person",
+              "org"
+            ]
+          }
+        ]
+      },
+      "ids[]": {
+        "from": "ids",
+        "when": {
+          "path": "$input.more",
+          "present": true
+        }
+      },
+      "hq": {
+        "present": "hq",
+        "when": {
+          "path": "$input.full",
+          "eq": true
+        }
+      },
+      "hq.city": "hq.city"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "tag": {
+        "type": "string"
+      },
+      "ids": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "hq": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "kind": "org",
+        "name": "a",
+        "ids": [
+          1,
+          2
+        ],
+        "hq": {
+          "city": "x"
+        }
+      },
+      "context": {
+        "full": false
+      },
+      "expected": {
+        "name": null,
+        "tag": null,
+        "ids": null,
+        "hq": null
+      }
+    },
+    {
+      "body": {
+        "kind": "org",
+        "name": "a",
+        "ids": [
+          1,
+          2
+        ],
+        "hq": {
+          "city": "x"
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": null,
+        "tag": null,
+        "ids": null,
+        "hq": null
+      }
+    }
+  ]
+}

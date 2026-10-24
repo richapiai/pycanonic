@@ -1,0 +1,153 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "name": "name",
+      "bio": {
+        "from": "bio",
+        "when": {
+          "path": "$input.full",
+          "eq": true
+        },
+        "omit": true
+      },
+      "ids[]": {
+        "from": "ids",
+        "when": {
+          "path": "$input.full",
+          "eq": true
+        },
+        "omit": true
+      },
+      "items[]": {
+        "from": "items",
+        "item": {
+          "a": "a",
+          "b": {
+            "from": "b",
+            "when": {
+              "path": "a",
+              "eq": 1
+            },
+            "omit": true
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "bio": {
+        "type": "string"
+      },
+      "ids": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "number"
+            },
+            "b": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "name": "a",
+        "bio": "b",
+        "ids": [
+          1
+        ],
+        "items": [
+          {
+            "a": 1,
+            "b": "x"
+          },
+          {
+            "a": 2,
+            "b": "y"
+          }
+        ]
+      },
+      "context": {
+        "full": true
+      },
+      "expected": {
+        "name": "a",
+        "bio": "b",
+        "ids": [
+          1
+        ],
+        "items": [
+          {
+            "a": 1,
+            "b": "x"
+          },
+          {
+            "a": 2
+          }
+        ]
+      }
+    },
+    {
+      "body": {
+        "name": "a",
+        "bio": "b",
+        "ids": [
+          1
+        ],
+        "items": [
+          {
+            "a": 1,
+            "b": "x"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "name": "a",
+        "items": [
+          {
+            "a": 1,
+            "b": "x"
+          }
+        ]
+      }
+    },
+    {
+      "body": {
+        "name": "a",
+        "bio": null
+      },
+      "context": {
+        "full": true
+      },
+      "expected": {
+        "name": "a",
+        "bio": null,
+        "ids": null,
+        "items": null
+      }
+    }
+  ]
+}

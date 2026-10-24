@@ -202,7 +202,7 @@ fn artifact(spec: J, canonical: J) -> Artifact {
 /// Maps each body, then checks the window and resets, as a caller does once per period.
 fn period(a: &Artifact, m: &mut FillMonitor, bodies: impl Iterator<Item = J>) -> Vec<FieldAlert> {
     for b in bodies {
-        a.map_bytes(b.to_string().as_bytes());
+        a.map_bytes(b.to_string().as_bytes(), None).unwrap();
     }
     let s = a.stats.snapshot();
     a.stats.reset();

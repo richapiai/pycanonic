@@ -193,3 +193,74 @@ impl Doc for &serde_json::Value {
         )
     }
 }
+
+/// A body document and a request context of another kind, read as one document type, so the
+/// executor reads `$input` from a `serde_json::Value` next to any body. Only a call with a context
+/// pays for the match.
+#[derive(Clone)]
+pub enum Either<A, B> {
+    Body(A),
+    Ctx(B),
+}
+
+impl<A: Doc, B: Doc> Doc for Either<A, B> {
+    fn get(&self, key: &Key) -> Option<Self> {
+        match self {
+            Either::Body(a) => a.get(key).map(Either::Body),
+            Either::Ctx(b) => b.get(key).map(Either::Ctx),
+        }
+    }
+
+    fn idx(&self, i: usize) -> Option<Self> {
+        match self {
+            Either::Body(a) => a.idx(i).map(Either::Body),
+            Either::Ctx(b) => b.idx(i).map(Either::Ctx),
+        }
+    }
+
+    fn leaf(&self) -> Value<'_> {
+        match self {
+            Either::Body(a) => a.leaf(),
+            Either::Ctx(b) => b.leaf(),
+        }
+    }
+
+    fn is_null(&self) -> bool {
+        match self {
+            Either::Body(a) => a.is_null(),
+            Either::Ctx(b) => b.is_null(),
+        }
+    }
+
+    fn len(&self) -> Option<usize> {
+        match self {
+            Either::Body(a) => a.len(),
+            Either::Ctx(b) => b.len(),
+        }
+    }
+
+    fn item(&self, i: usize) -> Option<Self> {
+        match self {
+            Either::Body(a) => a.item(i).map(Either::Body),
+            Either::Ctx(b) => b.item(i).map(Either::Ctx),
+        }
+    }
+
+    fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>> {
+        Some(match self {
+            Either::Body(a) => (a.members()?.into_iter())
+                .map(|(k, v)| (k, Either::Body(v)))
+                .collect(),
+            Either::Ctx(b) => (b.members()?.into_iter())
+                .map(|(k, v)| (k, Either::Ctx(v)))
+                .collect(),
+        })
+    }
+
+    fn host(&self) -> Option<&dyn Any> {
+        match self {
+            Either::Body(a) => a.host(),
+            Either::Ctx(b) => b.host(),
+        }
+    }
+}

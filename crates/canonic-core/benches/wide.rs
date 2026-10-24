@@ -39,7 +39,7 @@ fn exec_x64(b: Bencher) {
     let nodes: Vec<_> = WIDE.1.iter().map(|r| parse(r, &filter).unwrap()).collect();
     b.bench(|| {
         for n in &nodes {
-            black_box(WIDE.0.map_doc(&black_box(n)));
+            black_box(WIDE.0.map_doc(&black_box(n), None).unwrap());
         }
     });
 }
@@ -48,7 +48,7 @@ fn exec_x64(b: Bencher) {
 fn map_bytes_x64(b: Bencher) {
     b.bench(|| {
         for r in &WIDE.1 {
-            black_box(WIDE.0.map_bytes(black_box(r)));
+            black_box(WIDE.0.map_bytes(black_box(r), None).unwrap());
         }
     });
 }
@@ -57,7 +57,7 @@ fn map_bytes_x64(b: Bencher) {
 fn map_json_x64(b: Bencher) {
     b.bench(|| {
         for r in &WIDE.1 {
-            black_box(WIDE.0.map_json(black_box(r)));
+            black_box(WIDE.0.map_json(black_box(r), None).unwrap());
         }
     });
 }

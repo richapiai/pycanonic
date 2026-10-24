@@ -105,6 +105,13 @@ pub enum Rule {
         if_empty_null: bool,
     },
     Aggregate(Aggregate),
+    /// Language 2: `rule` applies only when `when` holds. Otherwise the field is null, or
+    /// left out of its object with `omit`.
+    When {
+        when: Cond,
+        omit: bool,
+        rule: Box<Rule>,
+    },
 }
 
 /// Canonical field path to its rule, in spec order. A key ending in `[]` holds a `Rule::Array`.
@@ -151,6 +158,9 @@ const ARRAY_KEYS: [&str; 14] = [
     "group_by",
     "consecutive",
 ];
+
+/// The keys that any rule object can take.
+const WHEN: [&str; 2] = ["when", "omit"];
 
 const STATUSES: [&str; 4] = ["draft", "shadow", "promoted", "deprecated"];
 
@@ -336,11 +346,33 @@ impl Checker {
             self.fail(at, "must be a path like a.b[0][\"c d\"]");
         }
     }
+    /// `path` for a path that reads the body or the context (`$input`), never `$group`.
+    fn source(&mut self, v: Option<&Value>, at: &str) {
+        self.path(v, at);
+        if let Some(p) = v.and_then(Value::as_str).and_then(parse_path) {
+            self.root(&p, at, true);
+        }
+    }
+    /// Language 2: a path that starts with `$group` or `$input` where that root cannot be read.
+    /// `$group` is only a list or aggregate `from` (`group_source` checks those). `$input` is only
+    /// a scalar `from` or a condition path, where `input` is true.
+    fn root(&mut self, p: &Path, at: &str, input: bool) {
+        match p.first() {
+            _ if self.language != 2 => {}
+            Some(Step::Key(k)) if k == "$group" => {
+                self.fail(at, "$group is only a list or aggregate from")
+            }
+            Some(Step::Key(k)) if k == "$input" && !input => {
+                self.fail(at, "$input is only a scalar from or a condition path")
+            }
+            _ => {}
+        }
+    }
     fn paths(&mut self, v: &Value, at: &str) {
         match v.as_array() {
             Some(a) if a.len() >= 2 => {
                 for (i, p) in a.iter().enumerate() {
-                    self.path(Some(p), &format!("{at}[{i}]"));
+                    self.source(Some(p), &format!("{at}[{i}]"));
                 }
             }
             _ => self.fail(at, "must be an array of at least 2 paths"),
@@ -371,12 +403,17 @@ impl Checker {
     }
     fn scalar(&mut self, r: &Value, at: &str) {
         if let Value::String(_) = r {
-            return self.path(Some(r), at);
+            return self.source(Some(r), at);
         }
         let Some(r) = r.as_object() else {
             return self.fail(at, "must be a path or a rule object");
         };
-        self.keys(r, at, &["from", "coalesce", "default", "transform"]);
+        self.keys(
+            r,
+            at,
+            &["from", "coalesce", "default", "transform", "when", "omit"],
+        );
+        self.when(r, at);
         if r.contains_key("from") == r.contains_key("coalesce") {
             self.fail(at, "needs exactly one of from, coalesce");
         }
@@ -384,7 +421,7 @@ impl Checker {
             if from.is_array() {
                 self.paths(from, &format!("{at}.from"));
             } else {
-                self.path(Some(from), &format!("{at}.from"));
+                self.source(Some(from), &format!("{at}.from"));
             }
         }
         if let Some(c) = r.get("coalesce") {
@@ -406,7 +443,8 @@ impl Checker {
         let Some(r) = r.as_object() else {
             return self.fail(at, "array fields need a rule object with from");
         };
-        self.keys(r, at, &ARRAY_KEYS);
+        self.keys(r, at, &[&ARRAY_KEYS[..], &WHEN].concat());
+        self.when(r, at);
         for k in &ARRAY_KEYS[4..] {
             if r.contains_key(*k) {
                 self.lang2(at, k);
@@ -428,7 +466,7 @@ impl Checker {
             self.grouped = outer;
         }
         if pluck.is_some() {
-            self.path(pluck, &format!("{at}.pluck"));
+            self.key_path(pluck, &format!("{at}.pluck"));
         }
         if item.is_some() && r.contains_key("transform") {
             self.fail(&format!("{at}.transform"), "not allowed with item");
@@ -455,22 +493,18 @@ impl Checker {
         if r.get("wrap").is_some_and(|v| !v.is_boolean()) {
             self.fail(&format!("{at}.wrap"), "must be true or false");
         }
-        match r.get("filter") {
-            Some(Value::Array(a)) => {
-                for (i, c) in a.iter().enumerate() {
-                    self.cond(c, &format!("{at}.filter[{i}]"));
-                }
-            }
-            Some(c) => self.cond(c, &format!("{at}.filter")),
-            None => {}
+        if let Some(c) = r.get("filter") {
+            self.conds(c, &format!("{at}.filter"));
         }
         match r.get("unique") {
             None | Some(Value::Bool(true)) => {}
-            Some(Value::String(p)) if parse_path(p).is_some() => {}
+            Some(Value::String(p)) if parse_path(p).is_some() => {
+                self.root(&parse_path(p).unwrap(), &format!("{at}.unique"), false)
+            }
             Some(_) => self.fail(&format!("{at}.unique"), "must be true or a path"),
         }
         if r.contains_key("sort_by") {
-            self.path(r.get("sort_by"), &format!("{at}.sort_by"));
+            self.key_path(r.get("sort_by"), &format!("{at}.sort_by"));
         }
         match r.get("order") {
             Some(o) if o != "asc" && o != "desc" => {
@@ -487,7 +521,7 @@ impl Checker {
             self.fail(at, "limit must be a positive integer");
         }
         if r.contains_key("group_by") {
-            self.path(r.get("group_by"), &format!("{at}.group_by"));
+            self.key_path(r.get("group_by"), &format!("{at}.group_by"));
         }
         match r.get("consecutive") {
             Some(c) if !c.is_boolean() => {
@@ -499,9 +533,19 @@ impl Checker {
             _ => {}
         }
     }
-    /// A source path that starts with `$group` (language 2): only inside a grouped item map, and
-    /// only as the whole path before `[]`.
+    /// `path` for a path that reads list elements, which neither `$group` nor `$input` names.
+    fn key_path(&mut self, v: Option<&Value>, at: &str) {
+        self.path(v, at);
+        if let Some(p) = v.and_then(Value::as_str).and_then(parse_path) {
+            self.root(&p, at, false);
+        }
+    }
+    /// A list or aggregate source path (language 2): `$input` is not one. One that starts with
+    /// `$group` is only inside a grouped item map, and only as the whole path before `[]`.
     fn group_source(&mut self, first: &Path, at: &str) {
+        if self.language == 2 && first.first() == Some(&Step::Key("$input".into())) {
+            return self.fail(at, "$input is only a scalar from or a condition path");
+        }
         if self.language != 2 || first.first() != Some(&Step::Key("$group".into())) {
             return;
         }
@@ -513,7 +557,12 @@ impl Checker {
     }
     fn aggregate(&mut self, o: &Map<String, Value>, at: &str) {
         self.lang2(at, "aggregate");
-        self.keys(o, at, &["aggregate", "from", "nulls", "sep"]);
+        self.keys(
+            o,
+            at,
+            &["aggregate", "from", "nulls", "sep", "when", "omit"],
+        );
+        self.when(o, at);
         let op = o.get("aggregate").and_then(Value::as_str).and_then(agg_op);
         if op.is_none() {
             let names: Vec<&str> = AGG_OPS.iter().map(|(n, _)| *n).collect();
@@ -537,24 +586,59 @@ impl Checker {
             _ => {}
         }
     }
+    /// One condition, or a list of them that must all hold.
+    fn conds(&mut self, c: &Value, at: &str) {
+        match c {
+            Value::Array(a) => {
+                for (i, c) in a.iter().enumerate() {
+                    self.cond(c, &format!("{at}[{i}]"));
+                }
+            }
+            c => self.cond(c, at),
+        }
+    }
     fn cond(&mut self, c: &Value, at: &str) {
-        for (sub, m) in cond::parse(c).err().unwrap_or_default() {
-            self.fail(&format!("{at}{sub}"), &m);
+        match cond::parse(c) {
+            Ok(Cond::Present(p, _) | Cond::Eq(p, _) | Cond::In(p, _)) => {
+                self.root(&p, &format!("{at}.path"), true)
+            }
+            Ok(_) => {}
+            Err(issues) => {
+                for (sub, m) in issues {
+                    self.fail(&format!("{at}{sub}"), &m);
+                }
+            }
+        }
+    }
+    /// Language 2: `when` and `omit`, which any rule object can take.
+    fn when(&mut self, o: &Map<String, Value>, at: &str) {
+        if let Some(c) = o.get("when") {
+            self.lang2(at, "when");
+            self.conds(c, &format!("{at}.when"));
+        }
+        if let Some(v) = o.get("omit") {
+            self.lang2(at, "omit");
+            if !v.is_boolean() {
+                self.fail(&format!("{at}.omit"), "must be true or false");
+            } else if !o.contains_key("when") {
+                self.fail(at, "omit needs when");
+            }
         }
     }
     fn optional(&mut self, o: &Map<String, Value>, at: &str) {
-        self.keys(o, at, &["present", "if_empty"]);
+        self.keys(o, at, &["present", "if_empty", "when", "omit"]);
+        self.when(o, at);
         if let Some(p) = o.get("present") {
             self.lang2(at, "present");
             let pat = format!("{at}.present");
             match p {
                 Value::Array(a) if !a.is_empty() => {
                     for (i, p) in a.iter().enumerate() {
-                        self.path(Some(p), &format!("{pat}[{i}]"));
+                        self.source(Some(p), &format!("{pat}[{i}]"));
                     }
                 }
                 Value::Array(_) => self.fail(&pat, "must be a path or a non-empty array of paths"),
-                p => self.path(Some(p), &pat),
+                p => self.source(Some(p), &pat),
             }
         }
         if let Some(v) = o.get("if_empty") {
@@ -584,7 +668,8 @@ impl Checker {
                 );
             } else if let Some(o) = r.as_object().filter(|o| o.contains_key("const")) {
                 self.lang2(&kat, "const");
-                self.keys(o, &kat, &["const"]);
+                self.keys(o, &kat, &["const", "when", "omit"]);
+                self.when(o, &kat);
             } else if let Some(o) = r.as_object().filter(|o| optional(o)) {
                 self.optional(o, &kat);
             } else if k.ends_with("[]") {
@@ -674,9 +759,12 @@ fn language(v: Option<&Value>) -> Option<u8> {
     }
 }
 
-/// A rule object for an object node: it has `present` or `if_empty`.
+/// A rule object for an object node: it has `present` or `if_empty`, or `when` and nothing else
+/// but `omit`.
 fn optional(o: &Map<String, Value>) -> bool {
-    o.contains_key("present") || o.contains_key("if_empty")
+    o.contains_key("present")
+        || o.contains_key("if_empty")
+        || (o.contains_key("when") && o.keys().all(|k| WHEN.contains(&k.as_str())))
 }
 
 fn agg_op(name: &str) -> Option<AggOp> {
@@ -738,7 +826,28 @@ fn field_map(v: &Value) -> FieldMap {
         .collect()
 }
 
+/// A `when` value: one condition, or all of a list.
+fn conds(v: &Value) -> Cond {
+    match v {
+        Value::Array(a) => Cond::All(a.iter().map(|c| cond::parse(c).unwrap()).collect()),
+        c => cond::parse(c).unwrap(),
+    }
+}
+
 fn rule(key: &str, r: &Value) -> Rule {
+    let rule = bare_rule(key, r);
+    match r.get("when") {
+        Some(c) => Rule::When {
+            when: conds(c),
+            omit: r.get("omit") == Some(&Value::Bool(true)),
+            rule: Box::new(rule),
+        },
+        None => rule,
+    }
+}
+
+/// `rule` without its `when`.
+fn bare_rule(key: &str, r: &Value) -> Rule {
     if let Some(c) = r.get("const") {
         return Rule::Const(c.clone());
     }
@@ -762,10 +871,7 @@ fn rule(key: &str, r: &Value) -> Rule {
             from: first,
             flatten: from,
             wrap: r.get("wrap") == Some(&Value::Bool(true)),
-            filter: r.get("filter").map(|f| match f {
-                Value::Array(a) => Cond::All(a.iter().map(|c| cond::parse(c).unwrap()).collect()),
-                c => cond::parse(c).unwrap(),
-            }),
+            filter: r.get("filter").map(conds),
             unique: r.get("unique").map(|u| match u {
                 Value::String(p) => parse_path(p).unwrap(),
                 _ => Vec::new(),

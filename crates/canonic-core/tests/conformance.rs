@@ -100,7 +100,7 @@ fn run(case: &J) -> Result<Vec<String>, String> {
             unparsed.push((i, body));
         } else {
             let mut text = Vec::new();
-            write_json(&a.plan, &a.map_bytes(body), &mut text);
+            write_json(&a.plan, &a.map_bytes(body, None).unwrap(), &mut text);
             let got: J = serde_json::from_slice(&text)
                 .map_err(|e| format!("map[{i}]: write_json wrote invalid JSON: {e}"))?;
             fails.extend(compare::diff(&format!("map[{i}]"), &got, &maps[i]));
@@ -130,14 +130,14 @@ fn run(case: &J) -> Result<Vec<String>, String> {
     // through map_json and the unparsed bodies go after the stats snapshot.
     fails.extend(compare::diff("stats", &stats(&a), &ex["stats"]));
     for (i, body, text) in texts {
-        if a.map_json(body) != text {
+        if a.map_json(body, None).unwrap() != text {
             fails.push(format!("map_json[{i}]: differs from write_json(map_bytes)"));
         }
     }
     for (i, body) in unparsed {
         fails.extend(compare::diff(
             &format!("map[{i}] (unparsed)"),
-            &written(&a, &a.map_bytes(body)),
+            &written(&a, &a.map_bytes(body, None).unwrap()),
             &shape,
         ));
     }

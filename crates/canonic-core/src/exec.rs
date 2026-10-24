@@ -25,6 +25,9 @@
 //!   each group, its first element as the element and the group as `$group`. An aggregate folds
 //!   one path across an array or the group. A missing array is empty, one that is not an array
 //!   is null and an error, and so is a value an aggregate cannot fold.
+//! - Language 2: a path that starts with `$input` reads the request context (`Frame::ctx`),
+//!   in a plan with `context` set, and in every condition. A `when` that fails gives null, or
+//!   leaves the key out with `omit`, before anything under it is read. Its fields are misses.
 
 use crate::canonical::{Empty, Semantic};
 use crate::cond::{Cond, Rank, holds, key_text};
@@ -56,6 +59,8 @@ struct Scope {
     slot: Vec<u32>,
     /// How many nodes have a slot.
     slots: usize,
+    /// The node of `$input`, which reads the context. 0 (the document) when no path reads it.
+    input: At,
 }
 
 const NONE: u32 = u32::MAX;
@@ -67,6 +72,7 @@ struct ScopeBuilder {
     index: HashMap<(At, StepId), At>,
     /// Reads that pass through each node as a strict prefix.
     through: Vec<u32>,
+    input: At,
 }
 
 #[derive(PartialEq, Eq, Hash)]
@@ -119,6 +125,7 @@ impl ScopeBuilder {
             nodes: self.nodes,
             slot,
             slots,
+            input: self.input,
         }
     }
 }
@@ -186,6 +193,12 @@ enum Op {
     },
     /// Left out of its object when it writes nothing but null.
     OmitNull(Box<Op>),
+    /// `op` when `cond` holds, else null, or no key with `omit`.
+    When {
+        cond: Cond<Path>,
+        omit: bool,
+        op: Box<Op>,
+    },
 }
 
 enum Kind {
@@ -282,9 +295,12 @@ impl Builder<'_> {
         }
     }
 
-    /// `p` as a node of the current scope.
+    /// `p` as a node of the current scope. In a plan with `context`, `$input` is the context.
     fn at(&mut self, p: &spec::Path) -> At {
         let steps = self.path(p);
+        if self.plan.context && matches!(p.first(), Some(spec::Step::Key(k)) if k == "$input") {
+            self.scope.input = self.scope.at(steps[..1].to_vec());
+        }
         self.scope.at(steps)
     }
 
@@ -352,6 +368,11 @@ impl Builder<'_> {
                 Op::Const(v, None)
             }
             Field::OmitNull(inner) => Op::OmitNull(Box::new(self.op(inner)?)),
+            Field::When { when, omit, field } => Op::When {
+                cond: self.cond(when),
+                omit: *omit,
+                op: Box::new(self.op(field)?),
+            },
             Field::Aggregate(a, stat) => Op::Aggregate(Box::new(Fold {
                 op: a.op,
                 input: match is_group(&a.from) {
@@ -430,6 +451,8 @@ struct Frame<'s, D> {
     cache: Vec<Option<Option<D>>>,
     /// Inside a grouped item map: the group, which `$group` reads.
     group: Option<&'s [D]>,
+    /// The request context, which `$input` reads.
+    ctx: Option<D>,
 }
 
 impl<'s, D: Doc> Frame<'s, D> {
@@ -443,6 +466,7 @@ impl<'s, D: Doc> Frame<'s, D> {
             scope,
             cache,
             group: None,
+            ctx: None,
         }
     }
 
@@ -450,6 +474,9 @@ impl<'s, D: Doc> Frame<'s, D> {
     fn prefix(&mut self, n: At) -> Option<D> {
         if n == 0 {
             return self.doc.clone();
+        }
+        if n == self.scope.input {
+            return self.ctx.clone();
         }
         let scope = self.scope;
         let slot = scope.slot[n - 1] as usize;
@@ -468,6 +495,7 @@ impl<'s, D: Doc> Frame<'s, D> {
     fn read(&mut self, n: At) -> Option<D> {
         let v = match n {
             0 => self.doc.clone(),
+            n if n == self.scope.input => self.ctx.clone(),
             n => {
                 let scope = self.scope;
                 let (parent, step) = &scope.nodes[n - 1];
@@ -504,19 +532,23 @@ pub(crate) const MAX_NODES: usize = 1_000_000;
 
 /// The elements of a list source (`None`: missing) after `ops`, in this order: wrap, flatten,
 /// filter, unique, sort, limit. `None` when the source is missing or not an array (and not
-/// wrapped). Inside a filter, paths read the element, as in an item map.
-pub(crate) fn collect<D: Doc>(from: Option<D>, ops: &ListOps<Path>) -> Option<Vec<D>> {
+/// wrapped). Inside a filter, paths read the element, as in an item map, and `$input` reads `ctx`.
+pub(crate) fn collect<D: Doc>(
+    from: Option<D>,
+    ops: &ListOps<Path>,
+    ctx: Option<&D>,
+) -> Option<Vec<D>> {
     let x = from?;
     let xs: Vec<D> = match x.len() {
         Some(n) => (0..n).filter_map(|i| x.item(i)).collect(),
         None if ops.wrap => vec![x],
         None => return None,
     };
-    Some(refine(xs, ops))
+    Some(refine(xs, ops, ctx))
 }
 
 /// `collect` after the source: flatten, filter, unique, sort, limit.
-fn refine<D: Doc>(mut xs: Vec<D>, ops: &ListOps<Path>) -> Vec<D> {
+fn refine<D: Doc>(mut xs: Vec<D>, ops: &ListOps<Path>, ctx: Option<&D>) -> Vec<D> {
     // A missing, null or non-array value on a flatten path adds nothing.
     for p in &ops.flatten {
         xs = (xs.iter())
@@ -525,7 +557,7 @@ fn refine<D: Doc>(mut xs: Vec<D>, ops: &ListOps<Path>) -> Vec<D> {
             .collect();
     }
     if let Some(c) = &ops.filter {
-        xs.retain(|e| holds(c, Some(e), None, None));
+        xs.retain(|e| holds(c, Some(e), None, ctx));
     }
     // A null or missing key never matches another, so every such element stays.
     if let Some(p) = &ops.unique {
@@ -671,12 +703,14 @@ pub(crate) fn transform_many<'d, D: Doc>(
 pub fn execute<D: Doc, S: Sink>(
     program: &Program,
     doc: Option<&D>,
+    ctx: Option<&D>,
     sink: &mut S,
     stats: &Stats,
     custom: &[Arc<dyn Transform>],
 ) -> S::Out {
     stats.response();
     let mut f = Frame::new(doc.cloned(), &program.scope, true);
+    f.ctx = ctx.cloned();
     Exec {
         sink,
         stats,
@@ -710,7 +744,7 @@ pub fn execute_field<D: Doc, S: Sink>(
     let mut level = &program.root;
     for &i in parents {
         let mut op = &level.get(i)?.1;
-        if let Op::OmitNull(o) = op {
+        while let Op::OmitNull(o) | Op::When { op: o, .. } = op {
             op = o;
         }
         match op {
@@ -747,6 +781,11 @@ impl<S: Sink> Exec<'_, S> {
                     }
                 }
                 // Known before anything is written: the key is left out.
+                Op::When {
+                    cond,
+                    omit: true,
+                    op,
+                } if !holds(cond, f.doc.as_ref(), None, f.ctx.as_ref()) => self.miss(op),
                 Op::List {
                     from: Input::At(at),
                     stat,
@@ -781,13 +820,20 @@ impl<S: Sink> Exec<'_, S> {
                 self.sink.passthrough(&v)
             }
             Op::OmitNull(inner) => self.op(inner, f),
+            Op::When { cond, op, .. } => {
+                if holds(cond, f.doc.as_ref(), None, f.ctx.as_ref()) {
+                    return self.op(op, f);
+                }
+                self.miss(op);
+                self.sink.scalar(Value::Null)
+            }
             Op::Optional {
                 members,
                 present,
                 if_empty,
             } => {
                 // Inside an item map the frame's document is the element, which `holds` then reads.
-                if !holds(present, f.doc.as_ref(), None, None) {
+                if !holds(present, f.doc.as_ref(), None, f.ctx.as_ref()) {
                     members.iter().for_each(|(_, op)| self.miss(op));
                     return self.sink.scalar(Value::Null);
                 }
@@ -816,7 +862,7 @@ impl<S: Sink> Exec<'_, S> {
             Op::Object(c) | Op::Optional { members: c, .. } => {
                 c.iter().for_each(|(_, op)| self.miss(op))
             }
-            Op::OmitNull(op) => self.miss(op),
+            Op::OmitNull(op) | Op::When { op, .. } => self.miss(op),
         }
     }
 
@@ -905,7 +951,7 @@ impl<S: Sink> Exec<'_, S> {
         f: &mut Frame<'_, D>,
     ) -> S::Out {
         let xs = match (from, f.group) {
-            (Input::Group, Some(g)) => refine(g.to_vec(), ops),
+            (Input::Group, Some(g)) => refine(g.to_vec(), ops, f.ctx.as_ref()),
             (Input::Group, None) => {
                 self.stats.miss(stat);
                 return self.empty(ops.missing, false);
@@ -918,22 +964,22 @@ impl<S: Sink> Exec<'_, S> {
                 // Lists without A4, A5 or A6 options stream the source array, as in language 1.
                 if !ops.collects() {
                     return match x.len() {
-                        Some(n) => self.elements(n, |i| x.item(i), None, kind, stat, ops),
+                        Some(n) => self.elements(n, |i| x.item(i), None, kind, stat, ops, f),
                         None => self.not_a_list(stat),
                     };
                 }
-                match collect(Some(x), ops) {
+                match collect(Some(x), ops, f.ctx.as_ref()) {
                     Some(xs) => xs,
                     None => return self.not_a_list(stat),
                 }
             }
         };
         let Some((key, consecutive)) = &ops.group else {
-            return self.elements(xs.len(), |i| xs.get(i).cloned(), None, kind, stat, ops);
+            return self.elements(xs.len(), |i| xs.get(i).cloned(), None, kind, stat, ops, f);
         };
         let gs = groups(xs, key, *consecutive);
         let first = |i: usize| gs.get(i).and_then(|g| g.first()).cloned();
-        self.elements(gs.len(), first, Some(&gs), kind, stat, ops)
+        self.elements(gs.len(), first, Some(&gs), kind, stat, ops, f)
     }
 
     /// An aggregate (`Fold`): its values, then `group::aggregate`.
@@ -947,7 +993,7 @@ impl<S: Sink> Exec<'_, S> {
             },
         };
         let out = xs.and_then(|xs| {
-            let values = (refine(xs, &a.ops).iter())
+            let values = (refine(xs, &a.ops, None).iter())
                 .map(|e| read(Some(e), &a.pluck))
                 .collect();
             aggregate(a.op, values, a.propagate, &a.sep)
@@ -978,7 +1024,8 @@ impl<S: Sink> Exec<'_, S> {
     }
 
     /// A list of the `n` elements `get` gives. With `groups`, element `i` is the first of group `i`,
-    /// and an item map reads the group as `$group`.
+    /// and an item map reads the group as `$group`. An item map reads the context of `outer`.
+    #[allow(clippy::too_many_arguments)]
     fn elements<D: Doc>(
         &mut self,
         n: usize,
@@ -987,6 +1034,7 @@ impl<S: Sink> Exec<'_, S> {
         kind: &Kind,
         stat: usize,
         ops: &ListOps<Path>,
+        outer: &Frame<'_, D>,
     ) -> S::Out {
         if n == 0 {
             return self.empty(ops.empty, true);
@@ -1003,6 +1051,7 @@ impl<S: Sink> Exec<'_, S> {
                     Kind::Item(fields, scope) => {
                         let mut f = Frame::new(get(i), scope, true);
                         f.group = groups.and_then(|g| g.get(i)).map(Vec::as_slice);
+                        f.ctx = outer.ctx.clone();
                         self.object(fields, &mut f)
                     }
                     Kind::Elems(path, tx) => self.element(read(get(i).as_ref(), path), tx, stat),

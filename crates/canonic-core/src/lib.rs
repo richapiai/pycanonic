@@ -19,7 +19,7 @@ pub mod transforms;
 pub mod value;
 pub mod write;
 
-pub use artifact::{Artifact, filter_for};
+pub use artifact::{Artifact, Rejected, filter_for};
 pub use canonical::{Empty, Kind, Node, Schema, Semantic, load_schema, validate_canonical};
 pub use doc::{Doc, Key};
 pub use drift::{

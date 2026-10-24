@@ -48,18 +48,18 @@ fn run(case: &J) -> Result<Vec<String>, String> {
             }
         };
         let want = &input["expected"];
-        // Tasks 8 and 9 add context and Rejected. Until then a case that uses them fails.
-        if !input["context"].is_null() {
-            fails.push(format!("inputs[{i}]: context is not implemented yet"));
-            continue;
-        }
+        let ctx = Some(&input["context"]).filter(|c| !c.is_null());
+        // Task 9 adds Rejected. Until then a case that uses it fails.
         if want.get("$rejected").is_some() {
             fails.push(format!("inputs[{i}]: $rejected is not implemented yet"));
             continue;
         }
         let mut text = Vec::new();
-        write_json(&a.plan, &a.map_bytes(&body), &mut text);
-        for (way, out) in [("map_bytes", text), ("map_json", a.map_json(&body))] {
+        write_json(&a.plan, &a.map_bytes(&body, ctx).unwrap(), &mut text);
+        for (way, out) in [
+            ("map_bytes", text),
+            ("map_json", a.map_json(&body, ctx).unwrap()),
+        ] {
             match serde_json::from_slice::<J>(&out) {
                 Ok(got) => fails.extend(common::diff(&format!("{way}[{i}]"), &got, want)),
                 Err(e) => fails.push(format!("{way}[{i}]: invalid JSON: {e}")),

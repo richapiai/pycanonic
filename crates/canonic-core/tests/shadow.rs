@@ -129,7 +129,10 @@ fn soak(promoted: &Artifact, candidate: &Artifact, responses: &[J]) -> ShadowRep
     for r in responses {
         let body = r.to_string();
         let b = body.as_bytes();
-        assert!(d.add_out(&promoted.map_named(b), &candidate.map_named(b)));
+        assert!(d.add_out(
+            &promoted.map_named(b, None).unwrap(),
+            &candidate.map_named(b, None).unwrap()
+        ));
     }
     d.snapshot()
 }
@@ -284,7 +287,9 @@ fn a_routing_field_rename_auto_merges_once_known_entities_confirm_it() {
     );
     let ok: Vec<(Out, Out)> = (0..3)
         .map(|i| {
-            let c = candidate.map_named(responses[i].to_string().as_bytes());
+            let c = candidate
+                .map_named(responses[i].to_string().as_bytes(), None)
+                .unwrap();
             (c, out(&json!({ "email": format!("u{i}@acme.com") })))
         })
         .collect();
@@ -490,8 +495,8 @@ fn output_with_unresolved_names_is_turned_away_never_a_panic() {
     let promoted = promoted();
     let body =
         br#"{"workEmail": "a@acme.com", "tags": [{"label": "sql"}], "org": {"name": "Acme"}}"#;
-    let raw = promoted.map_bytes(body);
-    let named = promoted.map_named(body);
+    let raw = promoted.map_bytes(body, None).unwrap();
+    let named = promoted.map_named(body, None).unwrap();
     assert!(matches!(raw, Out::Obj(_)));
 
     let mut d = ShadowDiff::new(routing(&promoted));
@@ -527,11 +532,11 @@ fn output_with_unresolved_names_is_turned_away_never_a_panic() {
 fn map_named_matches_the_parsed_json_output() {
     let promoted = promoted();
     let body = br#"{"workEmail": "a@acme.com", "role": "CTO", "tags": [{"label": "sql"}], "org": {"name": "Acme"}}"#;
-    let text = String::from_utf8(promoted.map_json(body)).unwrap();
+    let text = String::from_utf8(promoted.map_json(body, None).unwrap()).unwrap();
     let parsed: J = serde_json::from_str(&text).unwrap();
-    assert_eq!(promoted.map_named(body), out(&parsed));
+    assert_eq!(promoted.map_named(body, None).unwrap(), out(&parsed));
     let node = parse(body, &all()).unwrap();
-    assert_eq!(promoted.map_doc_named(&&node), out(&parsed));
+    assert_eq!(promoted.map_doc_named(&&node, None).unwrap(), out(&parsed));
 }
 
 /// `n` objects nested in one another around a number: `{"a": {"a": ... 1}}`.

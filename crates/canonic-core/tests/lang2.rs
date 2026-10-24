@@ -102,7 +102,7 @@ fn const_writes_format_2_and_loads_back() {
     let loaded: Plan = serde_json::from_value(plan.clone()).unwrap();
     assert_eq!(serde_json::to_value(&loaded).unwrap(), plan);
     let a = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
-    assert_eq!(a.map_json(b"{}"), br#"{"name":"Ada"}"#);
+    assert_eq!(a.map_json(b"{}", None).unwrap(), br#"{"name":"Ada"}"#);
 }
 
 fn compile_err(fields: J, schema: J) -> String {
@@ -155,7 +155,7 @@ fn const_inside_an_item_fills_per_element() {
     );
     let a = canonic_core::Artifact::new(plan, Default::default()).unwrap();
     assert_eq!(
-        a.map_json(br#"{"roles": [1, 2]}"#),
+        a.map_json(br#"{"roles": [1, 2]}"#, None).unwrap(),
         br#"{"jobs":[{"kind":"JOB"},{"kind":"JOB"}]}"#
     );
     let kind = &a.stats.snapshot().fields[1];
@@ -230,7 +230,10 @@ fn empty_options_keep_one_error_on_a_non_array() {
         assert_eq!(text["format"], format, "{rule}");
         assert_eq!(serde_json::from_value::<Plan>(text).unwrap(), plan);
         let a = canonic_core::Artifact::new(plan, Default::default()).unwrap();
-        assert_eq!(a.map_json(br#"{"labels": "x"}"#), br#"{"tags":null}"#);
+        assert_eq!(
+            a.map_json(br#"{"labels": "x"}"#, None).unwrap(),
+            br#"{"tags":null}"#
+        );
         let tags = &a.stats.snapshot().fields[0];
         assert_eq!((tags.1.fill, tags.1.errors), (0, 1), "{rule}");
     }
@@ -263,8 +266,11 @@ fn x_empty_missing_writes_format_2() {
     assert_eq!(text["format"], 2);
     let loaded: Plan = serde_json::from_value(text).unwrap();
     let a = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
-    assert_eq!(a.map_json(b"{}"), b"{}");
-    assert_eq!(a.map_json(br#"{"n": "a"}"#), br#"{"name":"a"}"#);
+    assert_eq!(a.map_json(b"{}", None).unwrap(), b"{}");
+    assert_eq!(
+        a.map_json(br#"{"n": "a"}"#, None).unwrap(),
+        br#"{"name":"a"}"#
+    );
 }
 
 #[test]
@@ -281,8 +287,11 @@ fn a_routing_leaf_with_x_empty_missing_still_extracts() {
         a.extract(br#"{"e": "a@b.co"}"#),
         [Some(canonic_core::Value::Str("a@b.co".into()))]
     );
-    assert_eq!(a.map_json(br#"{"e": "a@b.co"}"#), br#"{"email":"a@b.co"}"#);
-    assert_eq!(a.map_json(br#"{"e": null}"#), b"{}");
+    assert_eq!(
+        a.map_json(br#"{"e": "a@b.co"}"#, None).unwrap(),
+        br#"{"email":"a@b.co"}"#
+    );
+    assert_eq!(a.map_json(br#"{"e": null}"#, None).unwrap(), b"{}");
 }
 
 fn hq_schema(x_empty: Option<&str>) -> J {
@@ -316,10 +325,10 @@ fn a_routing_leaf_in_an_x_empty_missing_object_still_extracts() {
         [Some(canonic_core::Value::Str("a@b.co".into()))]
     );
     assert_eq!(
-        a.map_json(body),
+        a.map_json(body, None).unwrap(),
         br#"{"hq":{"city":null,"email":"a@b.co"}}"#
     );
-    assert_eq!(a.map_json(b"{}"), b"{}");
+    assert_eq!(a.map_json(b"{}", None).unwrap(), b"{}");
 }
 
 #[test]
@@ -331,9 +340,9 @@ fn optional_objects_write_format_2_and_load_back() {
         let loaded: Plan = serde_json::from_value(text.clone()).unwrap();
         assert_eq!(serde_json::to_value(&loaded).unwrap(), text);
         let b = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
-        assert_eq!(b.map_json(b"{}"), br#"{"hq":null}"#);
+        assert_eq!(b.map_json(b"{}", None).unwrap(), br#"{"hq":null}"#);
         assert_eq!(
-            b.map_json(br#"{"d": {"city": "x"}}"#),
+            b.map_json(br#"{"d": {"city": "x"}}"#, None).unwrap(),
             br#"{"hq":{"city":"x","email":null}}"#
         );
     }
@@ -347,7 +356,7 @@ fn optional_objects_write_format_2_and_load_back() {
 fn a_failed_present_counts_a_miss_for_each_leaf_and_still_routes() {
     let a = hq_artifact(Some(json!({"present": "d.ok"})), None);
     let body = br#"{"d": {"city": "x", "email": "a@b.co"}}"#;
-    assert_eq!(a.map_json(body), br#"{"hq":null}"#);
+    assert_eq!(a.map_json(body, None).unwrap(), br#"{"hq":null}"#);
     let fills: Vec<(String, u64)> = (a.stats.snapshot().fields.into_iter())
         .map(|(name, f)| (name, f.fill))
         .collect();
@@ -380,8 +389,83 @@ fn list_ops_write_format_2_and_load_back() {
     let b = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
     let body = br#"{"xs": {"ys": [{"id": 1, "k": 1}, {"id": 3, "k": "a"}, {"id": 2, "k": 1},
         {"id": 3, "k": 1}, {"id": 9}]}}"#;
-    assert_eq!(b.map_json(body), br#"{"ids":[3,2]}"#);
+    assert_eq!(b.map_json(body, None).unwrap(), br#"{"ids":[3,2]}"#);
     assert!(a.plan.source().contains("ids[] <- xs[].ys[].id | wrap"));
+}
+
+fn page_artifact(spec: J) -> canonic_core::Artifact {
+    let schema = json!({"type": "object", "properties": {"page": {"type": "integer"},
+        "name": {"type": "string"}}});
+    canonic_core::Artifact::new(compile(&spec, &schema, &[]).unwrap(), Default::default()).unwrap()
+}
+
+#[test]
+fn a_language_1_input_path_reads_the_body() {
+    let mut spec = lang1_spec();
+    spec["fields"] = json!({"page": "$input.page"});
+    let a = page_artifact(spec);
+    assert_eq!(serde_json::to_value(&*a.plan).unwrap()["format"], 1);
+    let ctx = json!({"page": 3});
+    let body = br#"{"$input": {"page": 2}}"#;
+    assert_eq!(
+        a.map_json(body, Some(&ctx)).unwrap(),
+        br#"{"page":2,"name":null}"#
+    );
+}
+
+#[test]
+fn context_and_when_write_format_2_and_load_back() {
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = json!({"page": "$input.page"});
+    let text = serde_json::to_value(&*page_artifact(spec.clone()).plan).unwrap();
+    assert_eq!(
+        (text["format"].clone(), text["context"].clone()),
+        (json!(2), json!(true))
+    );
+    spec["fields"]["name"] = json!({"from": "n", "when": {"path": "$input.on", "eq": true},
+        "omit": true});
+    let a = page_artifact(spec);
+    let text = serde_json::to_value(&*a.plan).unwrap();
+    let loaded: Plan = serde_json::from_value(text.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&loaded).unwrap(), text);
+    assert!(
+        a.plan
+            .source()
+            .contains("name: left out unless $input.on eq true")
+    );
+    let b = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
+    let body = br#"{"n": "Ada"}"#;
+    let on = json!({"page": 3, "on": true});
+    assert_eq!(
+        b.map_json(body, Some(&on)).unwrap(),
+        br#"{"page":3,"name":"Ada"}"#
+    );
+    assert_eq!(b.map_json(body, None).unwrap(), br#"{"page":null}"#);
+    // Every way in reads the context the same.
+    let node = b.parse(body).unwrap();
+    let want = b.map_bytes(body, Some(&on)).unwrap();
+    assert_eq!(b.map_doc(&&node, Some(&on)).unwrap(), want);
+    let parsed: J = serde_json::from_slice(body).unwrap();
+    assert_eq!(
+        b.map_with(Some(&&parsed), Some(&&on), &mut canonic_core::RustSink),
+        want
+    );
+}
+
+#[test]
+fn a_failed_when_counts_a_miss_for_each_field_inside() {
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = json!({"name": {"from": "n", "when": {"path": "$input.on", "eq": true}}});
+    let a = page_artifact(spec);
+    let off = json!({"on": false});
+    assert_eq!(
+        a.map_json(br#"{"n": "Ada"}"#, Some(&off)).unwrap(),
+        br#"{"page":null,"name":null}"#
+    );
+    assert_eq!(a.stats.snapshot().fields[0].1.fill, 0);
+    let on = json!({"on": true});
+    a.map_json(br#"{"n": "Ada"}"#, Some(&on)).unwrap();
+    assert_eq!(a.stats.snapshot().fields[0].1.fill, 1);
 }
 
 /// A small value for `k`: an int, a string, a bool or null.
@@ -414,7 +498,7 @@ proptest! {
         let a = ids_artifact(json!({"from": "xs", "pluck": "id",
             "filter": {"path": "k", "eq": want}}));
         let body = serde_json::to_vec(&json!({"xs": xs})).unwrap();
-        let got: J = serde_json::from_slice(&a.map_json(&body)).unwrap();
+        let got: J = serde_json::from_slice(&a.map_json(&body, None).unwrap()).unwrap();
         prop_assert_eq!(&got, &json!({"ids": expect}));
     }
 }

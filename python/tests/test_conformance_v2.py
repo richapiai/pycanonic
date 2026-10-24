@@ -25,15 +25,16 @@ def test_there_are_cases():
 
 def _ways(a, inp):
     """`(way, map the input)` for each way in. A raw input is not JSON, so it has no parsed way."""
+    ctx = inp.get("context")
     if ("body" in inp) == ("raw" in inp) or not isinstance(inp.get("raw", ""), str):
         raise ValueError("an input needs exactly one of body, raw (a string)")
     if "raw" in inp:
         raw = inp["raw"].encode()
     else:
         raw = json.dumps(inp["body"]).encode()
-        yield "map(parsed)", lambda: a.map(inp["body"])
-    yield "map(bytes)", lambda: a.map(raw)
-    yield "map_json", lambda: json.loads(a.map_json(raw))
+        yield "map(parsed)", lambda: a.map(inp["body"], context=ctx)
+    yield "map(bytes)", lambda: a.map(raw, context=ctx)
+    yield "map_json", lambda: json.loads(a.map_json(raw, context=ctx))
 
 
 @pytest.mark.parametrize("path", CASES, ids=lambda p: p.relative_to(CONFORMANCE / "cases-v2").with_suffix("").as_posix())
@@ -49,10 +50,7 @@ def test_case(path):
     fails = []
     for i, inp in enumerate(case["inputs"]):
         want = inp["expected"]
-        # Tasks 8 and 9 add context and Rejected. Until then a case that uses them fails.
-        if inp.get("context") is not None:
-            fails.append(f"inputs[{i}]: context is not implemented yet")
-            continue
+        # Task 9 adds Rejected. Until then a case that uses it fails.
         if isinstance(want, dict) and "$rejected" in want:
             fails.append(f"inputs[{i}]: $rejected is not implemented yet")
             continue
