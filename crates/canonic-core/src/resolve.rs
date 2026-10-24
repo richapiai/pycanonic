@@ -165,9 +165,6 @@ impl Resolver<'_> {
                 let name = key.strip_suffix("[]").unwrap_or(key);
                 format!("{kat}: canonical schema has no field {}", json(name))
             })?;
-            if mapped.contains_key(&path) {
-                return Err(format!("{kat}: canonical field is mapped twice"));
-            }
             let stat = self.stat_names.len();
             self.stat_names
                 .push(format!("{}{key}", within.unwrap_or("")));
@@ -188,6 +185,10 @@ impl Resolver<'_> {
                     _ => None,
                 };
                 self.top.insert(key.clone(), scalar);
+            }
+            // After the rule, so a language 1 pair keeps the TypeScript message of its failing rule.
+            if mapped.contains_key(&path) {
+                return Err(format!("{kat}: canonical field is mapped twice"));
             }
             mapped.insert(path, field);
         }

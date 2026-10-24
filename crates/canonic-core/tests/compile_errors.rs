@@ -418,3 +418,16 @@ updated_at <- _meta.updated | parse_date
 "#;
     assert_eq!(acme().source(), expected);
 }
+
+#[test]
+fn a_language_1_pair_on_one_field_keeps_the_kind_error() {
+    let want = r#"acme person.enrich v2: fields["skills"]: canonical field is an array; add []"#;
+    assert_eq!(
+        person_err(json!({ "skills[]": { "from": "a" }, "skills": "b" })),
+        want
+    );
+    assert_eq!(
+        person_err(json!({ "skills": "b", "skills[]": { "from": "a" } })),
+        want
+    );
+}
