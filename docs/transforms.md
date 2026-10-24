@@ -139,7 +139,7 @@ Argument, required: a pattern. If the pattern has a group, the result is group 1
 
 | Pattern | Input | Output |
 |---|---|---|
-| `"/company/([^/?#]+)"` | `"https://x.example/company/widget-works/?a=1"` | `"widget-works"` |
+| `"/team/([^/?#]+)"` | `"https://x.example/team/widget-works/?a=1"` | `"widget-works"` |
 | `"id-(\\d+)"` | `"x id-42 y"` | `"42"` |
 | `"\\d+"` | `"ab12cd34"` | `"12"` |
 | `"id-(\\d+)"` | `42` | null |
@@ -152,9 +152,9 @@ Argument, required: a non-empty string. A string that starts (or ends) with it l
 
 | Transform | Input | Output |
 |---|---|---|
-| `{"strip_prefix": "urn:acme:member:"}` | `"urn:acme:member:ABC"` | `"ABC"` |
-| `{"strip_prefix": "urn:acme:member:"}` | `"ABC"` | `"ABC"` |
-| `{"strip_prefix": "urn:acme:member:"}` | `"urn:acme:member:"` | null |
+| `{"strip_prefix": "id:acme:"}` | `"id:acme:ABC"` | `"ABC"` |
+| `{"strip_prefix": "id:acme:"}` | `"ABC"` | `"ABC"` |
+| `{"strip_prefix": "id:acme:"}` | `"id:acme:"` | null |
 | `{"strip_suffix": ".git"}` | `"tools.git"` | `"tools"` |
 
 ### replace
@@ -179,7 +179,7 @@ Argument, required: `{"table": {...}}` with an optional `"else"`. The table maps
 | any other scalar | that scalar |
 
 ```json
-{"lookup": {"table": {"LIKE": "liked", "LOVE": "loved"}, "else": "keep"}}
+{"lookup": {"table": {"UP": "liked", "STAR": "starred"}, "else": "keep"}}
 ```
 
 ### null_if
@@ -250,10 +250,10 @@ Argument, required: `"min"` or `"max"`. It reads one end of a size range. A numb
 
 | Input | `min` | `max` |
 |---|---|---|
-| `"51-200"` | `51` | `200` |
-| `"51 - 200"` | `51` | `200` |
+| `"100-999"` | `100` | `999` |
+| `"100 - 999"` | `100` | `999` |
 | `"5"` | `5` | `5` |
-| `"10,001+"` | `10001` | null, and one error |
+| `"1,000+"` | `1000` | null, and one error |
 | `"a-b"` | null | null |
 
 An open range has no max, so `max` gives null and counts an error, as any null from a value that was not null does. See [known-limits.md](known-limits.md#an-open-range-counts-as-an-error).

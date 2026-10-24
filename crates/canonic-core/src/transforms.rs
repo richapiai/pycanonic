@@ -879,7 +879,7 @@ fn number_text(s: &str, units: bool) -> Option<f64> {
     js_number(&text)
 }
 
-/// One end of `"51-200"`, `"51 - 200"`, `"10,001+"` (no max) or `"5"` (both ends). Both ends
+/// One end of `"100-999"`, `"100 - 999"`, `"1,000+"` (no max) or `"5"` (both ends). Both ends
 /// must read as numbers.
 fn parse_range(v: &Value, end: RangeEnd) -> Option<f64> {
     let Value::Str(s) = v else {

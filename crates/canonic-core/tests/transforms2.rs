@@ -22,35 +22,25 @@ fn run(name: &str, arg: Option<J>, v: Value<'static>) -> Value<'static> {
 #[test]
 fn cases() {
     use Value::{Bool, Float, Int, Null};
-    let lookup = |e: J| Some(json!({"table": {"LIKE": "liked", "1": "one"}, "else": e}));
+    let lookup = |e: J| Some(json!({"table": {"UP": "liked", "1": "one"}, "else": e}));
     let cases: Vec<(&str, Option<J>, Value<'static>, Value<'static>)> = vec![
         (
             "regex",
-            Some(json!("/company/([^/?#]+)")),
-            s("https://x.com/company/acme/?a=1"),
+            Some(json!("/team/([^/?#]+)")),
+            s("https://x.com/team/acme/?a=1"),
             s("acme"),
         ),
-        ("regex", Some(json!("/company/([^/?#]+)")), s("nope"), Null),
+        ("regex", Some(json!("/team/([^/?#]+)")), s("nope"), Null),
         ("regex", Some(json!("[0-9]+")), s("id 42 x"), s("42")),
         ("regex", Some(json!("(a)?b")), s("b"), Null),
         (
             "strip_prefix",
-            Some(json!("urn:li:person:")),
-            s("urn:li:person:ABC"),
+            Some(json!("id:acme:")),
+            s("id:acme:ABC"),
             s("ABC"),
         ),
-        (
-            "strip_prefix",
-            Some(json!("urn:li:person:")),
-            s("ABC"),
-            s("ABC"),
-        ),
-        (
-            "strip_prefix",
-            Some(json!("urn:li:person:")),
-            s("urn:li:person:"),
-            Null,
-        ),
+        ("strip_prefix", Some(json!("id:acme:")), s("ABC"), s("ABC")),
+        ("strip_prefix", Some(json!("id:acme:")), s("id:acme:"), Null),
         (
             "strip_suffix",
             Some(json!(".git")),
@@ -78,11 +68,11 @@ fn cases() {
             s("abc"),
             s("a$1c"),
         ),
-        ("lookup", lookup(json!("keep")), s("LIKE"), s("liked")),
-        ("lookup", lookup(json!("keep")), s("LOVE"), s("LOVE")),
-        ("lookup", lookup(json!("null")), s("LOVE"), Null),
-        ("lookup", lookup(json!("other")), s("LOVE"), s("other")),
-        ("lookup", lookup(json!(0)), s("LOVE"), Int(0)),
+        ("lookup", lookup(json!("keep")), s("UP"), s("liked")),
+        ("lookup", lookup(json!("keep")), s("STAR"), s("STAR")),
+        ("lookup", lookup(json!("null")), s("STAR"), Null),
+        ("lookup", lookup(json!("other")), s("STAR"), s("other")),
+        ("lookup", lookup(json!(0)), s("STAR"), Int(0)),
         ("lookup", lookup(json!("keep")), Int(1), s("one")),
         ("lookup", lookup(json!("keep")), Float(1.0), s("one")),
         ("lookup", lookup(json!("keep")), Int(2), Int(2)),
@@ -94,7 +84,7 @@ fn cases() {
         ),
         ("lookup", Some(json!({"table": {"x": null}})), s("x"), Null),
         // The default for `else` is "null".
-        ("lookup", Some(json!({"table": {}})), s("LOVE"), Null),
+        ("lookup", Some(json!({"table": {}})), s("STAR"), Null),
         ("null_if", Some(json!(["", "N/A", 0])), s("N/A"), Null),
         ("null_if", Some(json!(["", "N/A", 0])), s(""), Null),
         ("null_if", Some(json!(["", "N/A", 0])), Float(0.0), Null),
@@ -265,8 +255,8 @@ fn dates_numbers_and_ranges() {
         ("parse_number", units(), s("40k"), Int(40000)),
         ("parse_number", units(), s("1,234"), Int(1234)),
         ("parse_number", None, s("40k"), Null),
-        ("parse_range", Some(json!("min")), s("10,001+"), Int(10001)),
-        ("parse_range", Some(json!("max")), s("10,001+"), Null),
+        ("parse_range", Some(json!("min")), s("1,000+"), Int(1000)),
+        ("parse_range", Some(json!("max")), s("1,000+"), Null),
         // format_date, each output.
         (
             "format_date",
@@ -404,10 +394,10 @@ fn dates_numbers_and_ranges() {
         ("parse_number", None, Bool(true), Null),
         ("parse_number", None, Float(f64::NAN), Null),
         // parse_range.
-        ("parse_range", Some(json!("min")), s("51-200"), Int(51)),
-        ("parse_range", Some(json!("max")), s("51-200"), Int(200)),
-        ("parse_range", Some(json!("min")), s("51 - 200"), Int(51)),
-        ("parse_range", Some(json!("max")), s("51 - 200"), Int(200)),
+        ("parse_range", Some(json!("min")), s("100-999"), Int(100)),
+        ("parse_range", Some(json!("max")), s("100-999"), Int(999)),
+        ("parse_range", Some(json!("min")), s("100 - 999"), Int(100)),
+        ("parse_range", Some(json!("max")), s("100 - 999"), Int(999)),
         ("parse_range", Some(json!("min")), s("5"), Int(5)),
         ("parse_range", Some(json!("max")), s("5"), Int(5)),
         ("parse_range", Some(json!("max")), Int(5), Int(5)),
@@ -577,8 +567,8 @@ fn a_bad_pattern_is_a_compile_error() {
 #[test]
 fn plans_with_new_builtins_round_trip_as_format_2() {
     let all = [
-        json!({"regex": "/company/([^/?#]+)"}),
-        json!({"strip_prefix": "urn:"}),
+        json!({"regex": "/team/([^/?#]+)"}),
+        json!({"strip_prefix": "id:"}),
         json!({"strip_suffix": "/"}),
         json!({"replace": {"from": "-", "to": " "}}),
         json!({"replace": {"pattern": "[0-9]", "to": ""}}),
@@ -608,15 +598,12 @@ fn plans_with_new_builtins_round_trip_as_format_2() {
         assert_eq!(back.source(), plan.source(), "{t}");
     }
     let plan = compile(
-        &spec(Some(2), json!({"regex": "/company/([^/?#]+)"})),
+        &spec(Some(2), json!({"regex": "/team/([^/?#]+)"})),
         &schema(),
         &[],
     )
     .unwrap();
-    assert_eq!(
-        plan.source(),
-        "slug <- url | regex \"/company/([^/?#]+)\"\n"
-    );
+    assert_eq!(plan.source(), "slug <- url | regex \"/team/([^/?#]+)\"\n");
     let t = json!({"parse_date": {"formats": ["%B %Y"]}});
     let plan = compile(&spec(Some(2), t), &schema(), &[]).unwrap();
     assert_eq!(

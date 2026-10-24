@@ -50,11 +50,11 @@ def test_index_paths() -> None:
 
 
 def test_chain_apply_and_candidates() -> None:
-    assert apply(Chain([("strip_prefix", "urn:x:"), ("cast", "integer")]), "urn:x:42") == 42
+    assert apply(Chain([("strip_prefix", "id:x:"), ("cast", "integer")]), "id:x:42") == 42
     assert apply(Chain([]), {"a": 1}) == {"a": 1}
     assert Chain([]) in candidates("Ada", "Ada")
-    got = candidates(42, "urn:x:42")
-    assert Chain([("strip_prefix", "urn:x:"), ("cast", "integer")]) in got
+    got = candidates(42, "id:x:42")
+    assert Chain([("strip_prefix", "id:x:"), ("cast", "integer")]) in got
     assert [len(c.steps) for c in got] == sorted(len(c.steps) for c in got)
     assert Chain([("join", ", ")]) in candidates("Redmond, Washington", ["Redmond", "Washington"])
 
@@ -71,8 +71,8 @@ def test_cast_integer() -> None:
 
 
 def test_strip_prefix_learned() -> None:
-    f = leaf("id", [(f"{i}a{i}", {"urn": f"urn:x:{i}a{i}"}) for i in range(6)])
-    assert f.rule == {"from": "urn", "transform": [{"strip_prefix": "urn:x:"}]}
+    f = leaf("id", [(f"{i}a{i}", {"ref": f"id:x:{i}a{i}"}) for i in range(6)])
+    assert f.rule == {"from": "ref", "transform": [{"strip_prefix": "id:x:"}]}
     assert (f.kind, f.holdout) == ("strip_prefix", 1.0)
 
 
@@ -152,7 +152,7 @@ def test_skips_null_targets() -> None:
 
 
 def test_deterministic() -> None:
-    rows = [(f"{i}", {"a": f"{i}", "b": f"{i}", "c": i, "d": f"urn:{i}"}) for i in range(6)]
+    rows = [(f"{i}", {"a": f"{i}", "b": f"{i}", "c": i, "d": f"id:{i}"}) for i in range(6)]
     a, b = leaf("x", rows), leaf("x", rows)
     assert a == b
     assert a.alternatives == b.alternatives and a.alternatives

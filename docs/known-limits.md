@@ -52,7 +52,7 @@ The TypeScript canonic has no language 2. A spec marks it with `"language": 2` a
 
 ## An open range counts as an error
 
-`parse_range` with `"max"` gives null for an open range such as `"10,001+"`, because the range has no upper end. As with any null from a value that was not null, the field counts one error. So a drift monitor sees errors on a field that maps open ranges. The provider sent nothing wrong. Set the alert threshold of such a field above its share of open ranges, or map the max from another source.
+`parse_range` with `"max"` gives null for an open range such as `"1,000+"`, because the range has no upper end. As with any null from a value that was not null, the field counts one error. So a drift monitor sees errors on a field that maps open ranges. The provider sent nothing wrong. Set the alert threshold of such a field above its share of open ranges, or map the max from another source.
 
 ## Case-insensitive keys
 

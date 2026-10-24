@@ -549,13 +549,13 @@ Language 2 adds thirteen default transforms and formats for `parse_date`. The st
   "schema": {"type": "object", "properties": {"slug": {"type": "string"}, "member_id": {"type": "string"}, "reaction": {"type": "string"}, "since": {"type": "string"}, "size_min": {"type": "integer"}}},
   "spec": {"language": 2, "provider": "acme", "endpoint": "org.enrich", "version": 1, "status": "draft",
     "fields": {
-      "slug": {"from": "url", "transform": {"regex": "/company/([^/?#]+)"}},
-      "member_id": {"from": "urn", "transform": {"strip_prefix": "urn:acme:member:"}},
-      "reaction": {"from": "reaction", "transform": {"lookup": {"table": {"LIKE": "liked"}, "else": "keep"}}},
+      "slug": {"from": "url", "transform": {"regex": "/team/([^/?#]+)"}},
+      "member_id": {"from": "ref", "transform": {"strip_prefix": "id:acme:"}},
+      "reaction": {"from": "reaction", "transform": {"lookup": {"table": {"UP": "liked"}, "else": "keep"}}},
       "since": {"from": "since", "transform": {"parse_date": {"formats": ["%B %Y"]}}},
       "size_min": {"from": "size", "transform": {"parse_range": "min"}}}},
-  "body": {"url": "https://x.example/company/widget-works/", "urn": "urn:acme:member:ABC", "reaction": "LIKE", "since": "June 2014", "size": "51-200"},
-  "expected": {"slug": "widget-works", "member_id": "ABC", "reaction": "liked", "since": "2014-06", "size_min": 51}
+  "body": {"url": "https://x.example/team/widget-works/", "ref": "id:acme:ABC", "reaction": "UP", "since": "June 2014", "size": "100-999"},
+  "expected": {"slug": "widget-works", "member_id": "ABC", "reaction": "liked", "since": "2014-06", "size_min": 100}
 }
 ```
 

@@ -6,12 +6,12 @@
     "version": 1,
     "status": "promoted",
     "fields": {
-      "slug": {"from": "url", "transform": {"regex": "/company/([^/?#]+)"}},
-      "member_id": {"from": "urn", "transform": {"strip_prefix": "urn:acme:member:"}},
+      "slug": {"from": "url", "transform": {"regex": "/team/([^/?#]+)"}},
+      "member_id": {"from": "ref", "transform": {"strip_prefix": "id:acme:"}},
       "repo": {"from": "repo", "transform": {"strip_suffix": ".git"}},
       "phone": {"from": "phone", "transform": {"replace": {"pattern": "[^0-9]+", "to": ""}}},
       "tag": {"from": "tag", "transform": {"replace": {"from": "_", "to": " "}}},
-      "reaction": {"from": "reaction", "transform": {"lookup": {"table": {"LIKE": "liked", "1": "one"}, "else": "keep"}}},
+      "reaction": {"from": "reaction", "transform": {"lookup": {"table": {"UP": "liked", "1": "one"}, "else": "keep"}}},
       "size": {"from": "size", "transform": {"null_if": ["", "N/A", 0]}},
       "code": {"from": "code", "transform": "upper"},
       "name": {"from": "name", "transform": "title"},
@@ -38,12 +38,12 @@
   "inputs": [
     {
       "body": {
-        "url": "https://x.example/company/widget-works/?a=1",
-        "urn": "urn:acme:member:ABC",
+        "url": "https://x.example/team/widget-works/?a=1",
+        "ref": "id:acme:ABC",
         "repo": "tools.git",
         "phone": "+1 (415) 555-0100",
         "tag": "data_eng",
-        "reaction": "LIKE",
+        "reaction": "UP",
         "size": "N/A",
         "code": "àda",
         "name": "ada king LOVELACE",
@@ -67,7 +67,7 @@
     {
       "body": {
         "url": "nope",
-        "urn": "urn:acme:member:",
+        "ref": "id:acme:",
         "repo": "tools",
         "phone": 4155550100,
         "tag": ["data_eng"],
@@ -93,7 +93,7 @@
       }
     },
     {
-      "body": {"reaction": "LOVE", "size": "51-200"},
+      "body": {"reaction": "STAR", "size": "100-999"},
       "context": null,
       "expected": {
         "slug": null,
@@ -101,8 +101,8 @@
         "repo": null,
         "phone": null,
         "tag": null,
-        "reaction": "LOVE",
-        "size": "51-200",
+        "reaction": "STAR",
+        "size": "100-999",
         "code": null,
         "name": null,
         "last_name": null,

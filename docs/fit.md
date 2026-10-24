@@ -139,7 +139,7 @@ This is the table the reviewer reads. The report prints the row of each field th
 | Learned lookup table | `lookup` | review | A value outside the table. `"else"` decides: keep (wrong vocabulary passes through), null (data lost), or a fixed value. |
 | Constant | `const` | review | The default's value only looked constant in the samples. The most common cause of silent wrong data. Add pairs that differ. |
 | Learned regex | `regex` | review | A URL or string format the samples did not show. |
-| Group by | `group` | review | The grouping key is wrong for records with gaps or repeats, for example two stints at one company with another job between them. Check with a pair that has that pattern. |
+| Group by | `group` | review | The grouping key is wrong for records with gaps or repeats, for example two runs under one key with another element between them. Check with a pair that has that pattern. |
 | Optional object | `presence` | review | If the provider sends the parent object with different content, the object can be null by mistake. |
 | Empty form of an object the default always sent | `if_empty` | review | The default sent this object in every sample, so its empty form is a guess. If every leaf in it is null, the object is null. If the default sends {} or an object of nulls there, the output differs. |
 | Condition on a request input | `when` | review | An input combination the samples did not show. |

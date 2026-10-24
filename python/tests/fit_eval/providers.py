@@ -293,12 +293,12 @@ def drovo(e: E) -> E:
 
 
 SECTORS = {"software": "technology", "freight": "transport", "farming": "agriculture", "textiles": "manufacturing", "mining": "resources", "brewing": "manufacturing", "shipbuilding": "manufacturing", "perfumery": "consumer"}
-SIZES = [(1, 10), (11, 50), (51, 200), (201, 500), (501, 1000), (1001, 5000), (5001, 10000)]
+SIZES: list[tuple[int, int | None]] = [(1, 9), (10, 99), (100, 999), (1000, None)]  # invented bands, None: no top
 
 
 def _band(n: int) -> str:
-    lo, hi = next(b for b in SIZES if b[0] <= n <= b[1])
-    return f"{lo}-{hi}"
+    lo, hi = next(b for b in SIZES if b[0] <= n and (b[1] is None or n <= b[1]))
+    return f"{lo}+" if hi is None else f"{lo}-{hi}"
 
 
 def kestrin(e: E) -> E:

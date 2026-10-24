@@ -34,7 +34,7 @@
         "since": "june 2014",
         "revenue": "$3.2M",
         "staff": "1,234",
-        "size": "51 - 200"
+        "size": "100 - 999"
       },
       "context": null,
       "expected": {
@@ -43,12 +43,12 @@
         "since": "2014-06",
         "revenue": 3200000,
         "staff": 1234,
-        "size_min": 51,
-        "size_max": 200
+        "size_min": 100,
+        "size_max": 999
       }
     },
     {
-      "body": {"founded": "2021-03", "since": "03/2021", "revenue": "40k", "staff": "40k", "size": "10,001+"},
+      "body": {"founded": "2021-03", "since": "03/2021", "revenue": "40k", "staff": "40k", "size": "1,000+"},
       "context": null,
       "expected": {
         "founded_at": "2021-03-01T00:00:00.000Z",
@@ -56,7 +56,7 @@
         "since": "2021-03",
         "revenue": 40000,
         "staff": null,
-        "size_min": 10001,
+        "size_min": 1000,
         "size_max": null
       }
     },

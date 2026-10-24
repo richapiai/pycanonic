@@ -179,12 +179,12 @@ def test_a_container_that_shares_its_children_is_null_and_one_error_not_a_hang()
 def test_language_2_string_transforms_in_default_transforms():
     from pycanonic import default_transforms as T
 
-    assert T["regex"]("https://x.com/company/acme/?a=1", "/company/([^/?#]+)") == "acme"
-    assert T["strip_prefix"]("urn:li:person:", "urn:li:person:") is None
+    assert T["regex"]("https://x.com/team/acme/?a=1", "/team/([^/?#]+)") == "acme"
+    assert T["strip_prefix"]("id:acme:", "id:acme:") is None
     assert T["strip_suffix"]("repo.git", ".git") == "repo"
     assert T["replace"]("a-b", {"from": "-", "to": " "}) == "a b"
     assert T["lookup"](1, {"table": {"1": "one"}}) == "one"
-    assert T["lookup"]("LOVE", {"table": {"LIKE": "liked"}, "else": "keep"}) == "LOVE"
+    assert T["lookup"]("STAR", {"table": {"UP": "liked"}, "else": "keep"}) == "STAR"
     assert T["null_if"](0.0, ["", "N/A", 0]) is None
     assert T["upper"]("àda") == "ÀDA"
     assert T["title"]("ada LOVELACE") == "Ada Lovelace"
@@ -223,9 +223,9 @@ def test_language_2_date_number_range_transforms_in_default_transforms():
     assert T["parse_number"]("$3.2M", {"units": True}) == 3200000
     assert T["parse_number"]("1,234.5") == 1234.5
     assert T["parse_number"]("40k") is None
-    assert T["parse_range"]("10,001+", "min") == 10001
-    assert T["parse_range"]("10,001+", "max") is None
-    assert T["parse_range"]("51 - 200", "max") == 200
+    assert T["parse_range"]("1,000+", "min") == 1000
+    assert T["parse_range"]("1,000+", "max") is None
+    assert T["parse_range"]("100 - 999", "max") == 999
     with pytest.raises(ValueError, match="invalid argument"):
         T["format_date"]("2021", "time")
 
