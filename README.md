@@ -109,7 +109,7 @@ registry.get_shadow("acme", "person.enrich")  # None until a shadow version is p
 
 ## Benchmarks
 
-All numbers on this page come from the Hetzner server that produced the TypeScript README numbers: AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5, Python 3.14.7 and Node 26.10.0, release build. The load average stayed under 1.1. Each number is the median of three runs of pycanonic 017c0fe against canonic 936d6fd. [bench/README.md](https://github.com/richapiai/pycanonic/blob/main/bench/README.md) has the method, the scripts and the full output.
+All numbers on this page come from the Hetzner server that produced the TypeScript README numbers: AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5, Python 3.14.7 and Node 26.10.0, release build. The load average was 0.6 at the start and about 1.2 to 1.5 during the run. Each number is the median of three runs of pycanonic 58ecc99 against canonic 936d6fd. [bench/README.md](https://github.com/richapiai/pycanonic/blob/main/bench/README.md) has the method, the scripts and the full output.
 
 ### Against TypeScript canonic
 
@@ -117,18 +117,18 @@ All numbers on this page come from the Hetzner server that produced the TypeScri
 
 | Case | TypeScript | pycanonic | py / ts |
 |---|---:|---:|---:|
-| map, bytes in (TypeScript: `JSON.parse` + map) | 23.26 µs | 8.91 µs | 0.38x |
-| map, JSON out (TypeScript: `JSON.parse` + map) | 23.26 µs | 7.49 µs | 0.32x |
-| map, parsed in (reported, not gated) | 5.50 µs | 6.22 µs | 1.13x |
-| view, construct (reported, not gated) | 11 ns | 147 ns | 13.4x |
-| view, 3 reads | 1.06 µs | 1.15 µs | 1.08x |
-| extract 3 routing fields, 5.9 KB | 10.46 µs | 2.17 µs | 0.21x |
-| same, anchored | 1.84 µs | 854 ns | 0.46x |
-| extract 5 fields, 10.7 KB | 19.66 µs | 3.33 µs | 0.17x |
-| same, anchored | 4.44 µs | 1.30 µs | 0.29x |
-| stream, 1 KB chunks | 23.83 µs | 10.10 µs | 0.42x |
+| map, bytes in (TypeScript: `JSON.parse` + map) | 23.07 µs | 8.94 µs | 0.39x |
+| map, JSON out (TypeScript: `JSON.parse` + map) | 23.07 µs | 7.42 µs | 0.32x |
+| map, parsed in (reported, not gated) | 5.25 µs | 6.46 µs | 1.23x |
+| view, construct (reported, not gated) | 11 ns | 143 ns | 13.0x |
+| view, 3 reads | 1.08 µs | 1.17 µs | 1.08x |
+| extract 3 routing fields, 5.9 KB | 10.41 µs | 2.16 µs | 0.21x |
+| same, anchored | 1.84 µs | 863 ns | 0.47x |
+| extract 5 fields, 10.7 KB | 19.52 µs | 3.31 µs | 0.17x |
+| same, anchored | 4.50 µs | 1.35 µs | 0.30x |
+| stream, 1 KB chunks | 23.79 µs | 10.04 µs | 0.42x |
 
-TypeScript has no bytes-in path, so the bytes rows compare with `JSON.parse` plus `map`. Three rows are slower, and all three read an already parsed dict. On a parsed object, V8's JIT reads JavaScript objects faster than Rust reads Python dicts. `map, parsed in` and `view, construct` are reported, not gated. `view, 3 reads` is gated, and it fails on this server: 1.05x to 1.09x in the three runs. On an Apple M3 Max it passed at 0.98x. A Python call that returns an extension object costs about 100 ns before Rust runs, which is most of the view construct time.
+TypeScript has no bytes-in path, so the bytes rows compare with `JSON.parse` plus `map`. Three rows are slower, and all three read an already parsed dict. On a parsed object, V8's JIT reads JavaScript objects faster than Rust reads Python dicts. `map, parsed in` and `view, construct` are reported, not gated. `view, 3 reads` is gated, and it fails on this server: 1.03x to 1.14x in the three runs, 1.08x at the median. On an Apple M3 Max it passed at 0.98x. A Python call that returns an extension object costs about 100 ns before Rust runs, which is most of the view construct time.
 
 ### The 6 KB rows against Python references
 
@@ -136,12 +136,12 @@ This table runs the same 5.9 KB bodies against what a Python user writes by hand
 
 | Case | pycanonic | Reference | pycanonic is |
 |---|---:|---|---:|
-| map, bytes in | 8.91 µs | `orjson.loads` + hand-written, 28.65 µs | 0.31x |
-| map, JSON out | 7.49 µs | `orjson.loads` + hand-written + `orjson.dumps`, 28.89 µs | 0.26x |
-| map, parsed in | 6.22 µs | hand-written, 7.31 µs | 0.85x |
-| view, 3 reads | 1.15 µs | hand-written routing reads, 1.25 µs | 0.92x |
-| extract routing | 2.17 µs | `orjson.loads` + read, 22.43 µs | 0.10x |
-| extract, anchored | 854 ns | `orjson.loads` + read, 22.26 µs | 0.04x |
+| map, bytes in | 8.94 µs | `orjson.loads` + hand-written, 28.60 µs | 0.31x |
+| map, JSON out | 7.42 µs | `orjson.loads` + hand-written + `orjson.dumps`, 29.14 µs | 0.25x |
+| map, parsed in | 6.46 µs | hand-written, 7.31 µs | 0.88x |
+| view, 3 reads | 1.17 µs | hand-written routing reads, 1.26 µs | 0.93x |
+| extract routing | 2.16 µs | `orjson.loads` + read, 22.28 µs | 0.10x |
+| extract, anchored | 863 ns | `orjson.loads` + read, 22.22 µs | 0.04x |
 
 ### Against mapping libraries
 
@@ -149,18 +149,22 @@ This table runs the same 5.9 KB bodies against what a Python user writes by hand
 
 | Library | Bytes in | vs pycanonic | Dict in | vs pycanonic |
 |---|---:|---:|---:|---:|
-| pycanonic `map` | 62.20 µs | 1.0x | 54.94 µs | 1.0x |
-| jsonata-python 0.7.1 | 7849.88 µs | 126.2x | 7811.03 µs | 142.2x |
-| glom 25.12.0 | 6420.34 µs | 103.2x | 6299.15 µs | 114.7x |
-| jq 1.13.0 (jq.py) | 4595.36 µs | 73.9x | 4564.36 µs | 83.1x |
-| jmespath-community 1.1.3 | 1211.80 µs | 19.8x | 1162.64 µs | 21.1x |
-| jsonpath-ng 1.12.0 | 1164.09 µs | 18.7x | 1123.58 µs | 20.5x |
-| jsonata-rs 0.1.4 | 1029.03 µs | 16.8x | 1001.41 µs | 18.1x |
-| jmespath 1.1.0, without transforms | 475.19 µs | 7.6x | 432.93 µs | 7.9x |
-| jsonbender 0.9.3 | 424.93 µs | 6.8x | 381.35 µs | 6.9x |
-| pydantic 2.14.1 | 176.68 µs | 2.8x | 129.74 µs | 2.4x |
+| pycanonic `map` | 61.53 µs | 1.0x | 55.23 µs | 1.0x |
+| jsonnet 0.22.0 | 1.19 s | 19,316.2x | 1.19 s | 21,545.6x |
+| json-e 4.8.4 | 11300.08 µs | 183.7x | 11171.51 µs | 202.3x |
+| jsonata-python 0.7.1 | 7848.93 µs | 127.6x | 7751.55 µs | 140.4x |
+| glom 25.12.0 | 6439.02 µs | 104.6x | 6330.87 µs | 114.6x |
+| jq 1.13.0 (jq.py) | 4599.19 µs | 74.7x | 4562.62 µs | 82.6x |
+| jmespath-community 1.1.3 | 1236.23 µs | 20.0x | 1196.28 µs | 21.6x |
+| jsonpath-ng 1.12.0 | 1136.74 µs | 18.5x | 1106.02 µs | 20.0x |
+| jsonata-rs 0.1.4 | 1052.52 µs | 17.1x | 1027.50 µs | 18.6x |
+| jmespath 1.1.0, without transforms | 484.24 µs | 7.9x | 451.42 µs | 8.2x |
+| jsonbender 0.9.3 | 434.88 µs | 7.1x | 387.66 µs | 7.0x |
+| pydantic 2.14.1 | 175.85 µs | 2.9x | 129.23 µs | 2.3x |
+| hand-written py (pure-Python transforms), reference | 114.74 µs | 1.9x | 77.24 µs | 1.4x |
+| msgspec 0.22.0 Structs + hand-written py, reference | 43.53 µs | 0.7x | 37.90 µs | 0.7x |
 
-Six of the eight interpreted libraries are at least 10 times slower than pycanonic. Two are not. jmespath runs without transforms because it has no string functions, and lands at 7.6x. jsonbender lands at 6.8x. Both are light interpreters that spend under 1 µs per field. pydantic is the exception by design. It compiles its models into a Rust validator tree, so it does the same kind of work as pycanonic and is no interpreter. jmespath-community and jsonata-rs install the same modules as jmespath and jsonata-python, so their rows come from a second environment, against that environment's pycanonic run. [docs/why-not-jsonata.md](https://github.com/richapiai/pycanonic/blob/main/docs/why-not-jsonata.md) covers the method and where the time goes.
+Eight of the ten interpreted libraries are at least 10 times slower than pycanonic. Two are not. jmespath runs without transforms because it has no string functions, and lands at 7.9x. jsonbender lands at 7.1x. Both are light interpreters that spend under 1 µs per field. pydantic is the exception by design. It compiles its models into a Rust validator tree, so it does the same kind of work as pycanonic and is no interpreter. The jsonnet binding has no compiled form, so it parses the Jsonnet program again on every call. msgspec with hand-written glue is faster than pycanonic on this payload, at 0.7x. It is a reference row and not a mapper, because msgspec only decodes the body into typed Structs and hand-written code moves the fields. jmespath-community and jsonata-rs install the same modules as jmespath and jsonata-python, so their rows come from a second environment, against that environment's pycanonic run. [docs/why-not-jsonata.md](https://github.com/richapiai/pycanonic/blob/main/docs/why-not-jsonata.md) covers the method and where the time goes.
 
 ## CLI
 

@@ -16,25 +16,25 @@ To show the cost of idiomatic glue, `map, parsed in` and `map, bytes in` also ha
 
 ### Against TypeScript canonic
 
-On the Hetzner box (AMD EPYC-Genoa, 4 vCPUs, Ubuntu 24.04.5, Python 3.14.7, Node 26.10.0, release build), three runs of `--vs-ts` on 2026-10-24, load average under 1.1. Each number is the median of the three.
+On the Hetzner box (AMD EPYC-Genoa, 4 vCPUs, Ubuntu 24.04.5, Python 3.14.7, Node 26.10.0, release build), three runs of `--vs-ts` on 2026-10-24. The load average was 0.6 at the start and about 1.2 to 1.5 during the run. Each number is the median of the three.
 
 ```
-pycanonic 017c0fe against canonic 936d6fd, median of 3 sessions
+pycanonic 58ecc99 against canonic 936d6fd, median of 3 sessions
 
 case                  TypeScript   pycanonic   py / ts   gate      py / ts in each run
-map, bytes in           23.26 µs     8.91 µs     0.38x   PASS      0.37x 0.38x 0.39x
-map, JSON out           23.26 µs     7.49 µs     0.32x   PASS      0.31x 0.32x 0.33x
-map, parsed in           5.50 µs     6.22 µs     1.13x   reported  1.09x 1.13x 1.20x
-view, construct            11 ns      147 ns     13.4x   reported
-view, 3 reads            1.06 µs     1.15 µs     1.08x   FAIL      1.09x 1.05x 1.09x
-extract routing         10.46 µs     2.17 µs     0.21x   PASS      0.21x 0.21x 0.20x
-extract, anchored        1.84 µs      854 ns     0.46x   PASS      0.45x 0.47x 0.47x
-extract 5, 10.7 KB      19.66 µs     3.33 µs     0.17x   PASS      0.17x 0.11x 0.17x
-extract 5, anchored      4.44 µs     1.30 µs     0.29x   PASS      0.29x 0.30x 0.29x
-stream, 1 KB chunks     23.83 µs    10.10 µs     0.42x   PASS      0.42x 0.42x 0.42x
+map, bytes in           23.07 µs     8.94 µs     0.39x   PASS      0.39x 0.40x 0.35x
+map, JSON out           23.07 µs     7.42 µs     0.32x   PASS      0.32x 0.33x 0.30x
+map, parsed in           5.25 µs     6.46 µs     1.23x   reported  1.28x 1.23x 1.12x
+view, construct            11 ns      143 ns     13.0x   reported
+view, 3 reads            1.08 µs     1.17 µs     1.08x   FAIL      1.03x 1.14x 1.12x
+extract routing         10.41 µs     2.16 µs     0.21x   PASS      0.21x 0.20x 0.21x
+extract, anchored        1.84 µs      863 ns     0.47x   PASS      0.47x 0.46x 0.47x
+extract 5, 10.7 KB      19.52 µs     3.31 µs     0.17x   PASS      0.17x 0.17x 0.17x
+extract 5, anchored      4.50 µs     1.35 µs     0.30x   PASS      0.30x 0.30x 0.30x
+stream, 1 KB chunks     23.79 µs    10.04 µs     0.42x   PASS      0.43x 0.42x 0.43x
 ```
 
-`view, 3 reads` fails on this box in all three runs. The first box run, at f0b325b, measured 1.12x to 1.17x. Commit 017c0fe cut the loop from 14,022 to 13,329 instructions (callgrind, `PYTHONHASHSEED=0`), and that brought the row to 1.05x to 1.09x. The rest of the time goes to CPython's dict lookups, the transforms, the two view objects and PyO3's call wrappers.
+`view, 3 reads` fails on this box in all three runs. The first box run, at f0b325b, measured 1.12x to 1.17x. Commit 017c0fe cut the loop from 14,022 to 13,329 instructions (callgrind, `PYTHONHASHSEED=0`), and that brought the row to 1.05x to 1.09x. The run at 58ecc99 has the same core code and measured 1.03x to 1.14x. The rest of the time goes to CPython's dict lookups, the transforms, the two view objects and PyO3's call wrappers.
 
 Measured on an Apple M3 Max (36 GB, macOS 27.0) with Python 3.14.7 and Node 26.10.0, release build, in one session: pycanonic first, then canonic's `run.js` and `streaming.js`. The machine was not idle (load average about 3.5), so treat the absolute numbers as rough. Both sides ran under the same load. `--vs-ts` refuses to run unless the checkout is at the canonic commit pinned in `bench/ts_outputs.json` and `packages/canonic/dist` is newer than its sources.
 
@@ -121,16 +121,16 @@ The two timing smoke tests in `bench/test_run.py` are opt-in: `PYCANONIC_BENCH_T
 
 `bench/interpreters.py` is the port of canonic's `bench/interpreters.js`. It builds the same 501-field nested payload from the same rules (`GROUPS`, `ARRAYS`, `SKILLS`, and the transforms `null`, `toNumber`, `trimLower`, `toBool`). It gives the same mapping to pycanonic and to every library. `bench/test_interpreters.py` checks that the 64 generated payloads hash to the same bytes as `JSON.stringify` of `genPayload(1..64)` in the JavaScript. The hash was taken once in Node at canonic 936d6fd, because `interpreters.js` does not export its payloads. The JavaScript uses 100 payloads. This port uses 64 because `measure` cycles through indices 0 to 63.
 
-The project rule is that every published Python mapping library must be at least 10x slower than pycanonic on this mapping, bytes in and dict in. `--gate` checks exactly that and exits 1 otherwise. orjson and the hand-written row are not mappers, so they are reported and never gated.
+The project rule is that every published Python mapping library must be at least 10x slower than pycanonic on this mapping, bytes in and dict in. `--gate` checks exactly that and exits 1 otherwise. orjson, the hand-written row and the msgspec row are not mappers, so they are reported and never gated.
 
-The rule does not hold today. Three libraries are less than 10x slower. On the Hetzner box, pydantic is 2.4x to 2.8x, jsonbender 6.8x to 6.9x, and plain jmespath without transforms 7.6x to 7.9x. On the Apple M3 Max they were 2.3x to 3x, 7.5x to 8x and 9.2x to 9.6x. The reasons are below the tables.
+The rule does not hold today. Three libraries are less than 10x slower. On the Hetzner box, pydantic is 2.3x to 2.9x, jsonbender 7.0x to 7.1x, and plain jmespath without transforms 7.9x to 8.2x. On the Apple M3 Max they were 2.3x to 3x, 7.5x to 8x and 9.2x to 9.6x. The reasons are below the tables.
 
 These three are listed with their reasons in `bench/interpreters-exempt.json`. The gate marks their rows `exempt`, prints the reasons under the table and does not fail on them. Every other mapping library still has to be 10x slower. `--exempt FILE` reads another list. The names in it are distribution names, the first word of the row.
 
 ### Method
 
 - Identical output first. Before timing, every library maps all 64 payloads, and its output must serialize to the same bytes as pycanonic's. The comparison uses `orjson.dumps` with sorted keys, so `1` and `1.0`, or `1` and `True`, count as different. A library that does not match is printed as `EXCLUDED` and not timed. `pytest bench` runs the same check on three payloads.
-- `bytes in` is `orjson.loads` and then the library, which is what a Python user writes. pycanonic gets the bytes directly. pydantic's `model_validate_json` and jq's `input_text` were tried and were not faster than `orjson.loads` plus the dict call.
+- `bytes in` is `orjson.loads` and then the library, which is what a Python user writes. pycanonic gets the bytes directly. pydantic's `model_validate_json` and jq's `input_text` were tried and were not faster than `orjson.loads` plus the dict call. msgspec and jsonnet read the bytes themselves.
 - `dict in` maps an already parsed dict.
 - Each mapping is built once, outside the timed loop: compiled JMESPath and jq programs, parsed JSONPath paths, a glom spec, a jsonbender mapping, pydantic models made with `create_model`, a JSONata expression. Timing uses `measure`, the same loop and settings as `run.py`.
 - The transforms are the JavaScript's: `toNumber` is `Number(v)` (an int when the value is whole, as pycanonic's `cast: number` returns), `trimLower` is strip then lower, `toBool` is `v == "true"`. Where a library has these built in, it uses its own. JSONata uses `$number`, `$trim` and `$lowercase`. jq uses `tonumber`, `trim` and `ascii_downcase`. jmespath-community uses `to_number`, `trim` and `lower`. pydantic uses `int | float`, `bool` and `StringConstraints`. The others call the same three Python functions.
@@ -146,6 +146,9 @@ How each library expresses it:
 | pydantic | one model per output object, fields read with `AliasPath`, `model_validate` then `model_dump`. The output nests differently from the input, so each nested model gets the whole body from a small `mode="before"` model validator. |
 | jsonata-python, jsonata-rs | the expression from `interpreters.js` |
 | jq (jq.py) | one compiled jq program, `input_value(dict).first()` |
+| jsonnet | one Jsonnet program, the body passed in as JSON text. The binding has no compiled form, so each call parses the program again. |
+| json-e | one template with `$eval` at each leaf and `$map` for each list |
+| msgspec, reference | Structs shaped like the source decode the body, and generated glue builds the output from them. msgspec does not move fields. |
 | hand-written py | a nested dict literal of `.get` chains and list comprehensions, generated from the rules (as the JavaScript's `inlineMapper`), with `trim` and `lower` from `pytransforms.py` |
 
 ### Results
@@ -176,6 +179,9 @@ jsonbender==0.9.3
 pydantic==2.14.1
 jsonata-python==0.7.1
 jq==1.13.0
+msgspec==0.22.0
+jsonnet==0.22.0
+json-e==4.8.4
 ```
 
 `requirements-alt.txt` (only the rows that differ):
@@ -243,6 +249,8 @@ Each candidate was installed with `uv pip install` into a scratch Python 3.14 en
 | jsonata-rs 0.1.4 | in the table (alt environment): JSONata in Rust, same `jsonata` module as jsonata-python |
 | jmespath-community 1.1.3 | in the table (alt environment): the JMESPath fork with string functions, same `jmespath` module as jmespath |
 | jq 1.13.0 | in the table: Python bindings to the jq C library, a JSON-to-JSON language |
+| jsonnet 0.22.0, json-e 4.8.4 | in the Hetzner table: two JSON templating languages |
+| msgspec 0.22.0 | in the Hetzner table as a reference: it decodes into typed Structs and does not move fields |
 | python-json-mapper, jsontransform, json-mapping-engine, remap | not on PyPI, or no installable version |
 | jsonmapping 0.1.x | does not install: needs PyICU, which needs a system ICU build |
 | json2json 0.1.0 | does not import on Python 3.10+ (`from collections import Mapping`) |
@@ -262,7 +270,7 @@ marshmallow and cattrs are in pydantic's category (schemas over classes). pydant
 
 ### Hetzner box
 
-AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5 (`Linux 6.8.0-139-generic x86_64`), Python 3.14.7, Node 26.10.0, pycanonic 017c0fe, canonic 936d6fd, 2026-10-24. Each number is the median of three runs. The alt rows are measured against the alt environment's own pycanonic run (61.17 µs bytes in, 55.19 µs dict in). `--gate` passed in both environments.
+AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5 (`Linux 6.8.0-139-generic x86_64`), Python 3.14.7, Node 26.10.0, pycanonic 58ecc99, canonic 936d6fd, 2026-10-24. Each number is the median of three runs. The alt rows are measured against the alt environment's own pycanonic run (61.66 µs bytes in, 55.31 µs dict in). `--gate` passed in both environments.
 
 ```
 cd pycanonic
@@ -280,19 +288,22 @@ VIRTUAL_ENV="$PWD/.venv-alt" .venv-alt/bin/maturin develop --release
 
 | implementation | bytes in | vs pycanonic | dict in | vs pycanonic |
 |---|---:|---:|---:|---:|
-| pycanonic map | 62.20 µs |  | 54.94 µs |  |
-| pycanonic map_json(bytes), JSON out, reported | 49.43 µs | 0.8x |  |  |
-| glom 25.12.0 | 6420.34 µs | 103.2x | 6299.15 µs | 114.7x |
-| jmespath 1.1.0, without transforms | 475.19 µs | 7.6x **<10x** | 432.93 µs | 7.9x **<10x** |
-| jsonpath-ng 1.12.0 | 1164.09 µs | 18.7x | 1123.58 µs | 20.5x |
-| jsonbender 0.9.3 | 424.93 µs | 6.8x **<10x** | 381.35 µs | 6.9x **<10x** |
-| pydantic 2.14.1 | 176.68 µs | 2.8x **<10x** | 129.74 µs | 2.4x **<10x** |
-| jsonata-python 0.7.1 | 7849.88 µs | 126.2x | 7811.03 µs | 142.2x |
-| jq 1.13.0 (jq.py) | 4595.36 µs | 73.9x | 4564.36 µs | 83.1x |
-| hand-written py (pure-Python transforms), not a mapper | 114.97 µs | 1.8x | 77.42 µs | 1.4x |
-| orjson.loads, parse only, not a mapper | 27.37 µs | 0.4x |  |  |
-| jmespath-community 1.1.3 (alt env) | 1211.80 µs | 19.8x | 1162.64 µs | 21.1x |
-| jsonata-rs 0.1.4 (alt env) | 1029.03 µs | 16.8x | 1001.41 µs | 18.1x |
+| pycanonic map | 61.53 µs |  | 55.23 µs |  |
+| pycanonic map_json(bytes), JSON out, reported | 49.34 µs | 0.8x |  |  |
+| glom 25.12.0 | 6439.02 µs | 104.6x | 6330.87 µs | 114.6x |
+| jmespath 1.1.0, without transforms | 484.24 µs | 7.9x **<10x** | 451.42 µs | 8.2x **<10x** |
+| jsonpath-ng 1.12.0 | 1136.74 µs | 18.5x | 1106.02 µs | 20.0x |
+| jsonbender 0.9.3 | 434.88 µs | 7.1x **<10x** | 387.66 µs | 7.0x **<10x** |
+| pydantic 2.14.1 | 175.85 µs | 2.9x **<10x** | 129.23 µs | 2.3x **<10x** |
+| jsonata-python 0.7.1 | 7848.93 µs | 127.6x | 7751.55 µs | 140.4x |
+| jq 1.13.0 (jq.py) | 4599.19 µs | 74.7x | 4562.62 µs | 82.6x |
+| jsonnet 0.22.0 | 1.19 s | 19,316.2x | 1.19 s | 21,545.6x |
+| json-e 4.8.4 | 11300.08 µs | 183.7x | 11171.51 µs | 202.3x |
+| hand-written py (pure-Python transforms), not a mapper | 114.74 µs | 1.9x | 77.24 µs | 1.4x |
+| msgspec 0.22.0 Structs + hand-written py, not a mapper | 43.53 µs | 0.7x | 37.90 µs | 0.7x |
+| orjson.loads, parse only, not a mapper | 27.51 µs | 0.4x |  |  |
+| jmespath-community 1.1.3 (alt env) | 1236.23 µs | 20.0x | 1196.28 µs | 21.6x |
+| jsonata-rs 0.1.4 (alt env) | 1052.52 µs | 17.1x | 1027.50 µs | 18.6x |
 
 The TypeScript interpreter comparison (`pnpm bench:interp`) was not run on the box this time.
 

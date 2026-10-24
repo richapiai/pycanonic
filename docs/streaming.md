@@ -88,14 +88,14 @@ Use `extract` and `stream` to route early: pick the next provider, fail fast on 
 
 ## Numbers
 
-`bench/run.py` reads 3 routing fields from 5.9 KB bodies. It also reads 5 routing fields from 10.7 KB bodies, placed from 10% to 90% into the body. Every implementation must return the same output before the script times anything. The machine was an Apple M3 Max with Python 3.14.7, under load. The pycanonic and TypeScript columns come from one session at pycanonic 68197d1. The `orjson.loads` column comes from the earlier run at 8841588:
+`bench/run.py` reads 3 routing fields from 5.9 KB bodies. It also reads 5 routing fields from 10.7 KB bodies, placed from 10% to 90% into the body. Every implementation must return the same output before the script times anything. All three columns come from the same `--vs-ts` sessions:
 
 | Case | pycanonic | `orjson.loads` + read | TypeScript canonic |
 |---|---:|---:|---:|
-| 3 fields, 5.9 KB, scanner | 1.34 µs | 14.61 µs | 8.22 µs |
-| same, anchored | 705 ns | 14.25 µs | 1.22 µs |
-| 5 fields, 10.7 KB, scanner | 1.88 µs | 26.16 µs | 15.63 µs |
-| same, anchored | 1.12 µs | 26.23 µs | 3.89 µs |
-| 5 fields, 10.7 KB, 1 KB chunks | 8.85 µs | 26.36 µs (join + parse + read) | 18.20 µs |
+| 3 fields, 5.9 KB, scanner | 2.16 µs | 22.28 µs | 10.41 µs |
+| same, anchored | 863 ns | 22.22 µs | 1.84 µs |
+| 5 fields, 10.7 KB, scanner | 3.31 µs | 37.78 µs | 19.52 µs |
+| same, anchored | 1.35 µs | 38.09 µs | 4.50 µs |
+| 5 fields, 10.7 KB, 1 KB chunks | 10.04 µs | 38.01 µs (join + parse + read) | 23.79 µs |
 
-[bench/README.md](../bench/README.md) has the method and the full tables. These numbers come from one laptop, and the server run is still to come.
+The numbers come from the Hetzner box (AMD EPYC-Genoa, 4 vCPUs, Python 3.14.7, Node 26.10.0). Each one is the median of three sessions at pycanonic 58ecc99 against canonic 936d6fd. [bench/README.md](../bench/README.md) has the method and the full tables.
