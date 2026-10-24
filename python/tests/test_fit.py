@@ -798,3 +798,34 @@ def test_report_names_mapped_and_raw_provider_values() -> None:
     row = next(r for r in result.fields if r.field == "code")
     assert (row.kind, row.rule) == ("disagree", None)
     assert row.examples[0] == {"pair": "p7.json", "want": "z7", "got": "Q7X"}  # raw, not lower-cased
+
+
+def test_keep_key_that_matches_no_field_warns(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "keep.json").write_text(json.dumps({"status": "state", "x": "y", "hq.town": "office.town"}))
+    cli(tmp_path, "--keep", str(tmp_path / "keep.json"))
+    err = capsys.readouterr().err
+    assert 'fit: --keep key "x" matches no field' in err and 'fit: --keep key "hq.town" matches no field' in err
+    assert 'key "status"' not in err
+
+
+def test_unmeasured_holdout_prints_n_a(tmp_path: Path) -> None:
+    (tmp_path / "keep.json").write_text(json.dumps({"status": "state"}))
+    cli(tmp_path, "--keep", str(tmp_path / "keep.json"))
+    md = (tmp_path / "report.md").read_text()
+    for head in ("## status: review, kept", "## hq: review, presence"):
+        assert "- evidence: " in md.split(head)[1] and "holdout n/a" in md.split(head)[1].split("\n## ")[0], head
+    rows = {r["field"]: r for r in json.loads((tmp_path / "report.json").read_text())["fields"]}
+    assert rows["status"]["holdout"] is None and rows["hq"]["holdout"] is None
+    assert rows["email"]["holdout"] == 1.0
+    pairs = reject_pairs()
+    reject = [r for r in fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e")).fields if r.kind in ("reject", "if_empty")]
+    assert reject and all(r.holdout is None for r in reject)
+
+
+@pytest.mark.parametrize("old", ["[1, 2]", '"text"', "null"])
+def test_old_out_not_an_object_warns(tmp_path: Path, capsys: pytest.CaptureFixture[str], old: str) -> None:
+    (tmp_path / "spec.json").write_text(old)
+    assert cli(tmp_path) == 2
+    err = capsys.readouterr().err
+    assert "is not a JSON object, so changed rules are not compared" in err
+    assert json.loads((tmp_path / "spec.json").read_text())["language"] == 2

@@ -331,7 +331,7 @@ The schema loader rejects any other value, for example with `x-empty "[]" needs 
 
 A field key can name a canonical object node, not only a leaf. Its rule is `{"present": <path>}` or `{"present": [<path>, ...]}`. Every path must be there and not null. If the condition fails, the object is null, or no key under `x-empty` `"missing"`. If it holds, the leaves inside are mapped as usual. A present object whose leaves are all null follows its `x-empty`, as above.
 
-With `"if_empty": "null"`, an object whose leaves are all null is null. It needs no `present`. `"null"` is its only value. Both work inside `item` maps too. `present` or `if_empty` on a node that is not an object fails with `present needs an object node`.
+With `"if_empty": "null"`, an object whose leaves are all null is null. It needs no `present`. `"null"` is its only value. Both work inside `item` maps too. `present` or `if_empty` on a node that is not an object fails with `present needs an object node` or `if_empty needs an object node`.
 
 <!-- run -->
 ```json

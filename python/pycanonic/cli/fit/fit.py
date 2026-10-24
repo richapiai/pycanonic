@@ -107,7 +107,7 @@ class _Fitter:
     def _node(self, key: str, node: dict[str, Any]) -> None:
         if key in self.opts.keep:
             self.fields[key] = self.opts.keep[key]
-            self.rows.append(Row(key, "", "kept", self.opts.keep[key], 0, 0, 1.0, []))
+            self.rows.append(Row(key, "", "kept", self.opts.keep[key], 0, 0, None, []))
             return
         vals = [_val(p.default, key) for p in self.pairs]
         if all(map(_empty, vals)):  # the default never sends a value: leave it to x-empty
@@ -120,12 +120,12 @@ class _Fitter:
             rule = fit_object_presence(key, self.pairs)
             if rule:
                 self.fields[key] = rule
-                self.rows.append(Row(key, "", "presence", rule, len(self.pairs), len(self.pairs), 1.0, []))
+                self.rows.append(Row(key, "", "presence", rule, len(self.pairs), len(self.pairs), None, []))
             elif "x-empty" not in node and not any(map(_empty, vals)):
                 # never empty in the samples: null when every leaf is null, the usual form
                 self.fields[key] = rule = {"if_empty": "null"}
                 note = f"The default sent this object in all {len(self.pairs)} pairs, never empty, so its empty form is a guess."
-                self.rows.append(Row(key, "", "if_empty", rule, len(self.pairs), len(self.pairs), 1.0, [], note))
+                self.rows.append(Row(key, "", "if_empty", rule, len(self.pairs), len(self.pairs), None, [], note))
         else:
             self.leaf(key, node, [None if v is MISSING else v for v in vals])
 
@@ -210,7 +210,7 @@ class _Fitter:
         order = sorted(live, key=lambda j: j in hits)
         examples = [{"pair": self.pairs[j].name, "want": targets[j], "got": outs[j]} for j in order[:3]]
         self.fields[key] = rule
-        return Row(key, "", "asked", rule, len(hits), len(live), 0.0, examples)
+        return Row(key, "", "asked", rule, len(hits), len(live), None, examples)
 
 
 def _spec(opts: FitOptions, fields: dict[str, Any], reject: list[Any] | None = None, drift: bool = False) -> dict[str, Any]:
@@ -381,16 +381,16 @@ def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) ->
     spec = _spec(options, f.fields, f.reject, f.drift) if f.fields else None
     if drift:  # one decision for the whole spec, always for review
         note = f"The provider spells keys in more than one case, for example {', '.join(drift)}, so keys match without regard to case."
-        f.rows.insert(0, Row("spec.keys", "", "keys", "case_insensitive", len(pairs), len(pairs), 1.0, [], note))
+        f.rows.insert(0, Row("spec.keys", "", "keys", "case_insensitive", len(pairs), len(pairs), None, [], note))
     for i, cond in enumerate(reject):
         hit = [p.name for p in failover if _rejects(cond, p.provider)]
         note = f"Rejects {len(hit)} of {len(pairs)} pairs: rejects {', '.join(hit)}, where the default answered. Those pairs are left out of every other field's support."
         if f.disagree:
             note = f"fit and the runtime disagree on which pairs the reject rules reject ({', '.join(f.disagree)}), so the spec leaves them out. Every field was fitted again on all {len(pairs)} pairs."
-        f.rows.append(Row(f"reject[{i}]", "", "reject", cond, len(hit), len(pairs), 1.0, [], note))
+        f.rows.append(Row(f"reject[{i}]", "", "reject", cond, len(hit), len(pairs), None, [], note))
     for r in f.rows:
         one = not r.field.startswith("reject[") and _one_value(f.pairs, r.field)
-        lf = LeafFit(r.field, None, r.kind, r.support, r.total, r.holdout, [], [], r.mixed_empty, one)
+        lf = LeafFit(r.field, None, r.kind, r.support, r.total, r.holdout or 0.0, [], [], r.mixed_empty, one)
         r.tier = decide.tier(lf, min_auto=options.min_auto, min_pairs=options.min_pairs, floor=FLOOR)
         if one and r.tier == "review" and r.kind in decide.AUTO:
             r.note = " ".join(filter(None, [r.note, "The default sent one value or none in every pair, so the samples cannot tell this rule from a constant."]))
@@ -421,6 +421,10 @@ def run(args: argparse.Namespace, transforms: Transforms | None = None) -> int:
     keep = read_json(args.keep) if args.keep else {}
     if not isinstance(keep, dict):
         raise ValueError(f"{args.keep}: must be an object of field key to rule")
+    known = {k for k, _ in _nodes(schema)}
+    for k in keep:
+        if k not in known:
+            print(f'fit: --keep key "{k}" matches no field', file=sys.stderr)
     opts = FitOptions(args.provider_name, args.endpoint, args.min_auto, args.min_pairs, keep, ask_with(args.ask) if args.ask else None, transforms or {})
     result = fit_pairs(pairs, schema, opts)
     result.skipped = skipped
@@ -428,7 +432,10 @@ def run(args: argparse.Namespace, transforms: Transforms | None = None) -> int:
     if result.spec is None:
         print("fit: no field could be mapped, so no spec was written", file=sys.stderr)
     else:
-        old = read_json(str(out)).get("fields", {}) if out.exists() else None
+        prev = read_json(str(out)) if out.exists() else {}
+        if not isinstance(prev, dict):
+            print(f"fit: {out} is not a JSON object, so changed rules are not compared", file=sys.stderr)
+        old = prev.get("fields") if isinstance(prev, dict) and out.exists() else None
         if isinstance(old, dict):
             new = result.spec["fields"]
             for key in dict.fromkeys([*old, *new]):

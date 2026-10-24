@@ -38,7 +38,7 @@ RISKS: dict[str, str] = {
     "flatten": "Elements from inner arrays that the samples did not show get mixed in.",
     "filter": "A status value that the samples did not show drops the element, or keeps it.",
     "null_if": "A real value that equals the null marker is lost.",
-    "keys": "Two keys that differ only in case: the first one in the body wins.",
+    "keys": "Two keys that differ only in case: the exact key wins, else the first key in the body that matches without regard to case.",
     "kept": "kept by reviewer",
     "asked": "A model chose this source path. Check it against the examples.",
 }
@@ -54,7 +54,7 @@ class Row:
     rule: Any
     support: int
     total: int
-    holdout: float
+    holdout: float | None  # None: not measured (kept, asked, presence, if_empty, keys, reject)
     examples: list[dict[str, Any]]
     note: str = ""
     mixed_empty: bool = False
@@ -100,6 +100,10 @@ def _code(v: Any) -> str:
     return "`" + json.dumps(v, ensure_ascii=False).replace("`", "'").replace("|", "\\|") + "`"
 
 
+def _held(r: Row) -> str:
+    return "n/a" if r.holdout is None else f"{r.holdout:.0%}"
+
+
 def _kind(r: Row) -> str:
     return "kept by reviewer" if r.kind == "kept" else r.kind
 
@@ -115,12 +119,12 @@ def to_md(result: FitResult) -> str:
     auto = [r for r in result.fields if r.tier == "auto"]
     if auto:
         out += ["## Auto", "", "| field | kind | rule | pairs | holdout |", "|---|---|---|---|---|"]
-        out += [f"| {r.field} | {r.kind} | {_code(r.rule)} | {r.support} of {r.total} | {r.holdout:.0%} |" for r in auto]
+        out += [f"| {r.field} | {r.kind} | {_code(r.rule)} | {r.support} of {r.total} | {_held(r)} |" for r in auto]
         out.append("")
     for r in result.fields:
         if r.tier == "auto":
             continue
-        out += [f"## {r.field}: {r.tier}, {_kind(r)}", "", f"- rule: {_code(r.rule)}", f"- evidence: {r.support} of {r.total} pairs, holdout {r.holdout:.0%}"]
+        out += [f"## {r.field}: {r.tier}, {_kind(r)}", "", f"- rule: {_code(r.rule)}", f"- evidence: {r.support} of {r.total} pairs, holdout {_held(r)}"]
         # with a rule, `got` is what the spec maps; without one, the provider's own value
         side = "mapped" if r.rule is not None else "provider"
         out += [f"- {e['pair']}: default {_code(e['want'])}, {side} {_code(e['got'])}" for e in r.examples[:3]]

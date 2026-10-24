@@ -65,7 +65,7 @@ The spec has `"status": "draft"`. Exit codes:
 | Exit | Meaning |
 |---|---|
 | 0 | every field is auto |
-| 1 | one or more fields need review |
+| 1 | one or more fields need review. Fields kept with `--keep` do not count. |
 | 2 | one or more fields are manual, or a pair was skipped, or `--strict` and a field needs review |
 
 ### How fit decides
@@ -145,14 +145,14 @@ This is the table the reviewer reads. The report prints the row of each field th
 | Condition on a request input | `when` | review | An input combination the samples did not show. |
 | Omit a key | `omit` | review | Customers parsing a fixed key set. |
 | Reject rule | `reject` | review | Too strict: good answers fail over to the next provider and cost money. Too loose: empty answers reach customers. |
-| Case-insensitive keys | `keys` | review | Two keys that differ only in case: the first one in the body wins. |
+| Case-insensitive keys | `keys` | review | Two keys that differ only in case: the exact key wins, else the first key in the body that matches without regard to case. |
 | A scalar wrapped in an array | `wrap` | review | A provider that sometimes sends a list here gets a list inside a list. |
 | An array collected across nested arrays | `flatten` | review | Elements from inner arrays that the samples did not show get mixed in. |
 | Elements kept by a condition | `filter` | review | A status value that the samples did not show drops the element, or keeps it. |
 | A marker value turned into null | `null_if` | review | A real value that equals the null marker is lost. |
 | Provider never sends the field | `absent` | review | Customers that filter on that field get nulls. A business decision, not a mapping one. |
 | Rule from `--ask` | `asked` | review | A model chose this source path. Check it against the examples. |
-| Rule kept with `--keep` | `kept by reviewer` | review | kept by reviewer |
+| Rule kept with `--keep` | `kept` (the `report.md` heading says `kept by reviewer`) | review | kept by reviewer |
 | Values disagree between providers | `disagree` | manual | A value mismatch that a lookup table cannot fix, for example old and new industry names. Decide per field: lookup table, custom transform, or accept the difference. |
 | Needs code | `none` | manual | Covered by the generated stub and its doctests. |
 
@@ -169,7 +169,7 @@ No tool here catches these problems:
 
 ## The report
 
-`report.md` has one line per auto field, in a table. Each review and manual field gets a section with the rule and the evidence (k of n pairs, and the holdout). The section also has up to three examples, and the "what can break" text. An example puts the default's value next to the value the rule maps (`mapped`). A field with no rule shows the provider's own value instead (`provider`). `report.json` holds the same rows for tools: `field`, `tier`, `kind`, `rule`, `support`, `total`, `holdout`, `examples` and `risk`, plus a `summary` and the `skipped` pairs.
+`report.md` has one line per auto field, in a table. Each review and manual field gets a section with the rule and the evidence (k of n pairs, and the holdout). The section also has up to three examples, and the "what can break" text. An example puts the default's value next to the value the rule maps (`mapped`). A field with no rule shows the provider's own value instead (`provider`). `report.json` holds the same rows for tools: `field`, `tier`, `kind`, `rule`, `support`, `total`, `holdout`, `examples` and `risk`, plus a `summary` and the `skipped` pairs. Rows that `fit` does not hold out (`kept`, `asked`, `presence`, `if_empty`, `keys` and `reject`) have `holdout` null, and `report.md` prints `n/a` for them.
 
 ## The manual path
 
@@ -179,7 +179,7 @@ A person can write or change any rule by hand. To keep a reviewed rule through t
 {"status": "state", "jobs[]": {"from": "positions", "group_by": "org", "item": {"org": "org", "roles[]": {"from": "$group", "item": {"title": "title"}}}}}
 ```
 
-`canonic fit --keep reviewed.json` keeps each of those rules as written and refits the rest. The unit of a lock is one top-level key of `fields`. For an array field, that key holds the whole array rule, `item` map and options included. A kept rule shows in the report as `kept by reviewer`, in the review tier, and `fit` never downgrades it.
+`canonic fit --keep reviewed.json` keeps each of those rules as written and refits the rest. The unit of a lock is one top-level key of `fields`. For an array field, that key holds the whole array rule, `item` map and options included. A kept rule has kind `kept` in `report.json` and the heading `kept by reviewer` in `report.md`. It is in the review tier, and `fit` never downgrades it.
 
 `fit` writes a new spec each time. A hand edit that is not in the sidecar is lost on refit. For each field whose rule in the old `--out` file differs from the new one, `fit` prints `fit: <field> changed since the last spec; add it to --keep to hold it`. The spec holds no review data, so it stays a plain language 2 spec.
 
