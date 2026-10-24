@@ -125,6 +125,10 @@ def test_load_pairs_skips(tmp_path: Path) -> None:
     _write(prov, "broken.json", "{nope")
     _write(dflt, "scalar.json", "42")
     _write(prov, "scalar.json", "{}")
+    for name, text in [("badin.json", "{nope"), ("listin.json", "[1]")]:
+        _write(dflt, name, "{}")
+        _write(prov, name, "{}")
+        _write(inp, name, text)
     _write(dflt, "noinput.json", "{}")
     _write(prov, "noinput.json", "{}")
     pairs, skipped = load_pairs(dflt, prov, inp)
@@ -133,13 +137,16 @@ def test_load_pairs_skips(tmp_path: Path) -> None:
         Pair("ok.json", {"a": 1}, [{"b": 1}], {"q": "x"}),
     ]
     assert skipped == [
+        ("badin.json", "inputs not JSON"),
         ("broken.json", "not JSON"),
+        ("listin.json", "inputs not an object"),
         ("other.json", "only in provider"),
         ("scalar.json", "not an object or array"),
         ("solo.json", "only in default"),
     ]
     pairs, _ = load_pairs(dflt, prov, None)
-    assert [p.inputs for p in pairs] == [None, None]
+    assert [p.name for p in pairs] == ["badin.json", "listin.json", "noinput.json", "ok.json"]
+    assert all(p.inputs is None for p in pairs)
 
 
 def test_compare_same_rule() -> None:
@@ -164,3 +171,11 @@ def test_schema_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     assert main(["schema", str(d)]) == 2
     assert "not an object or array" in capsys.readouterr().err
     assert main(["schema"]) == 2
+
+
+def test_schema_file_keeps_index_like_key_order(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    d = tmp_path / "s"
+    _write(d, "1.json", '{"b": 1, "10": 2, "2": 3}')
+    out = tmp_path / "schema.json"
+    assert main(["schema", str(d), "--out", str(out)]) == 0
+    assert list(json.loads(out.read_text())["properties"]) == ["b", "10", "2"]

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import sys
 
 from ..fit.derive import derive_schema, flags
-from ..io import Transforms, UsageError, js_json, json_files, parser, read_json
+from ..io import Transforms, UsageError, json_files, parser, read_json
 
 USAGE = """canonic schema <samples>... [--out <file>]
 
@@ -32,7 +33,8 @@ def run(args: list[str], transforms: Transforms) -> int:
     schema = derive_schema(samples)
     for path, why in flags(schema):
         print(f"{path}  {why}", file=sys.stderr)
-    text = js_json(schema, 2) + "\n"
+    # json.dumps, not js_json: Object.keys order would move index-like keys ("10") to the front.
+    text = json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
     if a.out:
         with open(a.out, "w", encoding="utf-8") as f:
             f.write(text)
