@@ -18,7 +18,7 @@ Before it times anything, the script checks that every library produces the same
 
 ## Results
 
-The Hetzner box (AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5), Python 3.14.7, release build, pycanonic at `58ecc99`. Each number is the median of three runs. The jmespath-community and jsonata-rs rows come from the second environment, against its own pycanonic run (61.66 µs bytes in, 55.31 µs dict in).
+The Hetzner box (AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5), Python 3.14.7, release build, pycanonic at `1f9d115`. Each number is the median of three runs. The jmespath-community and jsonata-rs rows come from the second environment, against its own pycanonic run (61.66 µs bytes in, 55.31 µs dict in).
 
 | Library | Bytes in | vs pycanonic | Dict in | vs pycanonic |
 |---|---:|---:|---:|---:|
@@ -72,4 +72,4 @@ uv pip install -p .venv/bin/python -r bench/requirements.txt
 
 `jmespath` and `jmespath-community` install the same module, and so do `jsonata-python` and `jsonata-rs`. The second of each pair runs in a separate environment from `bench/requirements-alt.txt`. [bench/README.md](../bench/README.md) has the commands, the earlier run and the libraries that were tried and dropped.
 
-The table comes from the Hetzner box that produced the TypeScript README numbers: the median of three runs at pycanonic 58ecc99 against canonic 936d6fd. The breakdown of the 39 µs and the TypeScript context come from the M3 Max laptop, because the server run did not measure them.
+The table comes from the Hetzner box that produced the TypeScript README numbers: the median of three runs at pycanonic 1f9d115 against canonic 936d6fd. The breakdown of the 39 µs and the TypeScript context come from the M3 Max laptop, because the server run did not measure them.

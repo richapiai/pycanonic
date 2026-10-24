@@ -109,7 +109,7 @@ registry.get_shadow("acme", "person.enrich")  # None until a shadow version is p
 
 ## Benchmarks
 
-All numbers on this page come from the Hetzner server that produced the TypeScript README numbers: AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5, Python 3.14.7 and Node 26.10.0, release build. The load average was 0.6 at the start and about 1.2 to 1.5 during the run. Each number is the median of three runs of pycanonic 58ecc99 against canonic 936d6fd. [bench/README.md](https://github.com/richapiai/pycanonic/blob/main/bench/README.md) has the method, the scripts and the full output.
+All numbers on this page come from the Hetzner server that produced the TypeScript README numbers: AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5, Python 3.14.7 and Node 26.10.0, release build. The load average was 0.6 at the start and about 1.2 to 1.5 during the run. Each number is the median of three runs of pycanonic 1f9d115 against canonic 936d6fd. [bench/README.md](https://github.com/richapiai/pycanonic/blob/main/bench/README.md) has the method, the scripts and the full output.
 
 ### Against TypeScript canonic
 

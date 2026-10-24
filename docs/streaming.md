@@ -98,4 +98,4 @@ Use `extract` and `stream` to route early: pick the next provider, fail fast on 
 | same, anchored | 1.35 µs | 38.09 µs | 4.50 µs |
 | 5 fields, 10.7 KB, 1 KB chunks | 10.04 µs | 38.01 µs (join + parse + read) | 23.79 µs |
 
-The numbers come from the Hetzner box (AMD EPYC-Genoa, 4 vCPUs, Python 3.14.7, Node 26.10.0). Each one is the median of three sessions at pycanonic 58ecc99 against canonic 936d6fd. [bench/README.md](../bench/README.md) has the method and the full tables.
+The numbers come from the Hetzner box (AMD EPYC-Genoa, 4 vCPUs, Python 3.14.7, Node 26.10.0). Each one is the median of three sessions at pycanonic 1f9d115 against canonic 936d6fd. [bench/README.md](../bench/README.md) has the method and the full tables.

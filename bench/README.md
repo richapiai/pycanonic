@@ -19,7 +19,7 @@ To show the cost of idiomatic glue, `map, parsed in` and `map, bytes in` also ha
 On the Hetzner box (AMD EPYC-Genoa, 4 vCPUs, Ubuntu 24.04.5, Python 3.14.7, Node 26.10.0, release build), three runs of `--vs-ts` on 2026-10-24. The load average was 0.6 at the start and about 1.2 to 1.5 during the run. Each number is the median of the three.
 
 ```
-pycanonic 58ecc99 against canonic 936d6fd, median of 3 sessions
+pycanonic 1f9d115 against canonic 936d6fd, median of 3 sessions
 
 case                  TypeScript   pycanonic   py / ts   gate      py / ts in each run
 map, bytes in           23.07 µs     8.94 µs     0.39x   PASS      0.39x 0.40x 0.35x
@@ -34,7 +34,7 @@ extract 5, anchored      4.50 µs     1.35 µs     0.30x   PASS      0.30x 0.30x
 stream, 1 KB chunks     23.79 µs    10.04 µs     0.42x   PASS      0.43x 0.42x 0.43x
 ```
 
-`view, 3 reads` fails on this box in all three runs. The first box run, at f0b325b, measured 1.12x to 1.17x. Commit 017c0fe cut the loop from 14,022 to 13,329 instructions (callgrind, `PYTHONHASHSEED=0`), and that brought the row to 1.05x to 1.09x. The run at 58ecc99 has the same core code and measured 1.03x to 1.14x. The rest of the time goes to CPython's dict lookups, the transforms, the two view objects and PyO3's call wrappers.
+`view, 3 reads` fails on this box in all three runs. The first box run, at 292550d, measured 1.12x to 1.17x. Commit 445ca1e cut the loop from 14,022 to 13,329 instructions (callgrind, `PYTHONHASHSEED=0`), and that brought the row to 1.05x to 1.09x. The run at 1f9d115 has the same core code and measured 1.03x to 1.14x. The rest of the time goes to CPython's dict lookups, the transforms, the two view objects and PyO3's call wrappers.
 
 Measured on an Apple M3 Max (36 GB, macOS 27.0) with Python 3.14.7 and Node 26.10.0, release build, in one session: pycanonic first, then canonic's `run.js` and `streaming.js`. The machine was not idle (load average about 3.5), so treat the absolute numbers as rough. Both sides ran under the same load. `--vs-ts` refuses to run unless the checkout is at the canonic commit pinned in `bench/ts_outputs.json` and `packages/canonic/dist` is newer than its sources.
 
@@ -45,7 +45,7 @@ Measured on an Apple M3 Max (36 GB, macOS 27.0) with Python 3.14.7 and Node 26.1
 ```
 
 ```
-pycanonic 68197d1 against canonic 936d6fd, same session
+pycanonic ded0ed2 against canonic 936d6fd, same session
 
 case                  TypeScript rows                         TypeScript   pycanonic   py / ts  gate
 map, bytes in         map + JSON.parse (input)                  15.25 µs     5.64 µs     0.37x  PASS
@@ -64,10 +64,10 @@ stream, 1 KB chunks   canonic stream                            18.20 µs     8.
 
 TypeScript has no bytes-in path, so `map, bytes in` and `map, JSON out` are compared with `JSON.parse` plus `map` on the parsed object. The stream row comes from `streaming.js` (the 5-field 10.7 KB bodies in 1 KB chunks). `map, parsed in` and `view, construct` are reported and not gated. On a parsed object, V8 reads its own objects faster than Rust reads Python dicts, and a view's construct time is mostly the cost of the Python call. A Python call that returns an extension object costs about 100 ns before Rust runs.
 
-The table above is from pycanonic 68197d1 (after the second hot-path pass). The Python table is from the earlier run at 8841588:
+The table above is from pycanonic ded0ed2 (after the second hot-path pass). The Python table is from the earlier run at db9401c:
 
 ```
-Python 3.14.7 darwin-arm64, pycanonic 8841588, payloads from canonic 936d6fd
+Python 3.14.7 darwin-arm64, pycanonic db9401c, payloads from canonic 936d6fd
 person.enrich: 5.9 KB payloads, 18 spec fields; extract 5: 10.7 KB, fields at 10% to 90% of the body
 
 case                  implementation                                                 per op      ops/sec   canonic is
@@ -105,7 +105,7 @@ stream, 1 KB chunks   join + orjson.loads + read                                
 - `python bench/run.py --gate` fails if any canonic/reference ratio is more than 15% worse than `bench/baseline.json` for this platform (`sys.platform-machine`). An unrecorded platform fails and prints the JSON to paste. `--selftest` adds a 20% slowdown to canonic and checks that the gate trips.
 - `python bench/run.py --vs-ts <canonic checkout>` fails if any gated row is not faster than TypeScript. Run it on the bench box before a release.
 
-`baseline.json` has `darwin-arm64` and `linux-x86_64`. The Linux entry was recorded on the Hetzner box at 017c0fe with this command:
+`baseline.json` has `darwin-arm64` and `linux-x86_64`. The Linux entry was recorded on the Hetzner box at 445ca1e with this command:
 
 ```
 .venv/bin/maturin develop --release && .venv/bin/python bench/run.py --update-baseline
@@ -153,7 +153,7 @@ How each library expresses it:
 
 ### Results
 
-Apple M3 Max (36 GB, macOS 27.0), Python 3.14.7, release build, pycanonic at 68197d1 (after the second hot-path pass), payloads from canonic 936d6fd. The machine was not idle (load average 3.5 to 5). One run each. The first run, at f1d7b96 before any of the large-payload work, is in the second table.
+Apple M3 Max (36 GB, macOS 27.0), Python 3.14.7, release build, pycanonic at ded0ed2 (after the second hot-path pass), payloads from canonic 936d6fd. The machine was not idle (load average 3.5 to 5). One run each. The first run, at dc05823 before any of the large-payload work, is in the second table.
 
 `jmespath` and `jmespath-community` install the same `jmespath` module, and `jsonata-python` and `jsonata-rs` the same `jsonata` module, so they need separate environments. `requirements.txt` holds the first of each pair and `requirements-alt.txt` the second.
 
@@ -209,7 +209,7 @@ jsonata-rs==0.1.4
 | jmespath-community 1.1.3 (alt env) | 881.77 µs | 22.7x | 850.34 µs | 22.3x |
 | jsonata-rs 0.1.4 (alt env) | 593.25 µs | 15.2x | 570.19 µs | 15.0x |
 
-At f1d7b96, before the key-table fix:
+At dc05823, before the key-table fix:
 
 | implementation | bytes in | vs pycanonic | dict in | vs pycanonic |
 |---|---:|---:|---:|---:|
@@ -270,7 +270,7 @@ marshmallow and cattrs are in pydantic's category (schemas over classes). pydant
 
 ### Hetzner box
 
-AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5 (`Linux 6.8.0-139-generic x86_64`), Python 3.14.7, Node 26.10.0, pycanonic 58ecc99, canonic 936d6fd, 2026-10-24. Each number is the median of three runs. The alt rows are measured against the alt environment's own pycanonic run (61.66 µs bytes in, 55.31 µs dict in). `--gate` passed in both environments.
+AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5 (`Linux 6.8.0-139-generic x86_64`), Python 3.14.7, Node 26.10.0, pycanonic 1f9d115, canonic 936d6fd, 2026-10-24. Each number is the median of three runs. The alt rows are measured against the alt environment's own pycanonic run (61.66 µs bytes in, 55.31 µs dict in). `--gate` passed in both environments.
 
 ```
 cd pycanonic
@@ -311,7 +311,7 @@ The TypeScript interpreter comparison (`pnpm bench:interp`) was not run on the b
 
 Measured on an Apple M3 Max with Python 3.14.7 and a release build (`maturin develop --release`), on a machine that was not idle. There are two payloads. The first is the 64 bench bodies in `crates/canonic-core/tests/fixtures/bench_bodies.json` (6,189 bytes each, `specs/bench.json`, 18 fields). The second is the 64 bodies of `bench/interpreters.py` (8.7 KB each, 501 fields), which `scripts/export_wide.py` writes to `tests/fixtures/wide_bodies.json` for the Rust bench.
 
-The Python rows are the median of `measure` (4 ms batches, 21 rounds, round-robin) over all 64 bodies: `scripts/bench_hot.py` for the 6 KB body, `bench/interpreters.py` for the 501-field one. "Start" is the code at `27612b8` for the 6 KB rows and at `b965e83` for the 501-field rows. "Now" is `68197d1`.
+The Python rows are the median of `measure` (4 ms batches, 21 rounds, round-robin) over all 64 bodies: `scripts/bench_hot.py` for the 6 KB body, `bench/interpreters.py` for the 501-field one. "Start" is the code at `5a5ab91` for the 6 KB rows and at `b12aa7e` for the 501-field rows. "Now" is `ded0ed2`.
 
 | case | start | now | target | TypeScript here |
 |---|---:|---:|---:|---:|
@@ -337,9 +337,9 @@ The Python rows are the median of `measure` (4 ms batches, 21 rounds, round-robi
 | `hot` parse | 6.56 µs | 2.4 µs |
 | `hot` plan execution into `Out` | 2.87 µs | 2.0 µs |
 | `hot` map_json | 10.27 µs | 4.4 µs |
-| `wide` parse | 17.4 µs (`b965e83`) | 11.8 µs |
-| `wide` plan execution into `Out` | 20.8 µs (`f8df059`) | 16.1 µs |
-| `wide` map_json | 41.6 µs (`b965e83`) | 29.7 µs |
+| `wide` parse | 17.4 µs (`b12aa7e`) | 11.8 µs |
+| `wide` plan execution into `Out` | 20.8 µs (`44a307e`) | 16.1 µs |
+| `wide` map_json | 41.6 µs (`b12aa7e`) | 29.7 µs |
 
 The parser no longer builds the stage 1 index (`structurals`). It still has its bench and its tests, but it is off the hot path.
 
