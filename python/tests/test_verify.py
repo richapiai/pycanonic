@@ -137,3 +137,62 @@ def test_verify_passes_on_fit_output(tmp_path: Path) -> None:
     sc = write(tmp_path / "schema.json", derive_schema(defaults))
     args = ["verify", str(tmp_path / "spec.json"), "--schema", sc, "--default", d, "--provider", p]
     assert main([*args, "--min-match", "0.9"]) == 0
+
+
+# --- fix round: and review ---
+
+
+def test_both_null_pairs_do_not_count() -> None:
+    """Null on both sides in most pairs, wrong in the rest: the field fails --min-match."""
+    rows = pairs([({"name": None}, {}) for _ in range(8)] + [({"name": f"n{i}"}, {"n": "wrong"}) for i in range(2)])
+    r = run(spec({"name": "n"}), {"type": "object", "properties": {"name": {**S, "x-empty": "null"}}}, rows, 0.5, None)
+    assert r.fields == {"name": (0, 2)} and not r.ok
+
+
+def test_null_output_against_value_is_a_value_miss() -> None:
+    rows = pairs([({"name": "a"}, {})])
+    r = run(spec({"name": "n"}), derive_schema([p.default for p in rows]), rows, 0.95, None)
+    assert (r.fields, r.shape_failures) == ({"name": (0, 1)}, [])
+
+
+def test_skipped_pairs_fail(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "d").mkdir()
+    (tmp_path / "p").mkdir()
+    rows = reject_rows(2, 0)
+    for p in rows:
+        write(tmp_path / "d" / p.name, p.default)
+        write(tmp_path / "p" / p.name, p.provider)
+    write(tmp_path / "d" / "extra.json", rows[0].default)
+    s = write(tmp_path / "spec.json", spec({"name": "full_name", "email": "mail"}))
+    sc = write(tmp_path / "schema.json", derive_schema([p.default for p in rows]))
+    args = ["verify", s, "--schema", sc, "--default", str(tmp_path / "d"), "--provider", str(tmp_path / "p")]
+    assert main(args) == 1
+    assert "skipped  extra.json  only in default" in capsys.readouterr().out
+    assert not run(json.loads(Path(s).read_text()), json.loads(Path(sc).read_text()), rows, 0.95, None, skipped=[("extra.json", "only in default")]).ok
+
+
+def test_transforms_module(tmp_path: Path) -> None:
+    (tmp_path / "d").mkdir()
+    (tmp_path / "p").mkdir()
+    for i in range(3):
+        write(tmp_path / "d" / f"p{i}.json", {"name": f"N{i}!"})
+        write(tmp_path / "p" / f"p{i}.json", {"n": f"N{i}"})
+    mod = tmp_path / "shout.py"
+    mod.write_text("def shout(v):\n    return None if v is None else v + '!'\n")
+    s = write(tmp_path / "spec.json", spec({"name": {"from": "n", "transform": "shout"}}))
+    sc = write(tmp_path / "schema.json", {"type": "object", "properties": {"name": S}})
+    args = ["verify", s, "--schema", sc, "--default", str(tmp_path / "d"), "--provider", str(tmp_path / "p")]
+    assert main([*args, "--transforms", str(mod)]) == 0
+    assert main(args) == 2  # the spec names a transform it was not given
+
+
+def test_key_order_only_in_shape() -> None:
+    schema = {"type": "object", "properties": {"jobs": {"type": "array", "items": {"type": "object", "properties": {"b": S, "a": S}}}}}
+    rows = pairs([({"jobs": [{"a": "1", "b": "2"}]}, {"x": [{"a": "1", "b": "2"}]})])
+    r = run(spec({"jobs[]": {"from": "x", "item": {"a": "a", "b": "b"}}}), schema, rows, 0.95, None)
+    assert r.fields == {"jobs[]": (1, 1)} and r.shape_failures == [("p0.json", "jobs[0]", "key order")]
+
+
+def test_shape_checks_common_keys_when_keys_differ() -> None:
+    got, want = {"x": {"b": 1, "a": 2, "e": 0}}, {"x": {"a": "2", "b": 1, "c": 3}}
+    assert shape(got, want, {}) == [("x.c", "missing key"), ("x.e", "extra key"), ("x", "key order"), ("x.a", "type number against string")]

@@ -9,6 +9,7 @@ from typing import Any
 
 from ... import Rejected, _api
 from .compare import same
+from .arrays import MISSING
 from .fit import _eq, _val
 from .pairs import Pair
 
@@ -64,11 +65,19 @@ def shape(got: Any, want: Any, node: dict[str, Any], path: str = "$") -> list[tu
         return [f for i, (g, w) in enumerate(zip(got, want)) for f in shape(g, w, item, _at(path, i))]
     if not isinstance(got, dict) or node.get("x-open"):
         return []
-    if set(got) != set(want):
-        return [(_at(path, k), "missing key") for k in want if k not in got] + [(_at(path, k), "extra key") for k in got if k not in want]
-    out = [] if list(got) == list(want) else [(path, "key order")]
+    out = [(_at(path, k), "missing key") for k in want if k not in got] + [(_at(path, k), "extra key") for k in got if k not in want]
+    common = [k for k in want if k in got]
+    if [k for k in got if k in want] != common:
+        out.append((path, "key order"))
     props = node.get("properties") or {}
-    return out + [f for k in want for f in shape(got[k], want[k], props.get(k) or {}, _at(path, k))]
+    return out + [f for k in common for f in shape(got[k], want[k], props.get(k) or {}, _at(path, k))]
+
+
+def _sorted(v: Any) -> Any:
+    """`v` with object keys sorted at every depth: key order counts only in the shape check."""
+    if isinstance(v, dict):
+        return {k: _sorted(v[k]) for k in sorted(v)}
+    return [_sorted(x) for x in v] if isinstance(v, list) else v
 
 
 def run(
@@ -78,10 +87,12 @@ def run(
     min_match: float,
     transforms: dict[str, Callable[..., Any]] | None,
     max_reject: float = 0.10,
+    skipped: list[tuple[str, str]] | None = None,
 ) -> VerifyResult:
     """Maps every pair. A rejected pair counts in no field. It fails only if the spec without its
     reject rules maps it to exactly the default's output, or if over `max_reject` of the pairs are
-    rejected."""
+    rejected. A field counts only pairs where either side has a value, and any
+    `skipped` pair fails the run."""
     art = _api.compile_spec(spec, schema, transforms=transforms)
     loose = _api.compile_spec({k: v for k, v in spec.items() if k != "reject"}, schema, transforms=transforms) if spec.get("reject") else None
     keys = list(spec.get("fields") or {})
@@ -99,9 +110,12 @@ def run(
             continue
         failures += [(p.name, at, msg) for at, msg in shape(out, p.default, schema)]
         for k in keys:
-            counts[k][0] += _eq(_val(out, k), _val(p.default, k))
+            got, want = _val(out, k), _val(p.default, k)
+            if (got is None or got is MISSING) and (want is None or want is MISSING):
+                continue  # both null: neither a match nor a miss
+            counts[k][0] += _eq(_sorted(got), _sorted(want))
             counts[k][1] += 1
     fields = {k: (m, t) for k, (m, t) in counts.items()}
     share = len(rejected) / len(pairs) if pairs else 0.0
-    ok = not failures and not wrongly and share <= max_reject and all(t == 0 or m / t >= min_match for m, t in fields.values())
+    ok = not skipped and not failures and not wrongly and share <= max_reject and all(t == 0 or m / t >= min_match for m, t in fields.values())
     return VerifyResult(failures, fields, rejected, ok, wrongly)

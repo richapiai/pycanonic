@@ -16,7 +16,8 @@ USAGE = """canonic verify <spec.json> --schema <file> --default <dir> --provider
   the same name. It checks the shape at every depth (keys, key order, JSON types, null against
   [] or {}; an x-open map may differ in keys) and, per mapped field, the share of pairs that
   match. A rejected pair fails only if the spec without its reject rules maps it to exactly the
-  default's body, or if too many pairs are rejected. Exit 0 when all checks pass, else 1.
+  default's body, or if too many pairs are rejected. A skipped pair (on one side only, or not
+  JSON) fails too. Exit 0 when all checks pass, else 1.
 
   --inputs <dir>       request inputs per pair, for fields that read $input
   --transforms <file>  the custom transforms the spec names (a Python module)
@@ -51,7 +52,7 @@ def run(args: list[str], transforms: Transforms) -> int:
     if not pairs:
         print("verify: no pairs", file=sys.stderr)
         return 2
-    r = verify.run(read_json(a.spec), read_json(a.schema), pairs, a.min_match, transforms, a.max_reject)
+    r = verify.run(read_json(a.spec), read_json(a.schema), pairs, a.min_match, transforms, a.max_reject, skipped)
     if a.json:
         sys.stdout.write(json.dumps(r.to_json(len(pairs), skipped), indent=2, ensure_ascii=False) + "\n")
     else:
