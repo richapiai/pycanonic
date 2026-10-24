@@ -270,7 +270,8 @@ fn lookup<'a>(mut children: &'a [(String, Node)], path: &[String]) -> Option<&'a
 /// Routing fields in schema order, keyed by spec field. Routing fields are never inside arrays.
 fn routing(fields: &[Named<Field>], stat_names: &[String], out: &mut Vec<RoutingField>) {
     for f in fields {
-        match &f.value {
+        // Every variant by name, so a new wrapper cannot hide a routing field.
+        match f.value.inner() {
             Field::Object(c) => routing(c, stat_names, out),
             Field::Scalar(s) if s.validator.is_some() => {
                 let (name, scalar) = (stat_names[s.stat].clone(), s.clone());
@@ -280,7 +281,8 @@ fn routing(fields: &[Named<Field>], stat_names: &[String], out: &mut Vec<Routing
                     anchor: None,
                 });
             }
-            _ => {}
+            Field::Scalar(_) | Field::Null | Field::List { .. } | Field::Const(..) => {}
+            Field::OmitNull(_) => unreachable!("inner() unwraps it"),
         }
     }
 }

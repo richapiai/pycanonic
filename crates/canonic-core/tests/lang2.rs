@@ -265,3 +265,21 @@ fn x_empty_missing_writes_format_2() {
     assert_eq!(a.map_json(b"{}"), b"{}");
     assert_eq!(a.map_json(br#"{"n": "a"}"#), br#"{"name":"a"}"#);
 }
+
+#[test]
+fn a_routing_leaf_with_x_empty_missing_still_extracts() {
+    let schema = json!({"type": "object", "properties": {"email": {
+        "type": "string", "semantic": "email", "routing": true, "x-empty": "missing"}}});
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = json!({"email": "e"});
+    let plan = compile(&spec, &schema, &[]).unwrap();
+    assert_eq!(plan.routing.len(), 1);
+    assert_eq!(plan.routing[0].name, "email");
+    let a = canonic_core::Artifact::new(plan, Default::default()).unwrap();
+    assert_eq!(
+        a.extract(br#"{"e": "a@b.co"}"#),
+        [Some(canonic_core::Value::Str("a@b.co".into()))]
+    );
+    assert_eq!(a.map_json(br#"{"e": "a@b.co"}"#), br#"{"email":"a@b.co"}"#);
+    assert_eq!(a.map_json(br#"{"e": null}"#), b"{}");
+}
