@@ -760,3 +760,20 @@ def test_case_drift_sets_case_insensitive_keys() -> None:
     assert art.map({"FULLNAME": "x", "Rating": 7}) == {"name": "x", "score": 7}
     plain = fit_pairs([replace(p, provider={"fullName": p.default["name"], "rating": p.default["score"]}) for p in pairs], schema, FitOptions("acme", "e"))
     assert plain.spec is not None and "keys" not in plain.spec and "spec.keys" not in {r.field for r in plain.fields}
+
+
+def test_fit_survives_nan_in_a_pair(tmp_path: Path) -> None:
+    """R42: a provider body with NaN (json.loads accepts it) and a kept sort_by over it never panics."""
+    import math
+    import shutil
+
+    shutil.copytree(FIXTURE, tmp_path / "fx")
+    for f in (tmp_path / "fx" / "provider").iterdir():
+        body = json.loads(f.read_text())
+        body["scores"] = [{"v": math.nan if i % 3 == 0 else (i * 7) % 13} for i in range(60)]
+        f.write_text(json.dumps(body))
+    (tmp_path / "keep.json").write_text(json.dumps({"tags[]": {"from": "scores", "sort_by": "v", "pluck": "v"}}))
+    args = ["fit", "--default", str(tmp_path / "fx" / "default"), "--provider", str(tmp_path / "fx" / "provider"), "--provider-name", "globex", "--endpoint", "person.enrich"]
+    code = main([*args, "--out", str(tmp_path / "spec.json"), "--report", str(tmp_path / "report"), "--keep", str(tmp_path / "keep.json")])
+    assert code in (1, 2)
+    assert json.loads((tmp_path / "spec.json").read_text())["fields"]["tags[]"] == {"from": "scores", "sort_by": "v", "pluck": "v"}

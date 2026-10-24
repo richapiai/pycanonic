@@ -173,8 +173,12 @@ pub(crate) fn number(v: &V) -> Option<f64> {
 
 /// A value as JSON text with object keys sorted and integral numbers written as integers, so
 /// values that `eq`, `unique` and grouping call equal give equal text (`{"a": 1.0}` is `{"a":1}`).
-/// `None` past the copy limits (a host object that contains itself).
+/// `None` past the copy limits (a host object that contains itself) and for NaN, which is null
+/// to `unique` and grouping (R42).
 pub(crate) fn key_text<D: Doc>(d: &D) -> Option<String> {
+    if matches!(d.leaf(), V::Float(f) if f.is_nan()) {
+        return None;
+    }
     json(d, 0, &mut { MAX_NODES }).map(text)
 }
 
@@ -202,7 +206,7 @@ fn text(mut v: Value) -> String {
 
 /// A value's place in the shared order of sorting and `min`/`max`: numbers by value, then strings
 /// by code point, then booleans (`false` first), then containers by their key text, then null
-/// (with a container past the copy limits).
+/// (with NaN and a container past the copy limits).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Rank {
     Num(f64),
@@ -222,7 +226,10 @@ impl Rank {
             V::Str(s) => Rank::Str(s.into_owned()),
             // Past the copy limits it has no text, so it ranks last, as null does.
             V::Container => key_text(d).map_or(Rank::Null, Rank::Text),
-            n => number(&n).map_or(Rank::Null, Rank::Num),
+            // NaN ranks as null (R42): with it the order is not total and the sort panics.
+            n => number(&n)
+                .filter(|f| !f.is_nan())
+                .map_or(Rank::Null, Rank::Num),
         }
     }
 

@@ -361,3 +361,42 @@ def test_array_root_container_transform():
     a = pycanonic.compile_spec(spec, TEAMS["properties"]["teams"], transforms={"by_team": by_team})
     for way in _ways(a, body):
         assert way() == [{"team": "core", "members": ["ada"]}, {"team": "web", "members": ["bo"]}]
+
+
+def test_nan_in_a_dict_body_never_panics():
+    """R42: NaN ranks as null, so sort, min, max, unique and group keys cannot panic."""
+    import math
+
+    item = {"type": "object", "properties": {"v": {"type": "number"}}}
+    schema = {
+        "type": "object",
+        "properties": {
+            "sorted": {"type": "array", "items": item},
+            "uniq": {"type": "array", "items": item},
+            "groups": {"type": "array", "items": {"type": "object", "properties": {"v": {"type": "number"}, "n": {"type": "integer"}}}},
+            "lo": {"type": "number"},
+            "hi": {"type": "number"},
+        },
+    }
+    a = pycanonic.compile_spec(
+        _spec(
+            {
+                "sorted[]": {"from": "xs", "sort_by": "v", "item": {"v": "v"}},
+                "uniq[]": {"from": "xs", "unique": "v", "item": {"v": "v"}},
+                "groups[]": {"from": "xs", "group_by": "v", "item": {"v": "v", "n": {"aggregate": "count", "from": "$group[]"}}},
+                "lo": {"aggregate": "min", "from": "xs[].v"},
+                "hi": {"aggregate": "max", "from": "xs[].v"},
+            }
+        ),
+        schema,
+    )
+    nums = [(i * 7) % 13 for i in range(60)]
+    xs = [{"v": math.nan if i % 3 == 0 else n} for i, n in enumerate(nums)]
+    finite = [e["v"] for e in xs if not math.isnan(e["v"])]
+    out = a.map({"xs": xs})
+    got = [e["v"] for e in out["sorted"]]
+    assert got[: len(finite)] == sorted(finite)
+    assert all(math.isnan(v) for v in got[len(finite) :])
+    assert len(out["uniq"]) == len(set(finite)) + 20
+    assert sum(g["n"] for g in out["groups"]) == 60
+    assert out["lo"] is None and out["hi"] is None
