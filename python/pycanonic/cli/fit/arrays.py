@@ -200,7 +200,7 @@ def _under(rel: str) -> str:
     return f"{_G}[]{'' if rel.startswith('[') else '.'}{rel}"
 
 
-def _aggregate(f: LeafFit, key: str, eps: list[Pair], targets: list[Any], groups: list[list[Any]]) -> LeafFit:
+def _aggregate(f: LeafFit, key: str, eps: list[Pair], owners: list[int], targets: list[Any], groups: list[list[Any]]) -> LeafFit:
     """The leaf rule of a grouped item: the plain rule (it reads the group's first element) or an
     aggregate over `$group`, whichever reproduces more of the default. Null targets break ties, so
     `nulls: propagate` wins where the default is null for an open group."""
@@ -215,20 +215,25 @@ def _aggregate(f: LeafFit, key: str, eps: list[Pair], targets: list[Any], groups
             cands.append(({**agg, "from": "$group" + agg["from"][len(_G) :]}, [apply_rule(agg, {_G: g}) for g in groups]))
     hits = [frozenset(j for j, (o, t) in enumerate(zip(outs, targets)) if same(o, t)) for _, outs in cands]
 
-    def best(skip: int | None = None) -> int | None:
-        score = [(len(h & set(full) - {skip}), len(h & set(nulls))) for h in hits]
+    def best(skip: frozenset[int] = frozenset()) -> int | None:
+        score = [(len(h & set(full) - skip), len(h & set(nulls) - skip)) for h in hits]
         return max(range(len(cands)), key=lambda i: score[i], default=None)
 
     top = best()
     if top is None or (f.rule is not None and top == 0) or len(hits[top] & set(full)) < max(1, FLOOR * len(full)):
         return f
     rule, outs = cands[top]
-    held = sum(1 for j in full if (b := best(j)) is not None and j in hits[b])
+    units = list(dict.fromkeys(owners[j] for j in full))
+    held = 0
+    for u in units:  # leave out every element of one sample pair
+        out = frozenset(j for j in full if owners[j] == u)
+        b = best(out)
+        held += b is not None and len(hits[b] & set(full) - out) >= FLOOR * (len(full) - len(out)) and hits[b] >= out
     order = sorted(full, key=lambda j: j in hits[top])
     examples = [{"pair": eps[j].name, "want": targets[j], "got": outs[j]} for j in order[:3]]
     rest = sorted((i for i in range(len(cands)) if i != top), key=lambda i: -len(hits[i] & set(full)))
     alternatives = [{"rule": cands[i][0], "kind": "group", "support": len(hits[i] & set(full))} for i in rest[:3]]
-    return LeafFit(key, rule, "group", len(hits[top] & set(full)), len(full), held / len(full), examples, alternatives)
+    return LeafFit(key, rule, "group", len(hits[top] & set(full)), len(full), held / len(units), examples, alternatives)
 
 
 @dataclass
@@ -239,7 +244,7 @@ class _Items:
     holdout: float
 
 
-def _object(props: dict[str, Any], eps: list[Pair], groups: list[list[Any]] | None, prefix: list[Seg]) -> tuple[dict[str, Any], list[LeafFit]]:
+def _object(props: dict[str, Any], eps: list[Pair], owners: list[int], groups: list[list[Any]] | None, prefix: list[Seg]) -> tuple[dict[str, Any], list[LeafFit]]:
     item: dict[str, Any] = {}
     fits: list[LeafFit] = []
     for k, sub in props.items():
@@ -248,37 +253,42 @@ def _object(props: dict[str, Any], eps: list[Pair], groups: list[list[Any]] | No
         sub = sub if isinstance(sub, dict) else {}
         if sub.get("type") == "array":
             sub_pairs = eps if groups is None else [Pair(e.name, e.default, {_G: g}, e.inputs) for e, g in zip(eps, groups)]
-            rule, sub_fits = fit_array(key + "[]", sub, sub_pairs)
-            # a nested array in a group reads $group only, not the first element; add the
-            # first element as a second source if a provider needs it.
-            rule = rule if groups is None else _regroup(rule)
+            rule, sub_fits = fit_array(key + "[]", sub, sub_pairs, owners)
+            if groups is not None and sub_fits:
+                # a nested array in a group reads $group only, not the first element; add
+                # the first element as a second source if a provider needs it.
+                rule = _regroup(rule)
+                head = sub_fits[0]
+                alts = [{**a, "rule": r} for a in head.alternatives if (r := _regroup(a["rule"])) is not None]
+                sub_fits[0] = replace(head, rule=rule, alternatives=alts) if rule else replace(head, rule=None, kind="none", alternatives=alts)
             if rule is not None:
                 item[key + "[]"] = rule
             fits += sub_fits
         elif "properties" in sub:
-            inner, inner_fits = _object(sub["properties"], eps, groups, segs)
+            inner, inner_fits = _object(sub["properties"], eps, owners, groups, segs)
             item.update(inner)
             fits += inner_fits
         else:
             targets = [None if (v := get(e.default, segs)) is MISSING else v for e in eps]
-            f = fit_leaf(key, eps, targets, [scalars(e.provider) for e in eps], True)
+            f = fit_leaf(key, eps, targets, [scalars(e.provider) for e in eps], True, owners=owners)
             if groups is not None:
-                f = _aggregate(f, key, eps, targets, groups)
+                f = _aggregate(f, key, eps, owners, targets, groups)
             if f.rule is not None:
                 item[key] = f.rule
             fits.append(f)
     return item, fits
 
 
-def _items(field: str, items: dict[str, Any], eps: list[Pair], groups: list[list[Any]] | None) -> _Items | None:
-    """The per-element part of the rule, fitted over element pairs (default element, provider element)."""
+def _items(field: str, items: dict[str, Any], eps: list[Pair], owners: list[int], groups: list[list[Any]] | None) -> _Items | None:
+    """The per-element part of the rule, fitted over element pairs (default element, provider element).
+    `owners[i]` is the sample pair that element pair `i` came from, for the holdout."""
     if not eps:
         return None
     if "properties" in items:
-        item, fits = _object(items["properties"], eps, groups, [])
+        item, fits = _object(items["properties"], eps, owners, groups, [])
         held = [f.holdout for f in fits if f.rule is not None]
         return _Items({"item": item}, fits, "path", min(held, default=1.0)) if item else None
-    f = fit_leaf(field, eps, [e.default for e in eps], [scalars(e.provider) for e in eps], True)
+    f = fit_leaf(field, eps, [e.default for e in eps], [scalars(e.provider) for e in eps], True, owners=owners)
     src = f.rule.get("from") if f.rule else None
     if f.rule is None or not isinstance(src, str):
         return None  # join, coalesce and const have no per-element form
@@ -297,11 +307,13 @@ class _Tried:
     outs: list[Any]
 
 
-def fit_array(field: str, node: dict[str, Any], pairs: list[Pair]) -> tuple[dict[str, Any] | None, list[LeafFit]]:
+def fit_array(field: str, node: dict[str, Any], pairs: list[Pair], owners: list[int] | None = None) -> tuple[dict[str, Any] | None, list[LeafFit]]:
     """The array rule for `field` and the fits under it. The first fit is the array itself, with kind
     path (or the element transform for scalar items), wrap, flatten, group, filter or none; the rest
     are the item leaves and nested arrays, keyed `field.leaf`. Pairs where the default has no list do
-    not count. The holdout of the array is the lowest holdout of its item rules."""
+    not count. The holdout of the array is the lowest holdout of its item rules, each of which
+    leaves out one sample pair at a time; `owners[j]` names the sample pair of `pairs[j]` when the
+    pairs are themselves element pairs (a nested array)."""
     wants = [at(p.default, field) for p in pairs]
     live = [j for j, w in enumerate(wants) if isinstance(w, list)]
     if not live:
@@ -314,8 +326,15 @@ def fit_array(field: str, node: dict[str, Any], pairs: list[Pair]) -> tuple[dict
         got = [apply_rule(base, p.provider, _ANY) for p in pairs]
         elems.append([g if isinstance(g, list) else [] for g in got])
 
-    def element_pairs(j: int, d: list[Any], e: list[Any]) -> list[Pair]:
-        return [Pair(f"{pairs[j].name}[{i}]", x, y, pairs[j].inputs) for i, (x, y) in enumerate(zip(d, e))]
+    own = owners or list(range(len(pairs)))
+
+    def element_pairs(rows: list[tuple[int, list[Any], list[Any]]]) -> tuple[list[Pair], list[int]]:
+        """Element pairs from (pair index, default elements, provider elements), with their owners."""
+        eps = [(Pair(f"{pairs[j].name}[{i}]", x, y, pairs[j].inputs), own[j]) for j, d, e in rows for i, (x, y) in enumerate(zip(d, e))]
+        return [ep for ep, _ in eps], [o for _, o in eps]
+
+    def shared(rows: list[tuple[int, list[Any], list[Any]]]) -> int:
+        return sum(_overlap(x, y) for _, d, e in rows for x, y in zip(d, e))
 
     tried: list[_Tried] = []
 
@@ -327,42 +346,35 @@ def fit_array(field: str, node: dict[str, Any], pairs: list[Pair]) -> tuple[dict
         tried.append(_Tried(kind, full, it, frozenset(j for j in live if same(outs[j], wants[j])), outs))
 
     for kind in KINDS:
-        # only the best source by shared values gets the full item fit; try the next ones
-        # too if a provider has two near-identical arrays.
-        if kind in ("path", "wrap", "flatten"):
-            aligned = [
-                (sum(_overlap(x, y) for j in live for x, y in zip(wants[j], es[j])), i)
-                for i, ((k, _), es) in enumerate(zip(srcs, elems))
-                if k == kind and sum(len(es[j]) == len(wants[j]) for j in live) >= FLOOR * len(live)
-            ]
-            top = max(aligned, key=lambda oi: (oi[0], -oi[1]), default=(0, -1))
-            if top[0] > 0:
-                es = elems[top[1]]
-                eps = [ep for j in live if len(es[j]) == len(wants[j]) for ep in element_pairs(j, wants[j], es[j])]
-                score(kind, srcs[top[1]][1], _items(field, items, eps, None))
-        elif kind == "group" and objects:
-            for (k, base), es in zip(srcs, elems):
-                found = _group_key(field, items["properties"], wants, es, live) if k in ("path", "flatten") else None
-                if found:
-                    key, groups = found
-                    flat = [(ep, g) for j, gs in zip(live, groups) for ep, g in zip(element_pairs(j, wants[j], [g[0] for g in gs]), gs)]
-                    it = _items(field, items, [ep for ep, _ in flat], [g for _, g in flat])
-                    score(kind, {**base, "group_by": key, "consecutive": True}, it)
-                    break
-        elif kind == "filter":
-            for (k, base), es in zip(srcs, elems):
-                if k not in ("path", "flatten") or not any(len(es[j]) > len(wants[j]) for j in live):
-                    continue
+        # only the best source by shared values gets the full item fit; try
+        # the next ones too if a provider has two near-identical arrays.
+        found: list[tuple[int, int, dict[str, Any], list[tuple[int, list[Any], list[Any]]], list[list[Any]] | None]] = []
+        for i, ((k, base), es) in enumerate(zip(srcs, elems)):
+            if kind in ("path", "wrap", "flatten"):
+                if k == kind and sum(len(es[j]) == len(wants[j]) for j in live) >= FLOOR * len(live):
+                    rows = [(j, wants[j], es[j]) for j in live if len(es[j]) == len(wants[j])]
+                    found.append((shared(rows), i, base, rows, None))
+            elif k not in ("path", "flatten"):
+                continue
+            elif kind == "group" and objects:
+                g = _group_key(field, items["properties"], wants, es, live)
+                if g:
+                    rows = [(j, wants[j], [run[0] for run in runs]) for j, runs in zip(live, g[1])]
+                    found.append((shared(rows), i, {**base, "group_by": g[0], "consecutive": True}, rows, [run for runs in g[1] for run in runs]))
+            elif kind == "filter" and any(len(es[j]) > len(wants[j]) for j in live):
                 matches = [_match(wants[j], es[j]) for j in live]
                 if any(m is None for m in matches):
                     continue
-                kept = [[es[j][i] for i in m or []] for j, m in zip(live, matches)]
-                dropped = [[x for i, x in enumerate(es[j]) if i not in (m or [])] for j, m in zip(live, matches)]
+                kept = [[es[j][x] for x in m or []] for j, m in zip(live, matches)]
+                dropped = [[x for n, x in enumerate(es[j]) if n not in (m or [])] for j, m in zip(live, matches)]
                 sep = _separator(kept, dropped)
                 if sep:
-                    eps = [ep for j, ks in zip(live, kept) for ep in element_pairs(j, wants[j], ks)]
-                    score(kind, {**base, "filter": {"path": sep[0], "eq": sep[1]}}, _items(field, items, eps, None))
-                    break
+                    rows = [(j, wants[j], ks) for j, ks in zip(live, kept)]
+                    found.append((shared(rows), i, {**base, "filter": {"path": sep[0], "eq": sep[1]}}, rows, None))
+        top = max(found, key=lambda f: (f[0], -f[1]), default=None)
+        if top is not None and top[0] > 0:
+            eps, owners_ = element_pairs(top[3])
+            score(kind, top[2], _items(field, items, eps, owners_, top[4]))
         if any(len(t.hits) == len(live) for t in tried):
             break
 

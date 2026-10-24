@@ -216,14 +216,23 @@ class _Search:
 
 
 def fit_leaf(
-    field: str, pairs: list[Pair], targets: list[Any], sources_by_pair: list[list[Occurrence]], lookups_allowed: bool, floor: float = 0.8
+    field: str,
+    pairs: list[Pair],
+    targets: list[Any],
+    sources_by_pair: list[list[Occurrence]],
+    lookups_allowed: bool,
+    floor: float = 0.8,
+    owners: list[int] | None = None,
 ) -> LeafFit:
     """The best rule for `field` over the pairs, or kind `none` when no rule reaches `floor`, the
     share of pairs with a value. A learned lookup is tried only below it.
 
     Build `sources_by_pair[j]` with `scalars(pairs[j].provider)`: join and coalesce are scored on
     `pairs[j].provider`, so both must read the same body. Item-level fits build element pairs the
-    same way, with the provider element as `provider` and `scalars(element)` as its occurrences."""
+    same way, with the provider element as `provider` and `scalars(element)` as its occurrences.
+
+    The holdout leaves out one sample pair at a time. For element pairs, `owners[j]` names the
+    sample pair that element `j` came from, so all elements of one response leave together, and the pair holds only if every one of its elements is reproduced."""
     s = _Search(field, pairs, targets, sources_by_pair, lookups_allowed, floor)
     every = list(range(len(pairs)))
     live = [j for j in every if targets[j] is not None]
@@ -235,13 +244,16 @@ def fit_leaf(
         examples = [{"pair": pairs[j].name, "want": targets[j], "got": None} for j in live[:3]]
         return LeafFit(field, None, "none", 0, len(live), 0.0, examples, alternatives)
     c, support = chosen
-    held, rest = 0, len(live) - 1
-    for i in live:  # leave each pair out: does the rule chosen without it reproduce it?
-        best = s.select([j for j in every if j != i])
-        held += bool(best and best[0][1] >= floor * rest and i in s.hits(best[0][0]))
+    owner = owners or every
+    units = list(dict.fromkeys(owner[j] for j in live))
+    held = 0
+    for u in units:  # leave each pair out: does the rule chosen without it reproduce it?
+        out = [j for j in live if owner[j] == u]
+        best = s.select([j for j in every if owner[j] != u])
+        held += bool(best and best[0][1] >= floor * (len(live) - len(out)) and s.hits(best[0][0]).issuperset(out))
     order = sorted(live, key=lambda j: j in s.hits(c))  # failures first, stable in pair order
     examples = [{"pair": pairs[j].name, "want": targets[j], "got": s.out(c, j)} for j in order[:3]]
-    return LeafFit(field, c.rule(), c.label(), support, len(live), held / len(live), examples, alternatives)
+    return LeafFit(field, c.rule(), c.label(), support, len(live), held / len(units), examples, alternatives)
 
 
 def _case_variant(c: _Cand, chosen: _Cand) -> bool:

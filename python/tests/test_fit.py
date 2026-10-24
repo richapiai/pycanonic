@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
+
+import pycanonic
 
 from pycanonic.cli.fit.arrays import fit_array
 from pycanonic.cli.fit.chains import Chain, apply, apply_rule, candidates
+from pycanonic.cli.fit.compare import same
 from pycanonic.cli.fit.index import Occurrence, scalars
 from pycanonic.cli.fit.leaves import LeafFit, _related, fit_leaf
 from pycanonic.cli.fit.pairs import Pair
@@ -267,6 +271,9 @@ def test_group_detected_with_gaps() -> None:
     assert rule["item"]["roles[]"] == {"from": "$group", "item": {"title": {"from": "title"}}}
     assert (fits[0].kind, fits[0].support, fits[0].total) == ("group", 6, 6)
     assert "jobs[].roles[].title" in [f.field for f in fits]
+    roles = {f.field: f for f in fits}["jobs[].roles[]"]
+    assert (roles.rule, roles.kind) == ({"from": "$group", "item": {"title": {"from": "title"}}}, "path")  # the spec's rule, not the internal key
+    assert all(a["rule"]["from"].startswith("$group") for a in roles.alternatives)
 
 
 def test_group_aggregates_min_max_propagate() -> None:
@@ -287,6 +294,41 @@ def test_filter_detected() -> None:
     rule, fits = fit_array("people[]", objs(name=S), pairs_of([row(i) for i in range(6)]))
     assert rule == {"from": "people", "filter": {"path": "status", "eq": "active"}, "item": {"name": {"from": "name"}}}
     assert (fits[0].kind, fits[0].support) == ("filter", 6)
+
+
+def test_item_holdout_leaves_out_whole_pairs() -> None:
+    """Only p0's elements read `b`. Leaving one of them out, the other two still teach the coalesce;
+    leaving all of p0 out gives `a` alone, which misses p0."""
+    rows = [({"people": [{"title": f"v0{k}"} for k in range(3)]}, {"people": [{"b": f"v0{k}"} for k in range(3)]})]
+    rows += [({"people": [{"title": f"v{i}{k}"} for k in range(2)]}, {"people": [{"a": f"v{i}{k}"} for k in range(2)]}) for i in range(1, 6)]
+    rule, fits = fit_array("people[]", objs(title=S), pairs_of(rows))
+    assert rule == {"from": "people", "item": {"title": {"coalesce": ["a", "b"]}}}
+    by = {f.field: f for f in fits}
+    assert by["people[].title"].holdout == 5 / 6
+    assert by["people[]"].holdout == 5 / 6
+    eps = [Pair(f"e{n}", d, e, None) for d0, p0 in rows for n, (d, e) in enumerate(zip(d0["people"], p0["people"]))]
+    per_element = fit_leaf("title", eps, [e.default["title"] for e in eps], [scalars(e.provider) for e in eps], True)
+    assert per_element.holdout == 1.0  # what the element-by-element holdout said
+
+
+def test_fitted_rules_map_on_every_path() -> None:
+    """The fitted group and filter rules, compiled as full specs, reproduce the defaults through
+    map(bytes), map(dict) and map_json."""
+
+    def people(i: int) -> tuple[Any, Any]:
+        ps = [{"name": f"n{i}{k}", "status": "active" if (k + i) % 3 else "gone"} for k in range(4)]
+        return {"people": [{"name": p["name"]} for p in ps if p["status"] == "active"]}, {"people": ps}
+
+    cases = [("jobs", JOBS, [grouped(i, k) for i, k in enumerate(GROUPS)]), ("people", objs(name=S), [people(i) for i in range(6)])]
+    for key, node, rows in cases:
+        rule, _ = fit_array(f"{key}[]", node, pairs_of(rows))
+        assert rule is not None and ("group_by" in rule or "filter" in rule)
+        spec = {"language": 2, "provider": "acme", "endpoint": "e", "version": 1, "status": "draft", "fields": {f"{key}[]": rule}}
+        art = pycanonic.compile_spec(spec, {"type": "object", "properties": {key: node}})
+        for want, body in rows:
+            raw = json.dumps(body).encode()
+            for got in (art.map(raw), art.map(body), json.loads(art.map_json(raw))):
+                assert same(got, want), (key, got, want)
 
 
 def test_array_not_found() -> None:
