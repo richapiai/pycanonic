@@ -1,7 +1,7 @@
 //! The compiled plan: what codegen.ts knows about field order, stat naming and null/default/error
 //! semantics, as data. The executor runs it. `source()` prints it for humans.
 
-use crate::canonical::Semantic;
+use crate::canonical::{Empty, Semantic};
 use crate::spec::{Path, Source, Status, Step};
 use crate::transforms::{Builtin, CastTo, NamePart};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -61,6 +61,30 @@ pub enum ListKind {
     Plain(Vec<TxRef>),
 }
 
+/// Language 2 array rule options. The default is language 1 behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ListOps {
+    /// The output for a missing or null source: `Null` or `List`.
+    pub missing: Empty,
+    /// The output for an empty source array: `List` or `Null`.
+    pub empty: Empty,
+}
+
+impl Default for ListOps {
+    fn default() -> ListOps {
+        ListOps {
+            missing: Empty::Null,
+            empty: Empty::List,
+        }
+    }
+}
+
+impl ListOps {
+    fn is_default(&self) -> bool {
+        *self == ListOps::default()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Field {
     /// A canonical field the spec does not map.
@@ -71,7 +95,13 @@ pub enum Field {
         from: Path,
         kind: ListKind,
         stat: usize,
+        #[serde(default, skip_serializing_if = "ListOps::is_default")]
+        ops: ListOps,
     },
+    /// Language 2 (`x-empty: "missing"`): the key is left out of its object when the field maps to
+    /// null. An object field is left out when no leaf inside it is written as something other
+    /// than null.
+    OmitNull(Box<Field>),
     /// Language 2: a value written as it is, whatever the body. Always a fill. The `usize` is the stat slot.
     Const(Value, usize),
 }
@@ -151,6 +181,16 @@ fn present<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
     Value::deserialize(d).map(Some)
 }
 
+impl Field {
+    /// The field an `OmitNull` wraps, or the field itself.
+    pub fn inner(&self) -> &Field {
+        match self {
+            Field::OmitNull(f) => f.inner(),
+            f => f,
+        }
+    }
+}
+
 impl Plan {
     /// True when a field needs plan format 2. No language 1 variant does. The matches name every
     /// variant, so a new one must say which format it needs.
@@ -158,12 +198,15 @@ impl Plan {
         fn field(f: &Field) -> bool {
             match f {
                 Field::Null | Field::Scalar(_) => false,
-                Field::Const(..) => true,
+                Field::Const(..) | Field::OmitNull(_) => true,
                 Field::Object(c) => c.iter().any(|n| field(&n.value)),
-                Field::List { kind, .. } => match kind {
-                    ListKind::Item(c) => c.iter().any(|n| field(&n.value)),
-                    ListKind::Pluck(..) | ListKind::Plain(_) => false,
-                },
+                Field::List { kind, ops, .. } => {
+                    !ops.is_default()
+                        || match kind {
+                            ListKind::Item(c) => c.iter().any(|n| field(&n.value)),
+                            ListKind::Pluck(..) | ListKind::Plain(_) => false,
+                        }
+                }
             }
         }
         self.fields.iter().any(|n| field(&n.value))
@@ -180,38 +223,54 @@ impl Plan {
 
 fn lines(out: &mut String, prefix: &str, fields: &[Named<Field>]) {
     for f in fields {
-        let name = format!("{prefix}{}", f.name);
-        match &f.value {
-            Field::Null => _ = writeln!(out, "{name} <- null"),
-            Field::Const(v, _) => _ = writeln!(out, "{name} <- const {v}"),
-            Field::Object(c) => lines(out, &format!("{name}."), c),
-            Field::Scalar(s) => {
-                let src = match &s.source {
-                    Source::From(p) => path(p),
-                    Source::FromMany(ps) => format!("from({})", list(ps)),
-                    Source::Coalesce(ps) => format!("coalesce({})", list(ps)),
-                };
-                let mut line = format!("{name} <- {src}{}", pipe(&s.tx));
-                if let Some(v) = s.validator {
-                    line += &format!(" | validate {}", v.name());
-                }
-                if let Some(d) = &s.default {
-                    line += &format!(" ?? {d}");
-                }
-                _ = writeln!(out, "{line}");
+        line(out, &format!("{prefix}{}", f.name), &f.value);
+    }
+}
+
+fn line(out: &mut String, name: &str, field: &Field) {
+    match field {
+        Field::Null => _ = writeln!(out, "{name} <- null"),
+        Field::OmitNull(f) => {
+            _ = writeln!(out, "{name}: left out when null");
+            line(out, name, f);
+        }
+        Field::Const(v, _) => _ = writeln!(out, "{name} <- const {v}"),
+        Field::Object(c) => lines(out, &format!("{name}."), c),
+        Field::Scalar(s) => {
+            let src = match &s.source {
+                Source::From(p) => path(p),
+                Source::FromMany(ps) => format!("from({})", list(ps)),
+                Source::Coalesce(ps) => format!("coalesce({})", list(ps)),
+            };
+            let mut line = format!("{name} <- {src}{}", pipe(&s.tx));
+            if let Some(v) = s.validator {
+                line += &format!(" | validate {}", v.name());
             }
-            Field::List { from, kind, .. } => {
-                let from = path(from);
-                match kind {
-                    ListKind::Item(c) => {
-                        _ = writeln!(out, "{name}[] <- {from}[]");
-                        lines(out, &format!("{name}[]."), c);
-                    }
-                    ListKind::Pluck(p, tx) => {
-                        _ = writeln!(out, "{name}[] <- {from}[].{}{}", path(p), pipe(tx))
-                    }
-                    ListKind::Plain(tx) => _ = writeln!(out, "{name}[] <- {from}[]{}", pipe(tx)),
+            if let Some(d) = &s.default {
+                line += &format!(" ?? {d}");
+            }
+            _ = writeln!(out, "{line}");
+        }
+        Field::List {
+            from, kind, ops, ..
+        } => {
+            let from = path(from);
+            let mut opts = String::new();
+            if ops.missing == Empty::List {
+                opts += " | missing []";
+            }
+            if ops.empty == Empty::Null {
+                opts += " | empty null";
+            }
+            match kind {
+                ListKind::Item(c) => {
+                    _ = writeln!(out, "{name}[] <- {from}[]{opts}");
+                    lines(out, &format!("{name}[]."), c);
                 }
+                ListKind::Pluck(p, tx) => {
+                    _ = writeln!(out, "{name}[] <- {from}[].{}{}{opts}", path(p), pipe(tx))
+                }
+                ListKind::Plain(tx) => _ = writeln!(out, "{name}[] <- {from}[]{}{opts}", pipe(tx)),
             }
         }
     }

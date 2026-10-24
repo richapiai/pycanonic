@@ -156,6 +156,14 @@ impl Sink for JsonSink<'_> {
         }
     }
 
+    fn mark(&self) -> usize {
+        self.buf.len()
+    }
+
+    fn rewind(&mut self, mark: usize) {
+        self.buf.truncate(mark);
+    }
+
     /// The items are already in place, written after `open` and each `next`.
     fn list(&mut self, _items: Vec<Range<usize>>) -> Range<usize> {
         self.close(b']')

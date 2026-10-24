@@ -69,8 +69,10 @@ pub enum Kind {
     },
 }
 
-/// Language 2 `x-empty`: the output for a missing or null source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Language 2 `x-empty`: the output for a missing or null source. The plan also uses it for the
+/// array rule options `missing` and `empty` (`Null` or `List` there).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Empty {
     Null,
     List,
@@ -82,7 +84,8 @@ pub enum Empty {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     pub kind: Kind,
-    /// Read only in language 2. Task 4 uses it for output.
+    /// Read only in language 2. A leaf takes `Null` or `Missing`, an array `Null`, `List` or
+    /// `Missing`, an object `Null`, `Object` or `Missing`.
     pub empty: Option<Empty>,
 }
 
@@ -130,6 +133,7 @@ fn load_node(s: &Value, at: &str, in_array: bool, lang2: bool) -> Result<Node, S
         let at = if at.is_empty() { "the schema" } else { at };
         return Err(format!("{at} must be a schema object"));
     };
+    let here = if at.is_empty() { "the schema" } else { at };
     let empty = match s.get("x-empty").filter(|_| lang2) {
         None => None,
         Some(v) => Some(match v.as_str() {
@@ -138,19 +142,36 @@ fn load_node(s: &Value, at: &str, in_array: bool, lang2: bool) -> Result<Node, S
             Some("{}") => Empty::Object,
             Some("missing") => Empty::Missing,
             _ => {
-                let at = if at.is_empty() { "the schema" } else { at };
                 return Err(format!(
-                    "{at}: x-empty must be one of null, [], {{}}, missing"
+                    "{here}: x-empty must be one of null, [], {{}}, missing"
                 ));
             }
         }),
     };
-    let node = |kind| Ok(Node { kind, empty });
+    let node = |kind: Kind| {
+        let fits = match (&kind, empty) {
+            (_, None | Some(Empty::Null | Empty::Missing)) => true,
+            (Kind::Array { .. }, Some(e)) => e == Empty::List,
+            (Kind::Object { .. }, Some(e)) => e == Empty::Object,
+            (Kind::Scalar { .. }, _) => false,
+        };
+        if !fits {
+            let (tag, kind) = match empty {
+                Some(Empty::List) => ("[]", "an array"),
+                _ => ("{}", "an object"),
+            };
+            return Err(format!("{here}: x-empty \"{tag}\" needs {kind} node"));
+        }
+        Ok(Node { kind, empty })
+    };
     let open = lang2 && s.get("x-open") == Some(&Value::Bool(true));
     let props = match s.get("properties") {
         Some(Value::Object(props)) => Some(props),
         _ => None,
     };
+    if open && props.is_none() && !has_type(s, "object") {
+        return Err(format!("{here}: x-open needs an object node"));
+    }
     if open || props.is_some() {
         let children = match props {
             Some(p) => load_object(p, at, in_array, lang2)?,

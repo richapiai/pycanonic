@@ -20,6 +20,15 @@ pub trait Sink {
     fn next(&mut self, name: Option<usize>, first: bool) {
         let _ = (name, first);
     }
+    /// A position to `rewind` to, taken before a member's `next`. A sink that builds values does
+    /// not need one: the executor leaves the member out of `object`.
+    fn mark(&self) -> usize {
+        0
+    }
+    /// Undoes everything written since `mark`: a member that turned out to be left out.
+    fn rewind(&mut self, mark: usize) {
+        let _ = mark;
+    }
     /// A canonical object. Each `usize` indexes `Plan::names`.
     fn object(&mut self, members: Vec<(usize, Self::Out)>) -> Self::Out;
 }

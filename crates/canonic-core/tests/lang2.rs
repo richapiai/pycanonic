@@ -204,3 +204,64 @@ fn language_2_field_keys_use_the_path_grammar() {
         assert!(bad(k).is_empty(), "{k}");
     }
 }
+
+fn tags_schema(empty: Option<&str>) -> J {
+    let mut tags = json!({"type": "array", "items": {"type": "string"}});
+    if let Some(e) = empty {
+        tags["x-empty"] = json!(e);
+    }
+    json!({"type": "object", "properties": {"tags": tags}})
+}
+
+#[test]
+fn empty_options_keep_one_error_on_a_non_array() {
+    // The last plan is language 1 behavior (the spec undoes the schema), so it stays format 1.
+    for (rule, empty, format) in [
+        (json!({"from": "labels", "missing": "[]"}), None, 2),
+        (json!({"from": "labels", "empty": "null"}), None, 2),
+        (json!({"from": "labels"}), Some("[]"), 2),
+        (json!({"from": "labels", "missing": "null"}), Some("[]"), 1),
+    ] {
+        let mut spec = spec_with_language(json!(2));
+        spec["fields"] = json!({ "tags[]": rule });
+        let plan = compile(&spec, &tags_schema(empty), &[]).unwrap();
+        let text = serde_json::to_value(&plan).unwrap();
+        assert_eq!(text["format"], format, "{rule}");
+        assert_eq!(serde_json::from_value::<Plan>(text).unwrap(), plan);
+        let a = canonic_core::Artifact::new(plan, Default::default()).unwrap();
+        assert_eq!(a.map_json(br#"{"labels": "x"}"#), br#"{"tags":null}"#);
+        let tags = &a.stats.snapshot().fields[0];
+        assert_eq!((tags.1.fill, tags.1.errors), (0, 1), "{rule}");
+    }
+}
+
+#[test]
+fn empty_options_need_language_2_and_a_known_value() {
+    let mut spec = lang1_spec();
+    spec["fields"] = json!({"tags[]": {"from": "labels", "missing": "[]"}});
+    assert_issue(
+        spec,
+        r#"spec.fields["tags[]"]: "missing" needs "language": 2"#,
+    );
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = json!({"tags[]": {"from": "labels", "empty": "{}"}});
+    assert_issue(
+        spec,
+        r#"spec.fields["tags[]"].empty: must be "null" or "[]""#,
+    );
+}
+
+#[test]
+fn x_empty_missing_writes_format_2() {
+    let schema = json!({"type": "object", "properties": {
+        "name": {"type": "string", "x-empty": "missing"}}});
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = json!({"name": "n"});
+    let plan = compile(&spec, &schema, &[]).unwrap();
+    let text = serde_json::to_value(&plan).unwrap();
+    assert_eq!(text["format"], 2);
+    let loaded: Plan = serde_json::from_value(text).unwrap();
+    let a = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
+    assert_eq!(a.map_json(b"{}"), b"{}");
+    assert_eq!(a.map_json(br#"{"n": "a"}"#), br#"{"name":"a"}"#);
+}

@@ -1,0 +1,67 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "jobs[]": {
+        "from": "roles",
+        "item": {
+          "title": "t",
+          "level": "l"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "jobs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "x-empty": "missing"
+            },
+            "level": {
+              "type": "integer",
+              "x-empty": "missing"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "roles": [
+          {
+            "t": "dev",
+            "l": null
+          },
+          {
+            "l": 2
+          },
+          {}
+        ]
+      },
+      "context": null,
+      "expected": {
+        "jobs": [
+          {
+            "title": "dev"
+          },
+          {
+            "level": 2
+          },
+          {}
+        ]
+      }
+    }
+  ]
+}

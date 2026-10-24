@@ -2,6 +2,7 @@
 //! For a spec without `language`, the validator must accept and reject exactly what the JSON Schema
 //! does (tests/validate.rs). spec.schema.json stays language 1.
 
+use crate::canonical::Empty;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -49,6 +50,11 @@ pub struct ArrayRule {
     pub item: Option<FieldMap>,
     pub pluck: Option<Path>,
     pub transform: Vec<TransformRef>,
+    /// Language 2: the output for a missing or null source, `Null` or `List`. None: the schema's
+    /// `x-empty` decides.
+    pub missing: Option<Empty>,
+    /// Language 2: the output for an empty source array, `Null` or `List`.
+    pub empty: Option<Empty>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -322,7 +328,19 @@ impl Checker {
         let Some(r) = r.as_object() else {
             return self.fail(at, "array fields need a rule object with from");
         };
-        self.keys(r, at, &["from", "item", "pluck", "transform"]);
+        self.keys(
+            r,
+            at,
+            &["from", "item", "pluck", "transform", "missing", "empty"],
+        );
+        for k in ["missing", "empty"] {
+            if let Some(v) = r.get(k) {
+                self.lang2(at, k);
+                if list_empty(v).is_none() {
+                    self.fail(&format!("{at}.{k}"), "must be \"null\" or \"[]\"");
+                }
+            }
+        }
         self.path(r.get("from"), &format!("{at}.from"));
         let (item, pluck) = (r.get("item"), r.get("pluck"));
         if item.is_some() && pluck.is_some() {
@@ -447,6 +465,15 @@ fn language(v: Option<&Value>) -> Option<u8> {
     }
 }
 
+/// An array rule's `missing` or `empty` value.
+fn list_empty(v: &Value) -> Option<Empty> {
+    match v.as_str()? {
+        "null" => Some(Empty::Null),
+        "[]" => Some(Empty::List),
+        _ => None,
+    }
+}
+
 /// Grammar check only (what spec.schema.json expresses). Semantic checks come with compilation.
 pub fn validate_spec(spec: &Value) -> Vec<Issue> {
     let mut c = Checker::default();
@@ -503,6 +530,8 @@ fn rule(key: &str, r: &Value) -> Rule {
             item: r.get("item").map(field_map),
             pluck: r.get("pluck").map(path),
             transform: transform(r.get("transform")),
+            missing: r.get("missing").and_then(list_empty),
+            empty: r.get("empty").and_then(list_empty),
         });
     }
     let source = match r {

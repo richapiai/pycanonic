@@ -433,6 +433,8 @@ fn parse_spec_returns_the_typed_spec() {
         item: Some(item),
         pluck: None,
         transform,
+        missing: None,
+        empty: None,
     }) = &s.fields[3].1
     else {
         panic!()

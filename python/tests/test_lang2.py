@@ -36,3 +36,13 @@ def test_const_plan_round_trips():
     assert b.map(json.dumps(body).encode()) == want
     assert b.map(body) == want
     assert json.loads(b.map_json(json.dumps(body).encode())) == want
+
+
+def test_x_empty_missing_leaves_the_key_out():
+    schema = {"type": "object", "properties": {"k": {"type": "string", "x-empty": "missing"}, "name": {"type": "string"}}}
+    a = pycanonic.compile_spec(_spec({"name": "n", "k": "v"}), schema)
+    for body in [{"n": "a"}, {"n": "a", "v": None}]:
+        raw = json.dumps(body).encode()
+        text = a.map_json(raw)
+        assert b'"k":' not in text
+        assert json.loads(text) == a.map(raw) == a.map(body) == {"name": "a"}

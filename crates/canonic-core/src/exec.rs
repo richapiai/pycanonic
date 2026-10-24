@@ -11,10 +11,13 @@
 //! - A list `from` that is present but not an array is null, an error and a miss on the list slot.
 //! - `item` maps each element. A plucked or plain element that a transform rejects is null in place
 //!   and one error on the list slot. An absent element is null.
+//! - Language 2: a list's `ListOps` choose `[]` or null for a missing and for an empty source.
+//!   `Empty::Missing` leaves the key out when the source is missing or null. `OmitNull` leaves the
+//!   key out when nothing under it is written as something other than null.
 
-use crate::canonical::Semantic;
+use crate::canonical::{Empty, Semantic};
 use crate::doc::{Doc, Key};
-use crate::plan::{CompileError, Field, ListKind, Named, Plan, Scalar, TxRef};
+use crate::plan::{CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, Sink, copy};
 use crate::spec::{self, Source};
 use crate::stats::Stats;
@@ -145,9 +148,12 @@ enum Op {
         from: At,
         kind: Kind,
         stat: usize,
+        ops: ListOps,
     },
     /// Written as it is. Counts no miss, so it is always a fill.
     Const(J),
+    /// Left out of its object when it writes nothing but null.
+    OmitNull(Box<Op>),
 }
 
 enum Kind {
@@ -245,32 +251,42 @@ impl Builder<'_> {
                 if f.name_idx >= self.plan.names.len() {
                     return Err(self.err(format!("name index {} out of range", f.name_idx)));
                 }
-                let op = match &f.value {
-                    Field::Null => Op::Null,
-                    Field::Scalar(s) => Op::Scalar(self.leaf(s)?),
-                    Field::Object(c) => Op::Object(self.fields(c)?),
-                    Field::Const(v, stat) => {
-                        self.stat(*stat)?;
-                        Op::Const(v.clone())
-                    }
-                    Field::List { from, kind, stat } => Op::List {
-                        from: self.at(from),
-                        kind: match kind {
-                            ListKind::Item(c) => {
-                                let outer = std::mem::take(&mut self.scope);
-                                let fields = self.fields(c);
-                                let inner = std::mem::replace(&mut self.scope, outer);
-                                Kind::Item(fields?, inner.finish())
-                            }
-                            ListKind::Pluck(p, tx) => Kind::Elems(self.path(p), self.tx(tx)?),
-                            ListKind::Plain(tx) => Kind::Elems(Vec::new(), self.tx(tx)?),
-                        },
-                        stat: self.stat(*stat)?,
-                    },
-                };
-                Ok((f.name_idx, op))
+                Ok((f.name_idx, self.op(&f.value)?))
             })
             .collect()
+    }
+
+    fn op(&mut self, field: &Field) -> Result<Op, CompileError> {
+        Ok(match field {
+            Field::Null => Op::Null,
+            Field::Scalar(s) => Op::Scalar(self.leaf(s)?),
+            Field::Object(c) => Op::Object(self.fields(c)?),
+            Field::Const(v, stat) => {
+                self.stat(*stat)?;
+                Op::Const(v.clone())
+            }
+            Field::OmitNull(inner) => Op::OmitNull(Box::new(self.op(inner)?)),
+            Field::List {
+                from,
+                kind,
+                stat,
+                ops,
+            } => Op::List {
+                from: self.at(from),
+                kind: match kind {
+                    ListKind::Item(c) => {
+                        let outer = std::mem::take(&mut self.scope);
+                        let fields = self.fields(c);
+                        let inner = std::mem::replace(&mut self.scope, outer);
+                        Kind::Item(fields?, inner.finish())
+                    }
+                    ListKind::Pluck(p, tx) => Kind::Elems(self.path(p), self.tx(tx)?),
+                    ListKind::Plain(tx) => Kind::Elems(Vec::new(), self.tx(tx)?),
+                },
+                stat: self.stat(*stat)?,
+                ops: *ops,
+            },
+        })
     }
 }
 
@@ -519,6 +535,7 @@ pub fn execute<D: Doc, S: Sink>(
         sink,
         stats,
         custom,
+        filled: 0,
     }
     .object(&program.root, &mut f)
 }
@@ -538,6 +555,7 @@ pub fn execute_field<D: Doc, S: Sink>(
         sink,
         stats: &quiet,
         custom,
+        filled: 0,
     };
     let mut f = Frame::new(doc.cloned(), &program.scope, false);
     let Some((&last, parents)) = path.split_last() else {
@@ -545,7 +563,11 @@ pub fn execute_field<D: Doc, S: Sink>(
     };
     let mut level = &program.root;
     for &i in parents {
-        match &level.get(i)?.1 {
+        let mut op = &level.get(i)?.1;
+        if let Op::OmitNull(o) = op {
+            op = o;
+        }
+        match op {
             Op::Object(c) => level = c,
             _ => return None,
         }
@@ -557,17 +579,44 @@ struct Exec<'e, S> {
     sink: &'e mut S,
     stats: &'e Stats,
     custom: &'e [Arc<dyn Transform>],
+    /// How many values have been written as something other than null. `OmitNull` compares it
+    /// before and after its field.
+    filled: usize,
 }
 
 impl<S: Sink> Exec<'_, S> {
     fn object<D: Doc>(&mut self, fields: &[(usize, Op)], f: &mut Frame<'_, D>) -> S::Out {
         self.sink.open(true);
-        let members = (fields.iter().enumerate())
-            .map(|(n, (name, op))| {
-                self.sink.next(Some(*name), n == 0);
-                (*name, self.op(op, f))
-            })
-            .collect();
+        let mut members = Vec::with_capacity(fields.len());
+        for (name, op) in fields {
+            match op {
+                Op::OmitNull(inner) => {
+                    let (mark, filled) = (self.sink.mark(), self.filled);
+                    self.sink.next(Some(*name), members.is_empty());
+                    let out = self.op(inner, f);
+                    if self.filled == filled {
+                        self.sink.rewind(mark);
+                    } else {
+                        members.push((*name, out));
+                    }
+                }
+                // Known before anything is written: the key is left out.
+                Op::List {
+                    from,
+                    stat,
+                    ops:
+                        ListOps {
+                            missing: Empty::Missing,
+                            ..
+                        },
+                    ..
+                } if f.read(*from).is_none() => self.stats.miss(*stat),
+                op => {
+                    self.sink.next(Some(*name), members.is_empty());
+                    members.push((*name, self.op(op, f)));
+                }
+            }
+        }
         self.sink.object(members)
     }
 
@@ -576,8 +625,17 @@ impl<S: Sink> Exec<'_, S> {
             Op::Null => self.sink.scalar(Value::Null),
             Op::Object(c) => self.object(c, f),
             Op::Scalar(l) => self.scalar(l, f),
-            Op::List { from, kind, stat } => self.list(*from, kind, *stat, f),
-            Op::Const(v) => self.sink.passthrough(&v),
+            Op::List {
+                from,
+                kind,
+                stat,
+                ops,
+            } => self.list(*from, kind, *stat, *ops, f),
+            Op::Const(v) => {
+                self.filled += !v.is_null() as usize;
+                self.sink.passthrough(&v)
+            }
+            Op::OmitNull(inner) => self.op(inner, f),
         }
     }
 
@@ -592,12 +650,16 @@ impl<S: Sink> Exec<'_, S> {
             Src::Many(ps) => self.many(l, f, ps),
         };
         match out {
-            Some(Some(o)) => o,
+            Some(Some(o)) => {
+                self.filled += 1;
+                o
+            }
             out => {
                 if out.is_some() {
                     self.stats.error(l.stat);
                 }
                 self.stats.miss(l.stat);
+                self.filled += l.default.is_some() as usize;
                 let v = l.default.as_ref().map_or(Value::Null, json_value);
                 self.sink.scalar(v)
             }
@@ -653,16 +715,27 @@ impl<S: Sink> Exec<'_, S> {
         })
     }
 
-    fn list<D: Doc>(&mut self, from: At, kind: &Kind, stat: usize, f: &mut Frame<'_, D>) -> S::Out {
+    fn list<D: Doc>(
+        &mut self,
+        from: At,
+        kind: &Kind,
+        stat: usize,
+        ops: ListOps,
+        f: &mut Frame<'_, D>,
+    ) -> S::Out {
         let Some(x) = f.read(from) else {
             self.stats.miss(stat);
-            return self.sink.scalar(Value::Null);
+            return self.empty(ops.missing);
         };
         let Some(n) = x.len() else {
             self.stats.error(stat);
             self.stats.miss(stat);
             return self.sink.scalar(Value::Null);
         };
+        if n == 0 {
+            return self.empty(ops.empty);
+        }
+        self.filled += 1;
         if let Kind::Item(..) = kind {
             self.stats.elements(stat, n);
         }
@@ -679,6 +752,16 @@ impl<S: Sink> Exec<'_, S> {
             })
             .collect();
         self.sink.list(items)
+    }
+
+    /// `[]` for `Empty::List`, null otherwise.
+    fn empty(&mut self, e: Empty) -> S::Out {
+        if e != Empty::List {
+            return self.sink.scalar(Value::Null);
+        }
+        self.filled += 1;
+        self.sink.open(false);
+        self.sink.list(Vec::new())
     }
 
     fn element<D: Doc>(&mut self, d: Option<D>, tx: &[TxRef], stat: usize) -> S::Out {

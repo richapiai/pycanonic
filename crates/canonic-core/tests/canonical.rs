@@ -266,11 +266,11 @@ fn x_empty_parses_in_language_2() {
         ("{}", Empty::Object),
         ("missing", Empty::Missing),
     ] {
-        let s = load_schema(
-            &json!({ "properties": { "x": { "type": "array", "x-empty": tag } } }),
-            2,
-        )
-        .unwrap();
+        let x = match tag {
+            "{}" => json!({ "properties": { "a": {} }, "x-empty": tag }),
+            _ => json!({ "type": "array", "x-empty": tag }),
+        };
+        let s = load_schema(&json!({ "properties": { "x": x } }), 2).unwrap();
         assert_eq!(child(&s.root, "x").empty, Some(want));
         // Language 1 ignores it.
         let s = load_schema(&json!({ "properties": { "x": { "x-empty": tag } } }), 1).unwrap();
@@ -312,4 +312,51 @@ fn language_2_schemas_take_any_name_open_maps_and_nested_arrays() {
         child(&s.root, "grid").kind,
         Kind::Array { nested: true, .. }
     ));
+}
+
+#[test]
+fn x_empty_and_x_open_need_the_right_node_kind() {
+    let err = |node: serde_json::Value| {
+        load_schema(&json!({ "properties": { "x": node } }), 2)
+            .unwrap_err()
+            .to_string()
+    };
+    let leaf = json!({ "type": "string" });
+    let array = json!({ "type": "array", "items": { "type": "string" } });
+    let object = json!({ "type": "object", "properties": { "a": { "type": "string" } } });
+    let with = |n: &serde_json::Value, k: &str, v: serde_json::Value| {
+        let mut n = n.clone();
+        n[k] = v;
+        n
+    };
+    for (node, tag, want) in [
+        (&leaf, "[]", "an array node"),
+        (&leaf, "{}", "an object node"),
+        (&array, "{}", "an object node"),
+        (&object, "[]", "an array node"),
+    ] {
+        assert_eq!(
+            err(with(node, "x-empty", json!(tag))),
+            format!("canonical schema: x: x-empty \"{tag}\" needs {want}")
+        );
+    }
+    for node in [&leaf, &array] {
+        assert_eq!(
+            err(with(node, "x-open", json!(true))),
+            "canonical schema: x: x-open needs an object node"
+        );
+    }
+    for (node, tags) in [
+        (&leaf, ["null", "missing"].as_slice()),
+        (&array, &["null", "[]", "missing"]),
+        (&object, &["null", "{}", "missing"]),
+    ] {
+        for tag in tags {
+            load_schema(
+                &json!({ "properties": { "x": with(node, "x-empty", json!(tag)) } }),
+                2,
+            )
+            .unwrap();
+        }
+    }
 }

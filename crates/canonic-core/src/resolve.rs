@@ -2,9 +2,9 @@
 //! spec field, and resolution stops at the first one. Port of canonic/packages/canonic/src/resolve.ts
 //! and the compile entry point of artifact.ts.
 
-use crate::canonical::{Kind, Node, load_schema};
+use crate::canonical::{Empty, Kind, Node, load_schema};
 use crate::plan::{
-    CompileError, Field, Format, ListKind, Meta, Named, Plan, RoutingField, Scalar, TxRef,
+    CompileError, Field, Format, ListKind, ListOps, Meta, Named, Plan, RoutingField, Scalar, TxRef,
 };
 use crate::spec::{
     ArrayRule, FieldMap, Rule, ScalarRule, Source, Step, TransformRef, field_key, parse_spec,
@@ -142,10 +142,16 @@ impl Resolver<'_> {
                 None => ListKind::Plain(tx),
             }
         };
+        // The spec's option first, then the schema's `x-empty`, then language 1 behavior.
+        let ops = ListOps {
+            missing: r.missing.or(node.empty).unwrap_or(Empty::Null),
+            empty: r.empty.unwrap_or(Empty::List),
+        };
         Ok(Field::List {
             from: r.from.clone(),
             kind,
             stat,
+            ops,
         })
     }
 
@@ -224,6 +230,13 @@ impl Resolver<'_> {
                         },
                     ) => Field::Object(self.build(c, &path, mapped)),
                     (None, _) => Field::Null,
+                };
+                // A mapped array handles `x-empty: "missing"` itself (`ListOps::missing`).
+                let value = match (child.empty, value) {
+                    (Some(Empty::Missing), v) if !matches!(v, Field::List { .. }) => {
+                        Field::OmitNull(Box::new(v))
+                    }
+                    (_, v) => v,
                 };
                 Named {
                     name: name.clone(),

@@ -89,7 +89,7 @@ pub fn levels(py: Python<'_>, names: &[String], fields: &[Named<Field>]) -> Vec<
             .map(|(i, f)| {
                 let mut p = path.clone();
                 p.push(i);
-                let child = match &f.value {
+                let child = match f.value.inner() {
                     Field::Object(c) => Some(walk(out, ty, names, c, p.clone())),
                     _ => None,
                 };
