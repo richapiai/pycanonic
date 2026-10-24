@@ -35,6 +35,7 @@ class LeafFit:
     examples: list[dict[str, Any]]
     alternatives: list[dict[str, Any]]
     mixed_empty: bool = False  # the default's samples disagree on the empty form: never auto
+    one_value: bool = False  # the default sent one value or none in every pair: never auto
 
 
 @dataclass(frozen=True)

@@ -279,6 +279,23 @@ def stubs(rows: list[Row], pairs: list[Pair], provider: str, endpoint: str) -> s
     return "\n".join(out) + "\n"
 
 
+def _defaults(doc: Any, parts: list[str]) -> Iterator[Any]:
+    """The default's values for a field key split on `[]` (`jobs[].title` gives `["jobs", ".title"]`),
+    one per element for item fields."""
+    head, rest = parts[0].lstrip("."), parts[1:]
+    v = get(doc, _segs(head)) if head else doc
+    if rest in ([], [""]):
+        yield v
+    elif isinstance(v, list):
+        for x in v:
+            yield from _defaults(x, rest)
+
+
+def _one_value(pairs: list[Pair], key: str) -> bool:
+    """The default sends the same value, or no value, in every pair: no rule beats a constant there."""
+    return len({json.dumps(v, sort_keys=True) for p in pairs for v in _defaults(p.default, key.split("[]")) if not _empty(v)}) < 2
+
+
 def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) -> FitResult:
     """The in-process core of `run`: fit, decide, prove. Writes nothing.
 
@@ -306,8 +323,11 @@ def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) ->
         note = f"Rejects {len(hit)} of {len(pairs)} pairs: rejects {', '.join(hit)}, where the default answered. Those pairs are left out of every other field's support."
         f.rows.append(Row(f"reject[{i}]", "", "reject", cond, len(hit), len(pairs), 1.0, [], note))
     for r in f.rows:
-        lf = LeafFit(r.field, None, r.kind, r.support, r.total, r.holdout, [], [], r.mixed_empty)
+        one = not r.field.startswith("reject[") and _one_value(f.pairs, r.field)
+        lf = LeafFit(r.field, None, r.kind, r.support, r.total, r.holdout, [], [], r.mixed_empty, one)
         r.tier = decide.tier(lf, min_auto=options.min_auto, min_pairs=options.min_pairs, floor=FLOOR)
+        if one and r.tier == "review" and r.kind in decide.AUTO:
+            r.note = " ".join(filter(None, [r.note, "The default sent one value or none in every pair, so the samples cannot tell this rule from a constant."]))
     return FitResult(options.provider, options.endpoint, len(pairs), f.rows, spec, stubs(f.rows, pairs, options.provider, options.endpoint))
 
 

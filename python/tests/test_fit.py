@@ -680,3 +680,25 @@ def test_stub_escapes_quotes_and_backslashes(tmp_path: Path) -> None:
 def test_report_suffix_appended(tmp_path: Path) -> None:
     cli(tmp_path, "--report", str(tmp_path / "report.v2"))
     assert (tmp_path / "report.v2.md").exists() and (tmp_path / "report.v2.json").exists()
+
+
+# --- fixes from the fit_eval gate ---
+
+
+def test_one_default_value_never_auto() -> None:
+    """A default that sends one value in every pair, or none, proves no rule: a decoy path that is
+    constant in the samples (billing.region) reproduces it as well as the true one (fit_eval found
+    region and nickname wrong on fresh pairs)."""
+    pairs = [
+        Pair(f"p{i}.json", {"name": f"n{i}", "region": "na", "nick": None, "jobs": [{"t": f"t{i}", "type": "full"}]},
+             {"n": f"n{i}", "billing": {"region": "na"}, "regionCode": "na", "nickName": None, "jobs": [{"t": f"t{i}", "type": "full"}]}, None)
+        for i in range(10)
+    ]
+    rows = {r.field: r for r in fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e")).fields}
+    assert (rows["region"].kind, rows["region"].tier) == ("path", "review")
+    assert "one value" in rows["region"].note
+    assert (rows["nick"].kind, rows["nick"].tier) == ("empty", "review")
+    assert (rows["jobs[].type"].kind, rows["jobs[].type"].tier) == ("path", "review")
+    assert rows["name"].tier == rows["jobs[].t"].tier == rows["jobs[]"].tier == "auto"
+    assert tier(replace(lf("path", 10, 10), one_value=True)) == "review"
+
