@@ -91,7 +91,10 @@ pub struct Node {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Schema {
+    /// The root object's children. Empty for an array root.
     pub root: Vec<(String, Node)>,
+    /// Language 2: the root node when it is an array, which a spec maps with the field `"[]"`.
+    pub array: Option<Node>,
 }
 
 // toJSON and every own name of Object.prototype: a record or a view cannot safely carry them.
@@ -248,17 +251,26 @@ fn load_object(
 }
 
 /// Loads the schema for a spec of `language` (1 or 2). Language 2 accepts any field name, open maps
-/// (`x-open`), arrays of arrays and `x-empty`.
+/// (`x-open`), arrays of arrays, `x-empty` and an array root.
 pub fn load_schema(schema: &Value, language: u8) -> Result<Schema, Issue> {
     let issue = |message| Issue {
         at: "canonical schema".into(),
         message,
     };
-    match load_node(schema, "", false, language >= 2)
-        .map_err(issue)?
-        .kind
-    {
-        Kind::Object { children, .. } => Ok(Schema { root: children }),
+    let node = load_node(schema, "", false, language >= 2).map_err(issue)?;
+    match node.kind {
+        Kind::Object { children, .. } => Ok(Schema {
+            root: children,
+            array: None,
+        }),
+        // The body is always there, so there is no key to leave out.
+        Kind::Array { .. } if language >= 2 && node.empty == Some(Empty::Missing) => {
+            Err(issue("an array root can't have x-empty \"missing\"".into()))
+        }
+        Kind::Array { .. } if language >= 2 => Ok(Schema {
+            root: Vec::new(),
+            array: Some(node),
+        }),
         _ => Err(issue("root must be an object with properties".into())),
     }
 }

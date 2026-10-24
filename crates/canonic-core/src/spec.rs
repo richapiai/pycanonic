@@ -301,9 +301,11 @@ fn is_canon(s: &str) -> bool {
 /// A field key as canonical names and whether it ends in `[]`. Language 1 keys are dotted
 /// identifiers. Language 2 keys use the path grammar with keys only, so `["first-name"]` and
 /// `meta["@type"]` name any field. None for a key that is not valid in either. The resolver also
-/// reads language 1 keys with it, which gives the same names as splitting on dots.
+/// reads language 1 keys with it, which gives the same names as splitting on dots. `"[]"` alone is
+/// the array root (no names).
 pub fn field_key(key: &str) -> Option<(Vec<String>, bool)> {
     let (path, array) = match key.strip_suffix("[]") {
+        Some("") => return Some((Vec::new(), true)),
         Some(p) => (p, true),
         None => (key, false),
     };

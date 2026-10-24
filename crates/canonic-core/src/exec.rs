@@ -229,6 +229,8 @@ pub struct Program {
     reject: Vec<Cond<Path>>,
     /// Some path reads `$input`, the request context.
     input: bool,
+    /// `Plan::array`: the output is the one root field's value, not an object.
+    array: bool,
 }
 
 struct Builder<'p> {
@@ -486,6 +488,7 @@ impl Program {
             keys: b.keys,
             reject,
             input: b.input,
+            array: plan.array,
         })
     }
 
@@ -773,7 +776,7 @@ pub fn execute<D: Doc, S: Sink>(
         custom,
         filled: 0,
     }
-    .object(&program.root, &mut f)
+    .root(program, &mut f)
 }
 
 /// One field of `program` over `doc`, as `execute` maps it, counting no stats. `path` is the
@@ -795,7 +798,7 @@ pub fn execute_field<D: Doc, S: Sink>(
     };
     let mut f = Frame::new(doc.cloned(), &program.scope, false);
     let Some((&last, parents)) = path.split_last() else {
-        return Some(e.object(&program.root, &mut f));
+        return Some(e.root(program, &mut f));
     };
     let mut level = &program.root;
     for &i in parents {
@@ -821,6 +824,14 @@ struct Exec<'e, S> {
 }
 
 impl<S: Sink> Exec<'_, S> {
+    /// The root object, or for an array root its one field's value.
+    fn root<D: Doc>(&mut self, program: &Program, f: &mut Frame<'_, D>) -> S::Out {
+        match (program.array, program.root.first()) {
+            (true, Some((_, op))) => self.op(op, f),
+            _ => self.object(&program.root, f),
+        }
+    }
+
     fn object<D: Doc>(&mut self, fields: &[(usize, Op)], f: &mut Frame<'_, D>) -> S::Out {
         self.sink.open(true);
         let mut members = Vec::with_capacity(fields.len());

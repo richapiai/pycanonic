@@ -20,17 +20,25 @@ def _types(node: dict[str, Any]) -> list[str]:
     return t if isinstance(t, list) else [t]
 
 
+def _fields(node: dict[str, Any]) -> dict[str, Any]:
+    """A const per field of an object node; leaves copy their own key."""
+    return {
+        json.dumps([k]): {"const": None} if {"object", "array"} & set(_types(n)) else json.dumps([k])
+        for k, n in node["properties"].items()
+    }
+
+
 def derive(samples: list[Any]) -> dict[str, Any]:
-    """derive_schema, checked to compile with a trivial language 2 spec (a const per top-level field;
-    leaves copy their own key) when the root is an object."""
+    """derive_schema, checked to compile with a trivial language 2 spec: `_fields` for an object
+    root, and a `"[]"` rule from `$` for an array root."""
     schema = derive_schema(samples)
-    if schema.get("type") == "object":
-        fields = {
-            json.dumps([k]): {"const": None} if {"object", "array"} & set(_types(n)) else json.dumps([k])
-            for k, n in schema["properties"].items()
-        }
-        spec = {"language": 2, "provider": "acme", "endpoint": "orgs", "version": 1, "status": "promoted", "fields": fields}
-        pycanonic.compile_spec(spec, schema)
+    if "properties" in schema:
+        fields = _fields(schema)
+    else:
+        items = schema.get("items", {})
+        fields = {"[]": {"from": "$", "item": _fields(items)} if "properties" in items else {"from": "$"}}
+    spec = {"language": 2, "provider": "acme", "endpoint": "orgs", "version": 1, "status": "promoted", "fields": fields}
+    pycanonic.compile_spec(spec, schema)
     return schema
 
 
@@ -95,6 +103,10 @@ def test_bare_array_root() -> None:
         "x-empty": "[]",
     }
     assert flags(s) == []
+    # The root node is `$`. Its elements are `[]` and their fields `[].a`: the spec's `"[]"` key
+    # and the stat slots `[]` and `[].a` read the same nodes, as `t` and `t[]` do for a field `t`.
+    mixed = derive([[{"a": 1}, {"a": "x"}, 2], [], None])
+    assert flags(mixed) == [("$", "mixed empty"), ("[]", "mixed types"), ("[].a", "mixed types")]
 
 
 def test_nested_arrays_and_quoted_keys() -> None:

@@ -333,3 +333,24 @@ def test_definition_stats_follow_each_use():
     fields = a.stats_snapshot()["fields"]
     assert fields["people[].name"]["fill"] == 3
     assert fields["lead[].name"]["fill"] == 0
+
+
+def test_array_root_three_paths():
+    schema = {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}}}, "x-empty": "[]"}
+    a = pycanonic.compile_spec(_spec({"[]": {"from": "$", "item": {"name": "n"}}}), schema)
+    for body, want in [([{"n": "a"}, {"x": 1}], [{"name": "a"}, {"name": None}]), (None, []), ({"n": "a"}, None)]:
+        for way in _ways(a, body):
+            assert way() == want
+    assert list(a.stats_snapshot()["fields"]) == ["[]", "[].name"]
+    assert a.extract(b'[{"n": "a"}]') == {}
+    s = a.stream()
+    s.push(b'[{"n": "a"}]')
+    assert s.result() == {}
+
+
+def test_array_root_container_transform():
+    body = {"staff": [{"name": "ada", "team": "core"}, {"name": "bo", "team": "web"}]}
+    spec = _spec({"[]": {"from": "staff", "transform": "by_team"}})
+    a = pycanonic.compile_spec(spec, TEAMS["properties"]["teams"], transforms={"by_team": by_team})
+    for way in _ways(a, body):
+        assert way() == [{"team": "core", "members": ["ada"]}, {"team": "web", "members": ["bo"]}]

@@ -300,6 +300,10 @@ pub struct Plan {
     /// `$input` paths and canonical keys stay exact.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub case_insensitive: bool,
+    /// Language 2: the root is an array. `fields` is its one field `"[]"`, whose value is the
+    /// whole output.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub array: bool,
 }
 
 /// A `reject` condition and its spec JSON text, the reason `Rejected` gives.
@@ -375,6 +379,7 @@ impl Plan {
                 .any(|t| matches!(t, TxRef::Builtin(b) if b.is_language_2()))
         }
         self.context
+            || self.array
             || self.case_insensitive
             || !self.reject.is_empty()
             || self.fields.iter().any(|n| field(&n.value))
@@ -384,7 +389,11 @@ impl Plan {
     /// `email <- coalesce(a, b) | trim | lower | validate email`.
     pub fn source(&self) -> String {
         let mut out = String::new();
-        lines(&mut out, "", &self.fields);
+        match (self.array, self.fields.first()) {
+            // The root list's line is `[] <- ...`, its item fields `[].name <- ...`.
+            (true, Some(root)) => line(&mut out, "", &root.value),
+            _ => lines(&mut out, "", &self.fields),
+        }
         out
     }
 }

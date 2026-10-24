@@ -288,6 +288,9 @@ impl Resolver<'_> {
                     return Err(format!("{kat}: routing fields can't have when"));
                 }
             }
+            if path.is_empty() {
+                return Err(format!("{kat}: only an array root has the field \"[]\""));
+            }
             let target = lookup(children, &path).ok_or_else(|| {
                 let name = key.strip_suffix("[]").unwrap_or(key);
                 format!("{kat}: canonical schema has no field {}", json(name))
@@ -384,6 +387,31 @@ impl Resolver<'_> {
             return Err(format!("{at}[{}]: inside a const field", json(key)));
         }
         Ok(built)
+    }
+
+    /// Language 2: the one field `"[]"` of an array root, an array rule over the whole output.
+    fn array_root(&mut self, node: &Node, map: &FieldMap) -> Result<Vec<Named<Field>>, String> {
+        let rule = match map.as_slice() {
+            [(key, rule)] if key == "[]" => rule,
+            _ => return Err(r#"fields: an array root needs exactly the field "[]""#.into()),
+        };
+        let at = r#"fields["[]"]"#;
+        let Rule::Array(a) = rule else {
+            return Err(format!(
+                "{at}: an array root needs an array rule without when"
+            ));
+        };
+        self.stat_names.push("[]".into());
+        let value = match self.container(rule, node, 0, at)? {
+            Some(f) => f,
+            None => self.array(a, node, 0, at)?,
+        };
+        let name_idx = self.intern("[]");
+        Ok(vec![Named {
+            name: "[]".into(),
+            name_idx,
+            value,
+        }])
     }
 
     /// Walks the canonical tree in schema order so every canonical field appears, null when unmapped.
@@ -617,7 +645,10 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
     };
     let resolved = (|| {
         check_definitions(&s.fields, &s.definitions)?;
-        let fields = r.object(&canonical.root, &s.fields, None, "fields")?;
+        let fields = match &canonical.array {
+            Some(node) => r.array_root(node, &s.fields)?,
+            None => r.object(&canonical.root, &s.fields, None, "fields")?,
+        };
         let mut routed = Vec::new();
         routing(&fields, &r.stat_names, &mut routed);
         let mut order = Vec::new();
@@ -660,6 +691,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
             .map(|(cond, reason)| Reject { cond, reason })
             .collect(),
         case_insensitive: s.case_insensitive,
+        array: canonical.array.is_some(),
     };
     if plan.needs_v2() {
         plan.format = Format(2);

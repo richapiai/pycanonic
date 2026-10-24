@@ -1,0 +1,43 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "[]": {
+        "from": "$",
+        "pluck": "n",
+        "transform": "lower"
+      }
+    }
+  },
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    }
+  },
+  "inputs": [
+    {
+      "body": [
+        {
+          "n": "A"
+        },
+        {
+          "n": "B"
+        },
+        {
+          "x": 1
+        }
+      ],
+      "context": null,
+      "expected": [
+        "a",
+        "b",
+        null
+      ]
+    }
+  ]
+}

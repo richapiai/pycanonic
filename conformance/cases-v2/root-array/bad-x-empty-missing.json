@@ -1,0 +1,30 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "[]": {
+        "from": "$",
+        "item": {
+          "name": "n"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "x-empty": "missing"
+  },
+  "error": "canonical schema: an array root can't have x-empty \"missing\""
+}

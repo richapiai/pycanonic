@@ -1,0 +1,30 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "[]": {
+        "from": "$",
+        "item": {
+          "name": "n"
+        }
+      },
+      "name": "n"
+    }
+  },
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "error": "acme people v1: fields: an array root needs exactly the field \"[]\""
+}

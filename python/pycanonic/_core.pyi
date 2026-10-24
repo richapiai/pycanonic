@@ -113,7 +113,7 @@ class Artifact:
     def source(self) -> str: ...
     @property
     def stats(self) -> Stats: ...
-    def map(self, src: _Source, context: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def map(self, src: _Source, context: Mapping[str, Any] | None = None) -> Any:
         """`$input` paths read `context`, the request inputs. Without one they read as missing.
 
         A plan that reads `$input` checks `context` the same way on every path: it must be a
@@ -123,6 +123,9 @@ class Artifact:
         ignores `context` and does not check it.
 
         Raises `Rejected` when a `reject` condition holds.
+
+        An object root gives a `dict`. An array root (language 2) gives a `list`, or `None` when
+        the source is not an array or is missing under `"x-empty": "null"`.
         """
     def view(self, src: _Source) -> View:
         """Language 1 plans only. Raises `ValueError` on a plan that uses a language 2 rule."""

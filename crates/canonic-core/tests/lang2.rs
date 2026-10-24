@@ -186,7 +186,7 @@ fn language_2_field_keys_use_the_path_grammar() {
             .map(ToString::to_string)
             .collect::<Vec<_>>()
     };
-    for k in ["a[0]", "$", "$.a", "[]", "a..b", "[\"a\"]x"] {
+    for k in ["a[0]", "$", "$.a", "a..b", "[\"a\"]x"] {
         assert_eq!(
             bad(k),
             [format!(
@@ -201,6 +201,8 @@ fn language_2_field_keys_use_the_path_grammar() {
         "meta[\"@type\"]",
         "[\"@graph\"][]",
         "a.b",
+        // The array root.
+        "[]",
     ] {
         assert!(bad(k).is_empty(), "{k}");
     }
@@ -604,4 +606,63 @@ fn case_insensitive_keys_write_format_2_and_load_back() {
     let exact = serde_json::to_value(&*keys_artifact(Some("exact")).plan).unwrap();
     assert_eq!(exact["format"], 1);
     assert!(exact.get("case_insensitive").is_none());
+}
+
+#[test]
+fn array_root_round_trips_counts_and_extracts_nothing() {
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = json!({"[]": {"from": "$", "item": {"name": "n"}}});
+    let schema = json!({"type": "array", "items": {"type": "object",
+        "properties": {"name": {"type": "string"}}}});
+    let plan = compile(&spec, &schema, &[]).unwrap();
+    let text = serde_json::to_value(&plan).unwrap();
+    assert_eq!(text["format"], 2);
+    let loaded: Plan = serde_json::from_value(text.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&loaded).unwrap(), text);
+    let a = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
+    let body = br#"[{"n": "a"}, {"x": 1}]"#;
+    assert_eq!(
+        a.map_json(body, None).unwrap(),
+        br#"[{"name":"a"},{"name":null}]"#
+    );
+    assert_eq!(
+        a.map_named(body, None).unwrap(),
+        canonic_core::Out::List(vec![
+            canonic_core::Out::Map(vec![("name".into(), canonic_core::Out::Str("a".into()))]),
+            canonic_core::Out::Map(vec![("name".into(), canonic_core::Out::Null)]),
+        ])
+    );
+    let names: Vec<_> = a
+        .stats
+        .snapshot()
+        .fields
+        .into_iter()
+        .map(|(n, s)| (n, s.fill))
+        .collect();
+    assert_eq!(names, [("[]".to_string(), 2), ("[].name".to_string(), 2)]);
+    assert!(a.plan.routing.is_empty());
+    assert!(a.extract(body).is_empty());
+}
+
+#[test]
+fn array_root_source_and_other_errors() {
+    let schema = json!({"type": "array", "items": {"type": "string"}});
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = json!({"[]": {"from": "data", "transform": "trim"}});
+    let plan = compile(&spec, &schema, &[]).unwrap();
+    assert_eq!(plan.source(), "[] <- data[] | trim\n");
+    let when = json!({"[]": {"from": "$", "when": {"path": "a", "present": true}}});
+    assert_eq!(
+        compile_err(when, schema.clone()),
+        r#"acme people v1: fields["[]"]: an array root needs an array rule without when"#
+    );
+    // An object root has no field "[]".
+    assert_eq!(
+        compile_err(json!({"[]": {"from": "$"}}), schema_obj()),
+        r#"acme people v1: fields["[]"]: only an array root has the field "[]""#
+    );
+}
+
+fn schema_obj() -> J {
+    json!({"type": "object", "properties": {"tags": {"type": "array"}}})
 }
