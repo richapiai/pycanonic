@@ -14,7 +14,8 @@
     "extract, anchored / orjson.loads + read": 0.049,
     "extract 5, 10.7 KB / orjson.loads + read": 0.069,
     "extract 5, anchored / orjson.loads + read": 0.04,
-    "stream, 1 KB chunks / join + orjson.loads + read": 0.31
+    "stream, 1 KB chunks / join + orjson.loads + read": 0.31,
+    "map grouped, bytes in / orjson.loads + hand-written py": 0.235
   },
   "linux-x86_64": {
     "map, bytes in / orjson.loads + hand-written py": 0.315,

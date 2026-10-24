@@ -7,6 +7,7 @@
     python bench/run.py --vs-ts ../canonic  runs the TypeScript bench in that checkout and fails if a gated row is slower
 """
 
+import itertools
 import json
 import platform as _platform
 import re
@@ -43,6 +44,37 @@ chunks = [[r[k : k + 1024] for k in range(0, len(r), 1024)] for r in big_raws]
 hand_written, hand_routing, hand_read = person.hand_written, person.hand_routing, routing.hand_read
 hand_written_pure = person.hand_written_pure
 
+# Language 2: the work history grouped by company, as a provider adapter does it. TypeScript has no
+# language 2, so this row is not in VS_TS.
+_jobs = {"type": "object", "properties": {"company": {"type": "string"}, "start": {"type": "string"}, "end": {"type": "string"}, "roles": {"type": "array", "items": {"type": "string"}}}}
+grouped = compile_spec(
+    {
+        "language": 2, "provider": "bench", "endpoint": "person.jobs", "version": 1, "status": "promoted",
+        "fields": {"jobs[]": {"from": "workHistory", "group_by": "orgName", "item": {
+            "company": "orgName",
+            "start": {"aggregate": "min", "from": "$group[].from"},
+            "end": {"aggregate": "max", "from": "$group[].to", "nulls": "propagate"},
+            "roles[]": {"from": "$group", "pluck": "role"},
+        }}},
+    },
+    {"type": "object", "properties": {"jobs": {"type": "array", "items": _jobs}}},
+)
+
+
+def hand_grouped(p):
+    """The grouped spec by hand: consecutive runs of one orgName, min start, max end (null if any end is null)."""
+    src = p.get("workHistory")
+    if not isinstance(src, list):
+        return {"jobs": None}
+    jobs = []
+    for _, run_ in itertools.groupby(src, key=lambda e: e.get("orgName")):
+        run_ = list(run_)
+        starts = [e["from"] for e in run_ if e.get("from") is not None]
+        ends = [e.get("to") for e in run_]
+        end = None if None in ends else max(ends)
+        jobs.append({"company": run_[0].get("orgName"), "start": min(starts) if starts else None, "end": end, "roles": [e.get("role") for e in run_]})
+    return {"jobs": jobs}
+
 
 def view_reads(v):
     return v.email, v.phone, v.company.domain
@@ -77,6 +109,8 @@ for i in range(64):
     check(scan5.extract(big_raws[i]) == read == TS["hand_read"][i], f"extract 5, body {i}")
     check(anchored5.extract(big_raws[i]) == read, f"extract 5, anchored, body {i}")
     check(stream(scan5, chunks[i]) == read, f"stream, body {i}")
+    check(grouped.map(raws[i]) == hand_grouped(parsed[i]), f"map grouped, body {i}")
+check(any(len(hand_grouped(p)["jobs"]) < len(p["workHistory"]) for p in parsed), "map grouped: no body has a group of two")
 
 loads = orjson.loads
 CASES = [
@@ -114,6 +148,11 @@ CASES = [
     }),
     ("stream, 1 KB chunks", lambda i: stream(scan5, chunks[i]), {
         "join + orjson.loads + read": lambda i: hand_read(loads(b"".join(chunks[i]))),
+    }),
+    # gate() checks only the ratios a platform's baseline has, so this row is reported but not gated
+    # on linux-x86_64 until the bench box records its baseline.
+    ("map grouped, bytes in", lambda i: grouped.map(raws[i]), {
+        "orjson.loads + hand-written py": lambda i: hand_grouped(loads(raws[i])),
     }),
 ]
 

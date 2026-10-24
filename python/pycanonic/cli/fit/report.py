@@ -10,13 +10,15 @@ from typing import Any
 
 _TRANSFORM = "A value format that the samples did not show, such as a date without a month. The transform returns null and counts an error. Watch the error counts after launch."
 
-# The design table's texts, verbatim. Kinds with no row of their own: the other transforms share the
-# transform row, and join, wrap, flatten, filter, null_if, keys, if_empty and asked have short texts of their own.
+# The design table's texts, verbatim except the strip rows: a value without the prefix passes
+# through unchanged, it does not map to null. Kinds with no row of their own: the other transforms
+# share the transform row, and join, wrap, flatten, filter, null_if, keys, if_empty and asked have
+# short texts of their own.
 RISKS: dict[str, str] = {
     "path": "The provider renames a key later. Caught by drift detection and the fingerprint, not by `fit`.",
     **{k: _TRANSFORM for k in ["cast", "trim", "lower", "upper", "format_date", "parse_date", "split", "split_name", "title", "to_string", "parse_number", "parse_range", "to_domain", "normalize_phone", "normalize_linkedin"]},
-    "strip_prefix": "A record with a different prefix maps to null.",
-    "strip_suffix": "A record with a different prefix maps to null.",
+    "strip_prefix": "A record with a different prefix keeps it, so the value comes out with that prefix still on.",
+    "strip_suffix": "A record with a different suffix keeps it, so the value comes out with that suffix still on.",
     "empty": "The default provider itself is inconsistent (sometimes null, sometimes `[]`). The schema flags fields where samples disagree, and those fields go to review.",
     "coalesce": "The second source has different meaning on records the samples did not cover.",
     "lookup": 'A value outside the table. `"else"` decides: keep (wrong vocabulary passes through), null (data lost), or a fixed value.',
@@ -24,7 +26,7 @@ RISKS: dict[str, str] = {
     "regex": "A URL or string format the samples did not show.",
     "group": "The grouping key is wrong for records with gaps or repeats, for example two stints at one company with another job between them. Check with a pair that has that pattern.",
     "presence": "If the provider sends the parent object with different content, the object can be null by mistake.",
-    "if_empty": "The default sent this object in every sample, so its empty form is a guess: null when every leaf in it is null. If the default sends {} or an object of nulls there, the output differs.",
+    "if_empty": "The default sent this object in every sample, so its empty form is a guess. If every leaf in it is null, the object is null. If the default sends {} or an object of nulls there, the output differs.",
     "when": "An input combination the samples did not show.",
     "omit": "Customers parsing a fixed key set.",
     "reject": "Too strict: good answers fail over to the next provider and cost money. Too loose: empty answers reach customers.",

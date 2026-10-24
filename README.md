@@ -94,7 +94,7 @@ acme person.enrich v1: fields["email"]: unknown transform "shout"
 
 `map` never raises on bad data. A missing source value becomes `None`. A transform that cannot handle its input returns `None` and adds one to that field's `errors` count. A routing field whose value fails its validator does the same. Only `map` and `map_json` count stats. The view and `extract` do not count. Call `snapshot()` and `reset()` once per period to get per-window counts.
 
-The default transforms are `cast`, `lower`, `trim`, `split_name`, `join`, `parse_date`, `normalize_phone`, `normalize_linkedin` and `to_domain`. Pass your own with `compile_spec(spec, canonical, transforms={"my_transform": fn})`. pycanonic catches an `Exception` from your function and counts it as a field error. See [docs/transforms.md](https://github.com/richapiai/pycanonic/blob/main/docs/transforms.md), [docs/custom-transforms.md](https://github.com/richapiai/pycanonic/blob/main/docs/custom-transforms.md) and [docs/spec-format.md](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md).
+The default transforms are `cast`, `lower`, `trim`, `split_name`, `join`, `parse_date`, `normalize_phone`, `normalize_linkedin` and `to_domain`. Pass your own with `compile_spec(spec, canonical, transforms={"my_transform": fn})`. pycanonic catches an `Exception` from your function and counts it as a field error. [docs/transforms.md](https://github.com/richapiai/pycanonic/blob/main/docs/transforms.md) covers the defaults. [docs/custom-transforms.md](https://github.com/richapiai/pycanonic/blob/main/docs/custom-transforms.md) covers your own. [docs/spec-format.md](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md) has the spec rules.
 
 A shadow artifact is a candidate version that you run next to the promoted one to compare their output. The registry holds one promoted and at most one shadow artifact per provider and endpoint:
 
@@ -217,6 +217,21 @@ This command times a spec on your own samples, single core, median of 15 rounds.
 canonic bench --schema canonical/person.enrich.json globex.json samples/
 ```
 
+## Onboarding a provider
+
+Adding a provider to an endpoint that already has a default provider takes one command and a review. Send the same requests to both providers and save the answers in two folders under the same file names. Then:
+
+```sh
+canonic schema samples/default/ --out canonical.json
+canonic fit --default samples/default/ --provider samples/new/ --schema canonical.json \
+  --provider-name globex --endpoint person.enrich --out globex.json --report report
+canonic verify globex.json --schema canonical.json --default samples/default/ --provider samples/new/
+```
+
+`canonic schema` records the default's shape, key order and empty values. `canonic fit` learns a spec from the pairs and sorts every field into auto, review or manual. Each field in the report has its evidence and what can break on live traffic. `canonic verify` maps every pair and exits 1 on a shape failure or a field below the match bar, so CI can gate the provider. A reviewer locks the fields they checked with `--keep`, and `fit` refits the rest.
+
+On 13 invented providers, 75% of the fields land in auto, and no auto field is wrong on fresh pairs. The target is 80%. The specs use spec language 2 (`"language": 2`), which only pycanonic runs. See [docs/fit.md](https://github.com/richapiai/pycanonic/blob/main/docs/fit.md) and the [Language 2](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md#language-2) rules.
+
 ## Same behavior as TypeScript
 
 `conformance/cases/` holds 145 cases exported from the TypeScript package. Each case has a spec, its schema, raw inputs, and what the TypeScript artifact returns for them, or the exact compile error. `cargo test` and `pytest python/tests` run every case through `map(bytes)`, `map(dict)`, `map_json`, `extract` and the stats. One case is excluded as a documented divergence: two keys that differ only in a lone surrogate. CI fails once the copy is more than 30 days old. See [conformance/README.md](conformance/README.md).
@@ -234,8 +249,8 @@ pycanonic ships these parts:
 - `Registry` for promoted and shadow artifacts
 - per-field `stats`, `FillMonitor`, `fingerprint` and `shape`
 - `ShadowDiff` and `merge_gate`
-- nine default transforms and seven routing validators
-- the CLI: `infer`, `test`, `diff`, `build`, `bench`
+- nine default transforms and seven routing validators, and thirteen more transforms for language 2
+- the CLI: `infer`, `test`, `diff`, `build`, `bench`, `schema`, `fit` and `verify`
 
 Your deployment wires them together:
 
@@ -251,7 +266,8 @@ Your deployment wires them together:
 
 - [How it works](https://github.com/richapiai/pycanonic/blob/main/docs/how-it-works.md)
 - [API reference](https://github.com/richapiai/pycanonic/blob/main/docs/api.md)
-- [Spec format](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md)
+- [Spec format](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md), language 2 included
+- [Onboarding a provider](https://github.com/richapiai/pycanonic/blob/main/docs/fit.md)
 - [Transforms](https://github.com/richapiai/pycanonic/blob/main/docs/transforms.md)
 - [Custom transforms](https://github.com/richapiai/pycanonic/blob/main/docs/custom-transforms.md)
 - [Streaming](https://github.com/richapiai/pycanonic/blob/main/docs/streaming.md)

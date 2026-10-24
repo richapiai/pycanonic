@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+Spec language 2 and three commands to onboard a provider from paired samples. Language 1 specs behave as before, and the TypeScript conformance corpus passes unchanged.
+
+- Spec language 2, turned on with `"language": 2`. It adds constants, empty values for arrays and optional objects. It adds the list options `wrap`, `filter`, `unique`, `sort_by` and `limit`, and flatten paths. It also adds `group_by` with aggregates, `$input` with `when` and `omit`, `reject`, `definitions` and `"keys": "case_insensitive"`. See [docs/spec-format.md](docs/spec-format.md#language-2).
+- `map` and `map_json` take `context=`, the request inputs that `$input` paths read.
+- `pycanonic.Rejected`. If a `reject` condition holds, `map` and `map_json` raise it. Its `reason` is the condition as JSON text. `stats.snapshot()` counts rejections under `"rejected"`.
+- Thirteen new transforms for language 2. The string transforms are `regex`, `strip_prefix`, `strip_suffix`, `replace`, `lookup`, `null_if`, `upper`, `title`, `split` and `to_string`. The others are `format_date`, `parse_number` and `parse_range`. `parse_date` takes `{"formats": [...]}`.
+- A custom transform on an array or object field can return a whole list or dict. The result is checked against the canonical node.
+- Language 2 canonical schemas accept any key name, `x-open` maps, arrays of arrays, `x-empty` and an array root. A spec maps an array root with the field key `"[]"`, and `map` returns a list.
+- Plan format 2 for plans that use a language 2 rule. Format 1 plans still load, and a plan with no language 2 rule is still written as format 1.
+- `canonic schema` derives a canonical schema from the default provider's samples.
+- `canonic fit` learns a language 2 spec from paired samples and sorts every field into auto, review or manual. On the 13 invented providers of `python/tests/fit_eval/`, 75% of the fields are auto and no auto field is wrong. The 80% target is not met yet. See [docs/fit.md](docs/fit.md).
+- `canonic verify` maps every pair through a spec. It exits 1 on a shape failure, a field below `--min-match`, a reject that throws away a correct answer, or too many rejects.
+- `canonic test` fixtures take `"context"` and `"expected": {"$rejected": ...}`.
+- `bench/run.py` has a row for a grouped language 2 spec on bytes. It is gated on darwin-arm64 only, until the Linux bench box records its baseline.
+
+Language 2 is pycanonic-only, and `view()` supports language 1 only. [docs/known-limits.md](docs/known-limits.md) lists these limits and the rest.
+
 ## 0.1.0
 
 The first release. pycanonic is the Python version of the TypeScript canonic, with a Rust core. It reads the same spec files and gives the same output on the 145 cases of the shared conformance corpus, with one documented divergence.

@@ -2,6 +2,8 @@
 
 pycanonic ships nine default transforms and seven routing validators. They live in `crates/canonic-core/src/transforms.rs`, and Python sees them as `default_transforms` and `validators`. Each one is a port of the TypeScript function, and the conformance corpus checks them against it.
 
+A spec with `"language": 2` can also use the thirteen transforms in [Language 2 transforms](#language-2-transforms), and `parse_date` with a list of formats. A language 1 spec that names one of them fails the compile with `unknown transform "regex"`.
+
 Every one returns null for input it cannot handle and never raises. A transform that gets a value and returns null sets the field to `None`, or to its `default`. It also adds one to that field's `errors` in `artifact.stats.snapshot()`. Property tests in `crates/canonic-core/tests/` run each transform on junk input and random values.
 
 ```python
@@ -124,3 +126,138 @@ A canonical field with `routing: true` needs a `semantic` from this table. The c
 Validators check format only. A personal address passes `email` the same way a work address does. [drift-and-learning-loop.md](drift-and-learning-loop.md) covers the known-entity check that catches that.
 
 Routing fields cannot have a `default`. `compile_spec` rejects it, because the default skips the validator.
+
+## Language 2 transforms
+
+These transforms need `"language": 2` at the top of the spec. They follow the same rules as the nine above: each one returns null for input it cannot handle and never raises. A null from a value that was not null counts one error. A null input gives null and counts no error. The compiler checks each argument. A bad pattern or an unknown output layout fails the compile with `invalid argument for <name>`.
+
+`default_transforms` holds these transforms too, for tests: `T["regex"]("a-1", "a-(\\d)")` gives `"1"`.
+
+### regex
+
+Argument, required: a pattern. If the pattern has a group, the result is group 1. Otherwise the result is the whole match. A string with no match, and anything that is not a string, gives null.
+
+| Pattern | Input | Output |
+|---|---|---|
+| `"/company/([^/?#]+)"` | `"https://x.example/company/widget-works/?a=1"` | `"widget-works"` |
+| `"id-(\\d+)"` | `"x id-42 y"` | `"42"` |
+| `"\\d+"` | `"ab12cd34"` | `"12"` |
+| `"id-(\\d+)"` | `42` | null |
+
+The patterns use the Rust `regex` crate. It runs in linear time and has no backreferences or lookaround, so a hostile pattern or input cannot hang a request.
+
+### strip_prefix and strip_suffix
+
+Argument, required: a non-empty string. A string that starts (or ends) with it loses it. A string without it comes back unchanged. A string that is nothing but the prefix gives null. Anything that is not a string gives null.
+
+| Transform | Input | Output |
+|---|---|---|
+| `{"strip_prefix": "urn:acme:member:"}` | `"urn:acme:member:ABC"` | `"ABC"` |
+| `{"strip_prefix": "urn:acme:member:"}` | `"ABC"` | `"ABC"` |
+| `{"strip_prefix": "urn:acme:member:"}` | `"urn:acme:member:"` | null |
+| `{"strip_suffix": ".git"}` | `"tools.git"` | `"tools"` |
+
+### replace
+
+Argument, required: `{"from": <text>, "to": <text>}` or `{"pattern": <regex>, "to": <text>}`. It replaces every match. `to` is plain text, also with a pattern, so `$1` is not a group reference. Anything that is not a string gives null.
+
+| Argument | Input | Output |
+|---|---|---|
+| `{"from": "_", "to": " "}` | `"data_eng"` | `"data eng"` |
+| `{"pattern": "[^0-9]+", "to": ""}` | `"+1 (415) 555-0100"` | `"14155550100"` |
+
+### lookup
+
+Argument, required: `{"table": {...}}` with an optional `"else"`. The table maps a value to a scalar or null. The key is the value's string form, as `to_string` writes it. So `2`, `2.0` and `"2"` all find the key `"2"`, and `true` finds `"true"`. An object or array input gives null.
+
+`"else"` decides what a value outside the table gives:
+
+| `else` | A value outside the table gives |
+|---|---|
+| missing, `null` or `"null"` | null, and one error |
+| `"keep"` | the value as it is |
+| any other scalar | that scalar |
+
+```json
+{"lookup": {"table": {"LIKE": "liked", "LOVE": "loved"}, "else": "keep"}}
+```
+
+### null_if
+
+Argument, required: a list of scalars. A value equal to one of them gives null. Numbers compare by value, so `0` also matches `0.0`. No other type crosses: `"0"` and `false` do not match `0`. An object or array input gives null.
+
+```json
+{"null_if": ["", "N/A", "-", 0]}
+```
+
+### upper and title
+
+No argument. `upper` uppercases a string with Unicode rules (`"straße"` becomes `"STRASSE"`). `title` uppercases the first letter or digit of each word and lowercases the rest. A word starts after any character that is not a letter, a digit or an apostrophe, so `"jean-luc o'brien"` becomes `"Jean-Luc O'brien"`. Anything that is not a string gives null.
+
+### split
+
+Argument, required: `{"sep": <non-empty text>, "index": <integer>}`. It splits a string on `sep` and takes one part. A negative index counts from the end. An index out of range, or an empty part, gives null.
+
+| Argument | Input | Output |
+|---|---|---|
+| `{"sep": " ", "index": 0}` | `"Ada Lovelace"` | `"Ada"` |
+| `{"sep": " ", "index": -1}` | `"Ada King Lovelace"` | `"Lovelace"` |
+| `{"sep": ",", "index": 1}` | `"a,,c"` | null |
+| `{"sep": ",", "index": 1}` | `"a"` | null |
+
+### to_string
+
+No argument. A string comes back as it is. Numbers and booleans come back as JavaScript `String()` writes them: `5` gives `"5"`, `2.5` gives `"2.5"`, `true` gives `"true"`. An object or array gives null.
+
+### format_date
+
+Argument, required: the output layout.
+
+| Argument | Output for `"2021-03-01T23:30:00-05:00"` |
+|---|---|
+| `"date"` | `"2021-03-02"` |
+| `"datetime"` | `"2021-03-02T04:30:00Z"` |
+| `"datetime_ms"` | `"2021-03-02T04:30:00.000Z"` |
+| `"epoch_s"` | `1614659400` |
+| `"epoch_ms"` | `1614659400000` |
+
+The input is what `parse_date` reads (`YYYY`, `YYYY-MM`, `YYYY-MM-DD` or an epoch number), or an ISO date and time. A time with an offset is converted to UTC, so the date can move. A partial date fills day 1 and month 1, and a date with no time is midnight UTC: `"2021-03"` gives `"2021-03-01T00:00:00.000Z"`.
+
+The time part comes after the `T` or space. It must read as `HH:MM`, then an optional `:SS` and fraction, then an optional offset (`Z`, `+01:00` or `+0100`). A time it cannot read gives null and counts an error. It never guesses midnight: `"2021-03-01Tjunk"` and `"2021-03-01T25:00:00Z"` give null. Other layouts, such as `"June 2014"`, give null too. Put `parse_date` with a format in front for those.
+
+### parse_date with formats
+
+Language 1 `parse_date` takes no argument. Language 2 also accepts `{"formats": [...]}`, a non-empty list of layouts. Each layout holds one `%Y` and at most one month: `%m` for 1 or 2 digits, `%b` for `Jun`, or `%B` for `June`. It can hold a `%d` only with a month. Any other character must match itself. Month names are English, in any case. The output has the precision of the layout: `"%B %Y"` on `"june 2014"` gives `"2014-06"`.
+
+The first layout that fits the whole trimmed string wins. If none fits, the language 1 rules run, so `"2021-03-01"` still gives `"2021-03-01"`. A date that does not exist (`"31 Feb 2021"` with `"%d %b %Y"`) gives null.
+
+### parse_number
+
+Argument, optional: `{"units": true}`. It reads a number from text: commas are dropped, and one leading currency sign (`$ € £ ¥ ₹`) or 3-letter code (`USD 40`) is skipped. A number input comes back as it is. A boolean gives null.
+
+With `"units": true`, a `K`, `M` or `B` suffix in any case multiplies by one thousand, one million or one billion.
+
+| Input | `parse_number` | `{"parse_number": {"units": true}}` |
+|---|---|---|
+| `"1,234.5"` | `1234.5` | `1234.5` |
+| `"USD 40"` | `40` | `40` |
+| `"40k"` | null | `40000` |
+| `"$3.2M"` | null | `3200000` |
+
+### parse_range
+
+Argument, required: `"min"` or `"max"`. It reads one end of a size range. A number input gives itself for both ends.
+
+| Input | `min` | `max` |
+|---|---|---|
+| `"51-200"` | `51` | `200` |
+| `"51 - 200"` | `51` | `200` |
+| `"5"` | `5` | `5` |
+| `"10,001+"` | `10001` | null, and one error |
+| `"a-b"` | null | null |
+
+An open range has no max, so `max` gives null and counts an error, as any null from a value that was not null does. See [known-limits.md](known-limits.md#an-open-range-counts-as-an-error).
+
+## Container transforms
+
+In a language 2 spec, a single custom transform on an array or object field gets the whole source value. It returns a list or a dict. [spec-format.md](spec-format.md#container-transforms) has the rules.

@@ -4,7 +4,8 @@
 //! One resumable state machine serves `extract(raw)` and `stream()` pushes. It walks a trie of the
 //! wanted paths, skips unwanted subtrees, and stops as soon as every path is resolved. It trusts
 //! its input: malformed JSON resolves the remaining paths as missing and never panics. Duplicate
-//! keys: the first occurrence wins.
+//! keys: the first occurrence wins, except in a `"keys": "case_insensitive"` plan, where the full
+//! parse below keeps the last occurrence, as `map` does.
 //!
 //! `extract` tries anchors first (a `memmem` search for the key token, skipping a hit preceded by
 //! an odd run of backslashes), then scans for whatever they missed. `stream` always scans. A skipped

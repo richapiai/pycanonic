@@ -128,6 +128,11 @@ Check a draft against fixtures before you use it. After a provider changes, comp
 
 `canonic test` maps each fixture's payload through the spec and compares the fields listed in `expected`. It does not check fields left out of `expected`. It compares nested objects and list elements field by field, so a fixture can name one key of a list item and leave the rest. A fixture file is `{"payload": ..., "expected": ...}` or `{"cases": [...]}` of those. Any failed case makes it exit 1.
 
+Two keys serve language 2 specs:
+
+- `"context": {...}` in a case holds the request inputs that `$input` paths read.
+- `"expected": {"$rejected": "<reason>"}` means the spec must reject the payload with that reason, as `Rejected.reason` gives it: `{"$rejected": "{\"missing\":\"data.name\"}"}`. `{"$rejected": null}` accepts any reason. A spec that maps such a payload fails the case, and so does a spec that rejects a payload whose `expected` is not `$rejected`.
+
 ```
 $ canonic test --schema canonical/person.enrich.json globex.json fixtures/globex.json
 3 cases, 0 failed

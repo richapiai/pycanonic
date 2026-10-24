@@ -18,7 +18,7 @@ A JSON object can repeat a key. pycanonic reads such an object in three ways:
 
 - A path read (`from`, `coalesce`, `pluck`) takes the last occurrence, as `JSON.parse` does.
 - An object passed through as a whole keeps the key at its first position, with the last value.
-- `extract` and `stream` take the first occurrence.
+- `extract` and `stream` take the first occurrence. In a `"keys": "case_insensitive"` plan they take the last, as `map` does. See [Case-insensitive keys](#case-insensitive-keys).
 
 So on `{"e_mail":"first@a.com","e_mail":"last@a.com"}`, `extract` and `map` disagree. The TypeScript package behaves the same way. Running the shadow diff on providers you route with `extract` shows whether any of them send duplicates.
 
@@ -43,6 +43,43 @@ A JSON string can hold an escape such as `\ud800` with no partner. A UTF-8 strin
 - Two keys that differ only in a lone surrogate become the same key. The conformance case `hostile/spec/21` is excluded for this reason, see `conformance/EXCLUDED.md`.
 - `fingerprint` of a response with such a key differs from the TypeScript fingerprint, because `JSON.stringify` writes the escape.
 - On `map(dict)`, a lone surrogate inside a container that a field passes through stays as it is. pycanonic returns the same Python object and does not rewrite it.
+
+## Language 2 is pycanonic-only
+
+The TypeScript canonic has no language 2. A spec marks it with `"language": 2` at the top level. The TypeScript package rejects that key, so it fails loudly on a language 2 spec instead of mapping it wrongly. Only pycanonic has the language 2 rules and the commands `canonic schema`, `canonic fit` and `canonic verify`. The same goes for the schema extensions: `x-empty`, `x-open`, any key name, arrays of arrays and an array root. The design keeps a port possible. `spec.schema.json` describes language 1 only.
+
+`artifact.view()` supports language 1 only. A view reads each field alone, and rules such as `present`, `omit` and `group_by` need more than one field. A plan that uses any language 2 rule (a plan of format 2) raises `ValueError("view supports language 1 specs only")`. A language 2 spec that uses only language 1 rules still has views. Use `map` for the others.
+
+## An open range counts as an error
+
+`parse_range` with `"max"` gives null for an open range such as `"10,001+"`, because the range has no upper end. As with any null from a value that was not null, the field counts one error. So a drift monitor sees errors on a field that maps open ranges. The provider sent nothing wrong. Set the alert threshold of such a field above its share of open ranges, or map the max from another source.
+
+## Case-insensitive keys
+
+`"keys": "case_insensitive"` costs speed, and the first match can be the wrong one.
+
+- On bytes input, a case-insensitive plan reads the whole body. An exact plan skips the parts of the body that no field reads. `extract` and `stream` parse the whole body too, instead of scanning for the routing keys, and `stream` holds every chunk until `result`.
+- In such a plan, `extract` keeps the last value of a duplicate key, as `map` does. An exact plan's `extract` keeps the first.
+- If a path has no exact key, it reads the first key in document order that matches without regard to case. Take a path to `name` and a body with `"Name"` and `"NAME"` side by side. The path always reads `"Name"`, and the value you want can be in the other key.
+- The option applies to the whole spec. `canonic fit` turns it on as soon as one key path is spelled in more than one case across the pairs. Then sibling keys that differ only in case can collide anywhere in the body, also at paths that never drifted. That is why `fit` makes it a review row.
+
+## canonic diff and rejects
+
+`canonic diff` leaves the samples that the spec rejects out of the field fill rates. The key path report and the re-inference still read every sample, rejected ones included. So an empty answer that the spec rejects can still feed a proposed rule. Leave rejected samples out of the folders you pass to `canonic diff`.
+
+## Not built yet
+
+These were left out of language 2 and `canonic fit` on purpose:
+
+- Several bodies in one map (`$sources.<name>` with a lookup join), for a provider that needs a second call to fill a field. The name `$sources` is reserved.
+- Merging several fetched pages into one response. pycanonic maps one body at a time.
+- Request-side specs, which turn the caller's input into the provider's request body.
+- Addressing elements inside an array of arrays. A spec can only copy such a node whole.
+- Watching paired samples in production. To catch drift before customers do, re-record pairs on a schedule and run `canonic verify` in CI.
+
+## fit is measured on invented providers
+
+The auto share and the zero wrong auto fields of `canonic fit` come from 13 invented providers in `python/tests/fit_eval/`, not from real provider responses. The auto share is 75% there, below the 80% target. See [fit.md](fit.md#how-well-fit-does). A real provider can have patterns the suite does not cover. Review the report, and run `canonic verify` on pairs that `fit` did not learn from.
 
 ## Custom transforms
 
@@ -94,7 +131,7 @@ The response fingerprint includes the keys of array elements. A fingerprint chec
 
 ## No single-element array collapsing
 
-pycanonic never turns a one-element array into its element, or a single object into an array. For anything other than an array, an array field is `None`. A scalar field without a transform that points at an array gets the whole array. Address elements by index (`emails[0].address`).
+pycanonic never turns a one-element array into its element. It turns a single object or scalar into an array only for a language 2 rule with `"wrap": true`. For anything other than an array, an array field is `None`. A scalar field without a transform that points at an array gets the whole array. Address elements by index (`emails[0].address`).
 
 ## Inference
 
