@@ -88,8 +88,8 @@ def _row(f: LeafFit) -> Row:
 
 
 class _Fitter:
-    def __init__(self, pairs: list[Pair], schema: dict[str, Any], opts: FitOptions, reject: list[Any]) -> None:
-        self.pairs, self.schema, self.opts, self.reject = pairs, schema, opts, reject
+    def __init__(self, pairs: list[Pair], schema: dict[str, Any], opts: FitOptions, reject: list[Any], drift: bool = False) -> None:
+        self.pairs, self.schema, self.opts, self.reject, self.drift = pairs, schema, opts, reject, drift
         self.sources: list[list[Occurrence]] = [scalars(p.provider) for p in pairs]
         self.fields: dict[str, Any] = {}
         self.rows: list[Row] = []
@@ -211,9 +211,34 @@ class _Fitter:
         return Row(key, "", "asked", rule, len(hits), len(live), 0.0, examples)
 
 
-def _spec(opts: FitOptions, fields: dict[str, Any], reject: list[Any] | None = None) -> dict[str, Any]:
-    spec = {"language": 2, "provider": opts.provider, "endpoint": opts.endpoint, "version": 1, "status": "draft", "fields": fields}
+def _spec(opts: FitOptions, fields: dict[str, Any], reject: list[Any] | None = None, drift: bool = False) -> dict[str, Any]:
+    spec: dict[str, Any] = {"language": 2, "provider": opts.provider, "endpoint": opts.endpoint, "version": 1, "status": "draft"}
+    if drift:
+        spec["keys"] = "case_insensitive"
+    spec["fields"] = fields
     return {**spec, "reject": reject} if reject else spec
+
+
+def _key_paths(v: Any, at: str, out: set[str]) -> None:
+    if isinstance(v, dict):
+        for k, x in v.items():
+            out.add(f"{at}.{k}")
+            _key_paths(x, f"{at}.{k}", out)
+    elif isinstance(v, list):
+        for x in v:
+            _key_paths(x, at + "[]", out)
+
+
+def _drifting(pairs: list[Pair]) -> list[str]:
+    """The first provider key path that the pairs spell in more than one case, every spelling
+    in first-seen order, or [] when no key drifts."""
+    seen: dict[str, dict[str, None]] = {}
+    for p in pairs:
+        s: set[str] = set()
+        _key_paths(p.provider, "", s)
+        for k in sorted(s):
+            seen.setdefault(k.lower(), {})[k] = None
+    return next(([k.lstrip(".") for k in ks] for ks in seen.values() if len(ks) > 1), [])
 
 
 def _map(art: Any, p: Pair) -> Any:
@@ -226,7 +251,7 @@ def _check(f: _Fitter) -> None:
     A pair that the runtime rejects but fit did not drops the reject rules (fit_pairs makes them manual)."""
     pairs, n = f.pairs, len(f.pairs)
     while f.fields:
-        art = _api.compile_spec(_spec(f.opts, f.fields, f.reject), f.schema, transforms=f.opts.transforms)
+        art = _api.compile_spec(_spec(f.opts, f.fields, f.reject, f.drift), f.schema, transforms=f.opts.transforms)
         outs: list[Any] = []
         for p in pairs:
             try:
@@ -253,7 +278,9 @@ def _check(f: _Fitter) -> None:
                 support = sum(_eq(got[j], want[j]) for j in live)
                 if r.kind == "kept":
                     r.support, r.total = support, len(live)
-            if r.kind != "kept" and support != r.support:
+            if f.drift and support > r.support:  # fit searched exact keys, the runtime also matches other cases
+                r.support = support
+            elif r.kind != "kept" and support != r.support:
                 bad.append((r, support, got, want))
         if not bad:
             return
@@ -325,12 +352,13 @@ def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) ->
     failover = [p for p in pairs if any(_rejects(c, p.provider) for c in reject)]
     if len(failover) == len(pairs):  # a reject that throws every answer away is no proposal
         reject, failover = [], []
-    f = _Fitter([p for p in pairs if p not in failover], schema, options, reject)
+    drift = _drifting(pairs)
+    f = _Fitter([p for p in pairs if p not in failover], schema, options, reject, bool(drift))
     for key, node in _nodes(schema):
         f.node(key, node)
     _check(f)
     if f.fields and f.reject:  # never write a spec that has not mapped every pair, rejects included
-        art = _api.compile_spec(_spec(options, f.fields, f.reject), schema, transforms=options.transforms)
+        art = _api.compile_spec(_spec(options, f.fields, f.reject, f.drift), schema, transforms=options.transforms)
         for p in failover:
             try:
                 _map(art, p)
@@ -339,7 +367,10 @@ def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) ->
                 pass
         if f.disagree:
             f.reject = []
-    spec = _spec(options, f.fields, f.reject) if f.fields else None
+    spec = _spec(options, f.fields, f.reject, f.drift) if f.fields else None
+    if drift:  # one decision for the whole spec, always for review
+        note = f"The provider spells keys in more than one case, for example {', '.join(drift)}, so keys match without regard to case."
+        f.rows.insert(0, Row("spec.keys", "", "keys", "case_insensitive", len(pairs), len(pairs), 1.0, [], note))
     for i, cond in enumerate(reject):
         hit = [p.name for p in failover if _rejects(cond, p.provider)]
         note = f"Rejects {len(hit)} of {len(pairs)} pairs: rejects {', '.join(hit)}, where the default answered. Those pairs are left out of every other field's support."

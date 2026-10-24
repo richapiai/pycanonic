@@ -740,3 +740,19 @@ def test_reject_runtime_rejects_less_goes_manual(monkeypatch: pytest.MonkeyPatch
     row = {r.field: r for r in result.fields}["reject[0]"]
     assert (row.tier, row.kind) == ("manual", "reject")
     assert "p1.json" in row.note
+
+
+def test_case_drift_sets_case_insensitive_keys() -> None:
+    """Keys that drift in case across the samples set `"keys": "case_insensitive"`, a review row,
+    so a casing that no sample showed still maps (fit_eval found drovo fields null on fresh pairs)."""
+    style = lambda k, i: k if i % 3 else k[0].upper() + k[1:]
+    pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "score": i}, {style("fullName", i): f"n{i}", "rating": i}, None) for i in range(10)]
+    schema = derive_schema([p.default for p in pairs])
+    result = fit_pairs(pairs, schema, FitOptions("acme", "e"))
+    assert result.spec is not None and result.spec["keys"] == "case_insensitive"
+    rows = {r.field: r for r in result.fields}
+    assert (rows["spec.keys"].kind, rows["spec.keys"].tier, rows["spec.keys"].rule) == ("keys", "review", "case_insensitive")
+    art = pycanonic.compile_spec(result.spec, schema)
+    assert art.map({"FULLNAME": "x", "Rating": 7}) == {"name": "x", "score": 7}
+    plain = fit_pairs([replace(p, provider={"fullName": p.default["name"], "rating": p.default["score"]}) for p in pairs], schema, FitOptions("acme", "e"))
+    assert plain.spec is not None and "keys" not in plain.spec and "spec.keys" not in {r.field for r in plain.fields}
