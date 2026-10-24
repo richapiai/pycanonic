@@ -174,3 +174,37 @@ def test_a_container_that_shares_its_children_is_null_and_one_error_not_a_hang()
         org = {"a": org, "b": org}
     assert a.map({"org": org})["org_keys"] is None
     assert a.stats_snapshot()["fields"]["org_keys"] == {"fill": 0, "errors": 1}
+
+
+def test_language_2_string_transforms_in_default_transforms():
+    from pycanonic import default_transforms as T
+
+    assert T["regex"]("https://x.com/company/acme/?a=1", "/company/([^/?#]+)") == "acme"
+    assert T["strip_prefix"]("urn:li:person:", "urn:li:person:") is None
+    assert T["strip_suffix"]("repo.git", ".git") == "repo"
+    assert T["replace"]("a-b", {"from": "-", "to": " "}) == "a b"
+    assert T["lookup"](1, {"table": {"1": "one"}}) == "one"
+    assert T["lookup"]("LOVE", {"table": {"LIKE": "liked"}, "else": "keep"}) == "LOVE"
+    assert T["null_if"](0.0, ["", "N/A", 0]) is None
+    assert T["upper"]("àda") == "ÀDA"
+    assert T["title"]("ada LOVELACE") == "Ada Lovelace"
+    assert T["split"]("Ada King Lovelace", {"sep": " ", "index": -1}) == "Lovelace"
+    assert T["to_string"](12) == "12"
+    assert T["upper"]([1]) is None
+    with pytest.raises(ValueError, match="invalid argument"):
+        T["regex"]("x", "(unclosed")
+    with pytest.raises(ValueError, match="invalid argument"):
+        T["split"]("x", {"sep": " "})
+
+
+def test_language_2_transform_names_need_language_2():
+    fields = {"full_name": {"from": "name", "transform": "upper"}}
+    with pytest.raises(ValueError, match='unknown transform "upper"'):
+        _core.compile(spec(fields), CANONICAL)
+    a = _core.compile({**spec(fields), "language": 2}, CANONICAL)
+    for body in ({"name": "àda"}, json.dumps({"name": "àda"}).encode()):
+        assert a.map(body)["full_name"] == "ÀDA"
+    assert json.loads(a.map_json(b'{"name": "\\u00e0da"}'))["full_name"] == "ÀDA"
+    # A custom transform with a new name works in language 1.
+    a = _core.compile(spec(fields), CANONICAL, {"upper": lambda v: "custom"})
+    assert a.map({"name": "x"})["full_name"] == "custom"

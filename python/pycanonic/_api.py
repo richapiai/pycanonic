@@ -90,6 +90,17 @@ _DEFAULT_NAMES = (
     "normalize_phone",
     "normalize_linkedin",
     "to_domain",
+    # Language 2 only in specs. Callable here for any caller.
+    "regex",
+    "strip_prefix",
+    "strip_suffix",
+    "replace",
+    "lookup",
+    "null_if",
+    "upper",
+    "title",
+    "split",
+    "to_string",
 )
 _SEMANTICS = ("email", "phone", "domain", "linkedin_url", "url", "iso_date", "money")
 

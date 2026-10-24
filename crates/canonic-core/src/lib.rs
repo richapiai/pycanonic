@@ -15,6 +15,7 @@ pub mod shadow;
 pub mod sink;
 pub mod spec;
 pub mod stats;
+pub mod strings;
 pub mod transforms;
 pub mod value;
 pub mod write;

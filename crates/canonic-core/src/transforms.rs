@@ -3,8 +3,10 @@
 //! Port of canonic/packages/canonic/src/transforms.ts.
 
 use crate::canonical::Semantic;
+use crate::strings::{self, Find, Otherwise, Pattern};
 use crate::value::{Value, js_number_to_string};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value as J};
 use std::borrow::Cow;
 
 pub trait Transform: Send + Sync {
@@ -48,6 +50,26 @@ pub enum Builtin {
     NormalizePhone,
     NormalizeLinkedin,
     ToDomain,
+    // Language 2.
+    Regex(Pattern),
+    StripPrefix(String),
+    StripSuffix(String),
+    Replace {
+        find: Find,
+        to: String,
+    },
+    Lookup {
+        table: Map<String, J>,
+        otherwise: Otherwise,
+    },
+    NullIf(Vec<J>),
+    Upper,
+    Title,
+    Split {
+        sep: String,
+        index: i64,
+    },
+    ToString,
 }
 
 /// Why `builtin` refused: the name is not a default transform, or its argument is wrong.
@@ -57,7 +79,7 @@ pub enum ArgError {
     InvalidArgument,
 }
 
-const NAMES: [&str; 9] = [
+const NAMES: [&str; 19] = [
     "cast",
     "lower",
     "trim",
@@ -67,7 +89,23 @@ const NAMES: [&str; 9] = [
     "normalize_phone",
     "normalize_linkedin",
     "to_domain",
+    // Language 2 only, from here on.
+    "regex",
+    "strip_prefix",
+    "strip_suffix",
+    "replace",
+    "lookup",
+    "null_if",
+    "upper",
+    "title",
+    "split",
+    "to_string",
 ];
+
+/// True for a default transform that only a language 2 spec can name.
+pub(crate) fn language_2_only(name: &str) -> bool {
+    NAMES[9..].contains(&name)
+}
 
 pub fn default_transform_names() -> &'static [&'static str] {
     &NAMES
@@ -111,6 +149,27 @@ pub fn builtin(name: &str, arg: Option<&serde_json::Value>) -> Result<Builtin, A
         "normalize_phone" => no_arg(Builtin::NormalizePhone),
         "normalize_linkedin" => no_arg(Builtin::NormalizeLinkedin),
         "to_domain" => no_arg(Builtin::ToDomain),
+        "upper" => no_arg(Builtin::Upper),
+        "title" => no_arg(Builtin::Title),
+        "to_string" => no_arg(Builtin::ToString),
+        "regex" => text
+            .and_then(Pattern::new)
+            .map(Builtin::Regex)
+            .ok_or(ArgError::InvalidArgument),
+        "strip_prefix" | "strip_suffix" => match text {
+            Some(s) if !s.is_empty() && name == "strip_prefix" => {
+                Ok(Builtin::StripPrefix(s.into()))
+            }
+            Some(s) if !s.is_empty() => Ok(Builtin::StripSuffix(s.into())),
+            _ => Err(ArgError::InvalidArgument),
+        },
+        "null_if" => match arg {
+            Some(J::Array(xs)) => Ok(Builtin::NullIf(xs.clone())),
+            _ => Err(ArgError::InvalidArgument),
+        },
+        "replace" => strings::replace_arg(arg).ok_or(ArgError::InvalidArgument),
+        "lookup" => strings::lookup_arg(arg).ok_or(ArgError::InvalidArgument),
+        "split" => strings::split_arg(arg).ok_or(ArgError::InvalidArgument),
         _ => Err(ArgError::UnknownTransform),
     }
 }
@@ -158,12 +217,81 @@ impl Transform for Builtin {
                 Value::Str(s) => to_domain(s).map(Value::Str),
                 _ => None,
             },
+            b @ (Builtin::Regex(_)
+            | Builtin::StripPrefix(_)
+            | Builtin::StripSuffix(_)
+            | Builtin::Replace { .. }
+            | Builtin::Lookup { .. }
+            | Builtin::NullIf(_)
+            | Builtin::Upper
+            | Builtin::Title
+            | Builtin::Split { .. }) => strings::apply(b, v),
+            Builtin::ToString => to_text(v),
         };
         out.unwrap_or(Value::Null)
     }
 }
 
 impl Builtin {
+    /// The name and argument as a spec writes them.
+    pub fn spec(&self) -> (&'static str, Option<J>) {
+        let text = |s: &str| Some(J::from(s));
+        match self {
+            Builtin::Cast(c) => (
+                "cast",
+                text(match c {
+                    CastTo::String => "string",
+                    CastTo::Number => "number",
+                    CastTo::Integer => "integer",
+                    CastTo::Boolean => "boolean",
+                }),
+            ),
+            Builtin::SplitName(NamePart::First) => ("split_name", text("first")),
+            Builtin::SplitName(NamePart::Last) => ("split_name", text("last")),
+            Builtin::Join(sep) => ("join", sep.as_deref().and_then(text)),
+            Builtin::Lower => ("lower", None),
+            Builtin::Trim => ("trim", None),
+            Builtin::ParseDate => ("parse_date", None),
+            Builtin::NormalizePhone => ("normalize_phone", None),
+            Builtin::NormalizeLinkedin => ("normalize_linkedin", None),
+            Builtin::ToDomain => ("to_domain", None),
+            Builtin::Regex(p) => ("regex", text(p.as_str())),
+            Builtin::StripPrefix(s) => ("strip_prefix", text(s)),
+            Builtin::StripSuffix(s) => ("strip_suffix", text(s)),
+            Builtin::Replace { find, to } => {
+                let (k, f) = match find {
+                    Find::Text(s) => ("from", s.as_str()),
+                    Find::Pattern(p) => ("pattern", p.as_str()),
+                };
+                ("replace", Some(serde_json::json!({k: f, "to": to})))
+            }
+            Builtin::Lookup { table, otherwise } => {
+                let e = match otherwise {
+                    Otherwise::Keep => J::from("keep"),
+                    Otherwise::Null => J::from("null"),
+                    Otherwise::Value(j) => j.clone(),
+                };
+                (
+                    "lookup",
+                    Some(serde_json::json!({"table": table, "else": e})),
+                )
+            }
+            Builtin::NullIf(xs) => ("null_if", Some(J::Array(xs.clone()))),
+            Builtin::Upper => ("upper", None),
+            Builtin::Title => ("title", None),
+            Builtin::Split { sep, index } => (
+                "split",
+                Some(serde_json::json!({"sep": sep, "index": index})),
+            ),
+            Builtin::ToString => ("to_string", None),
+        }
+    }
+
+    /// True for a transform only language 2 has, which needs plan format 2.
+    pub(crate) fn is_language_2(&self) -> bool {
+        language_2_only(self.spec().0)
+    }
+
     /// Applies the transform to a JS array, as `from` with several paths produces. Only `join`
     /// reads one. Every other default transform returns `Null` on an array.
     pub fn apply_list<'a>(&self, items: &[Value<'a>]) -> Value<'a> {
@@ -208,7 +336,7 @@ pub fn validate(semantic: Semantic, v: Value<'_>) -> Value<'_> {
     if ok { v } else { Value::Null }
 }
 
-fn owned<'a>(s: String) -> Value<'a> {
+pub(crate) fn owned<'a>(s: String) -> Value<'a> {
     Value::Str(Cow::Owned(s))
 }
 
@@ -372,7 +500,7 @@ fn to_boolean(v: &Value) -> Option<bool> {
     }
 }
 
-fn to_text(v: Value<'_>) -> Option<Value<'_>> {
+pub(crate) fn to_text(v: Value<'_>) -> Option<Value<'_>> {
     Some(match v {
         Value::Str(s) => Value::Str(s),
         Value::Bool(b) => owned(b.to_string()),

@@ -11,7 +11,7 @@ use crate::spec::{
     ArrayRule, FieldMap, Rule, ScalarRule, Source, Step, TransformRef, field_key, is_group,
     parse_spec,
 };
-use crate::transforms::{ArgError, builtin};
+use crate::transforms::{ArgError, builtin, language_2_only};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -51,16 +51,20 @@ impl Resolver<'_> {
                     let (name, arg) = (t.name.clone(), t.arg.clone());
                     return Ok(TxRef::Custom { index, name, arg });
                 }
-                builtin(&t.name, t.arg.as_ref())
-                    .map(TxRef::Builtin)
-                    .map_err(|e| match e {
-                        ArgError::UnknownTransform => {
-                            format!("{at}: unknown transform {}", json(&t.name))
-                        }
-                        ArgError::InvalidArgument => {
-                            format!("{at}: invalid argument for {}", t.name)
-                        }
-                    })
+                // Language 1 does not have the language 2 transforms.
+                let found = if self.language == 1 && language_2_only(&t.name) {
+                    Err(ArgError::UnknownTransform)
+                } else {
+                    builtin(&t.name, t.arg.as_ref())
+                };
+                found.map(TxRef::Builtin).map_err(|e| match e {
+                    ArgError::UnknownTransform => {
+                        format!("{at}: unknown transform {}", json(&t.name))
+                    }
+                    ArgError::InvalidArgument => {
+                        format!("{at}: invalid argument for {}", t.name)
+                    }
+                })
             })
             .collect()
     }

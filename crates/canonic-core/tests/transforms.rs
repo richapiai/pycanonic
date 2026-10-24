@@ -387,7 +387,8 @@ fn builtin_arguments() {
     for name in ["fix_email", "constructor", "toString", "", "Lower"] {
         assert_eq!(b(name, None), Err(ArgError::UnknownTransform), "{name}");
     }
-    for name in default_transform_names() {
+    // The nine of language 1. tests/transforms2.rs checks the language 2 ones.
+    for name in &default_transform_names()[..9] {
         let a = match *name {
             "cast" => arg("string"),
             "split_name" => arg("first"),
@@ -395,7 +396,7 @@ fn builtin_arguments() {
         };
         assert!(b(name, a).is_ok(), "{name}");
     }
-    assert_eq!(default_transform_names().len(), 9);
+    assert_eq!(default_transform_names().len(), 19);
 }
 
 #[test]

@@ -1,0 +1,12 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"slug": {"from": "url", "transform": {"regex": "(unclosed"}}}
+  },
+  "schema": {"type": "object", "properties": {"slug": {"type": "string"}}},
+  "error": "acme orgs v1: fields[\"slug\"]: invalid argument for regex"
+}

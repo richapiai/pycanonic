@@ -4,7 +4,7 @@
 use crate::canonical::{Empty, Semantic};
 use crate::cond::Cond;
 use crate::spec::{Aggregate, Path, Source, Status, Step};
-use crate::transforms::{Builtin, CastTo, NamePart};
+use crate::transforms::Builtin;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::fmt::Write;
@@ -329,7 +329,8 @@ impl Plan {
     pub fn needs_v2(&self) -> bool {
         fn field(f: &Field) -> bool {
             match f {
-                Field::Null | Field::Scalar(_) => false,
+                Field::Null => false,
+                Field::Scalar(s) => tx(&s.tx),
                 Field::Const(..)
                 | Field::OmitNull(_)
                 | Field::Empty(_)
@@ -348,10 +349,15 @@ impl Plan {
                     !ops.is_default()
                         || match kind {
                             ListKind::Item(c) => c.iter().any(|n| field(&n.value)),
-                            ListKind::Pluck(..) | ListKind::Plain(_) => false,
+                            ListKind::Pluck(_, t) | ListKind::Plain(t) => tx(t),
                         }
                 }
             }
+        }
+        /// A transform only language 2 has.
+        fn tx(t: &[TxRef]) -> bool {
+            t.iter()
+                .any(|t| matches!(t, TxRef::Builtin(b) if b.is_language_2()))
         }
         self.context || !self.reject.is_empty() || self.fields.iter().any(|n| field(&n.value))
     }
@@ -547,18 +553,7 @@ fn pipe(tx: &[TxRef]) -> String {
     for t in tx {
         let (name, arg): (&str, Option<Value>) = match t {
             TxRef::Custom { name, arg, .. } => (name, arg.clone()),
-            TxRef::Builtin(b) => match b {
-                Builtin::Cast(c) => ("cast", Some(cast_name(*c).into())),
-                Builtin::SplitName(NamePart::First) => ("split_name", Some("first".into())),
-                Builtin::SplitName(NamePart::Last) => ("split_name", Some("last".into())),
-                Builtin::Join(sep) => ("join", sep.clone().map(Value::from)),
-                Builtin::Lower => ("lower", None),
-                Builtin::Trim => ("trim", None),
-                Builtin::ParseDate => ("parse_date", None),
-                Builtin::NormalizePhone => ("normalize_phone", None),
-                Builtin::NormalizeLinkedin => ("normalize_linkedin", None),
-                Builtin::ToDomain => ("to_domain", None),
-            },
+            TxRef::Builtin(b) => b.spec(),
         };
         match arg {
             Some(a) => _ = write!(s, " | {name} {a}"),
@@ -566,13 +561,4 @@ fn pipe(tx: &[TxRef]) -> String {
         }
     }
     s
-}
-
-fn cast_name(c: CastTo) -> &'static str {
-    match c {
-        CastTo::String => "string",
-        CastTo::Number => "number",
-        CastTo::Integer => "integer",
-        CastTo::Boolean => "boolean",
-    }
 }

@@ -139,6 +139,7 @@ dependencies = [
  "jsonschema",
  "memchr",
  "proptest",
+ "regex",
  "serde",
  "serde_json",
 ]

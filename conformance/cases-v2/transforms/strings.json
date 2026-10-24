@@ -1,0 +1,130 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "slug": {"from": "url", "transform": {"regex": "/company/([^/?#]+)"}},
+      "member_id": {"from": "urn", "transform": {"strip_prefix": "urn:acme:member:"}},
+      "repo": {"from": "repo", "transform": {"strip_suffix": ".git"}},
+      "phone": {"from": "phone", "transform": {"replace": {"pattern": "[^0-9]+", "to": ""}}},
+      "tag": {"from": "tag", "transform": {"replace": {"from": "_", "to": " "}}},
+      "reaction": {"from": "reaction", "transform": {"lookup": {"table": {"LIKE": "liked", "1": "one"}, "else": "keep"}}},
+      "size": {"from": "size", "transform": {"null_if": ["", "N/A", 0]}},
+      "code": {"from": "code", "transform": "upper"},
+      "name": {"from": "name", "transform": "title"},
+      "last_name": {"from": "name", "transform": [{"split": {"sep": " ", "index": -1}}, "title"]},
+      "zip": {"from": "zip", "transform": "to_string"}
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "slug": {"type": "string"},
+      "member_id": {"type": "string"},
+      "repo": {"type": "string"},
+      "phone": {"type": "string"},
+      "tag": {"type": "string"},
+      "reaction": {"type": "string"},
+      "size": {"type": ["string", "number"]},
+      "code": {"type": "string"},
+      "name": {"type": "string"},
+      "last_name": {"type": "string"},
+      "zip": {"type": "string"}
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "url": "https://x.example/company/widget-works/?a=1",
+        "urn": "urn:acme:member:ABC",
+        "repo": "tools.git",
+        "phone": "+1 (415) 555-0100",
+        "tag": "data_eng",
+        "reaction": "LIKE",
+        "size": "N/A",
+        "code": "àda",
+        "name": "ada king LOVELACE",
+        "zip": 94107
+      },
+      "context": null,
+      "expected": {
+        "slug": "widget-works",
+        "member_id": "ABC",
+        "repo": "tools",
+        "phone": "14155550100",
+        "tag": "data eng",
+        "reaction": "liked",
+        "size": null,
+        "code": "ÀDA",
+        "name": "Ada King Lovelace",
+        "last_name": "Lovelace",
+        "zip": "94107"
+      }
+    },
+    {
+      "body": {
+        "url": "nope",
+        "urn": "urn:acme:member:",
+        "repo": "tools",
+        "phone": 4155550100,
+        "tag": ["data_eng"],
+        "reaction": 1,
+        "size": 0.0,
+        "code": true,
+        "name": {"first": "Ada"},
+        "zip": true
+      },
+      "context": null,
+      "expected": {
+        "slug": null,
+        "member_id": null,
+        "repo": "tools",
+        "phone": null,
+        "tag": null,
+        "reaction": "one",
+        "size": null,
+        "code": null,
+        "name": null,
+        "last_name": null,
+        "zip": "true"
+      }
+    },
+    {
+      "body": {"reaction": "LOVE", "size": "51-200"},
+      "context": null,
+      "expected": {
+        "slug": null,
+        "member_id": null,
+        "repo": null,
+        "phone": null,
+        "tag": null,
+        "reaction": "LOVE",
+        "size": "51-200",
+        "code": null,
+        "name": null,
+        "last_name": null,
+        "zip": null
+      }
+    },
+    {
+      "raw": "not json {",
+      "context": null,
+      "expected": {
+        "slug": null,
+        "member_id": null,
+        "repo": null,
+        "phone": null,
+        "tag": null,
+        "reaction": null,
+        "size": null,
+        "code": null,
+        "name": null,
+        "last_name": null,
+        "zip": null
+      }
+    }
+  ]
+}

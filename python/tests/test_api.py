@@ -143,6 +143,16 @@ def test_default_transforms_and_validators_like_the_readme() -> None:
             "normalize_phone",
             "normalize_linkedin",
             "to_domain",
+            "regex",
+            "strip_prefix",
+            "strip_suffix",
+            "replace",
+            "lookup",
+            "null_if",
+            "upper",
+            "title",
+            "split",
+            "to_string",
         ]
     )
     assert validators["email"]("N/A") is None
