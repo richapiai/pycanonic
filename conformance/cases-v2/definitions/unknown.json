@@ -1,0 +1,37 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "people[]": {
+        "from": "people",
+        "item": {
+          "$ref": "x"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "people": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "city": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": "acme people v1: definitions: no definition \"x\""
+}

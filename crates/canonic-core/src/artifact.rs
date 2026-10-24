@@ -254,6 +254,15 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
                 fields(f, members)
             }
             Field::Scalar(s) => scalar(f, s),
+            // A container transform gets its source whole.
+            Field::Container { from, .. } if is_group(from) => {
+                let e = Filter {
+                    all: true,
+                    ..Filter::default()
+                };
+                elements(f, from, &[], false, true, e);
+            }
+            Field::Container { from, .. } => node(f, from).all = true,
             // An aggregate can write or compare its values whole.
             Field::Aggregate(a, _) => {
                 let mut e = Filter::default();

@@ -48,7 +48,7 @@ impl Semantic {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Kind {
     Scalar {
         semantic: Option<Semantic>,
@@ -81,7 +81,7 @@ pub enum Empty {
     Missing,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Node {
     pub kind: Kind,
     /// Read only in language 2. A leaf takes `Null` or `Missing`, an array `Null`, `List` or

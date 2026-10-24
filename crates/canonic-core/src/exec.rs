@@ -29,7 +29,7 @@
 //!   in a plan with `context` set, and in every condition. A `when` that fails gives null, or
 //!   leaves the key out with `omit`, before anything under it is read. Its fields are misses.
 
-use crate::canonical::{Empty, Semantic};
+use crate::canonical::{Empty, Node, Semantic};
 use crate::cond::{Cond, Rank, holds, key_text};
 use crate::doc::{Doc, Key, KeyPath as Path, KeyStep as Step, read};
 use crate::group::{Agg, AggOp, aggregate, groups};
@@ -37,7 +37,7 @@ use crate::plan::{CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, T
 use crate::sink::{Out, Sink, copy};
 use crate::spec::{self, Source, is_group};
 use crate::stats::Stats;
-use crate::transforms::{Transform, validate};
+use crate::transforms::{Transform, conform, validate};
 use crate::value::Value;
 use serde_json::Value as J;
 use std::collections::HashMap;
@@ -168,8 +168,17 @@ struct Fold {
     stat: usize,
 }
 
+/// A container transform (A10, `Field::Container`).
+struct Whole {
+    from: Input,
+    tx: TxRef,
+    node: Node,
+    stat: usize,
+}
+
 enum Op {
     Null,
+    Container(Box<Whole>),
     Scalar(Leaf),
     Aggregate(Box<Fold>),
     Object(Vec<(usize, Op)>),
@@ -387,6 +396,20 @@ impl Builder<'_> {
                 omit: *omit,
                 op: Box::new(self.op(field)?),
             },
+            Field::Container {
+                from,
+                tx,
+                node,
+                stat,
+            } => Op::Container(Box::new(Whole {
+                from: match is_group(from) {
+                    true => Input::Group,
+                    false => Input::At(self.at(from)),
+                },
+                tx: self.tx(std::slice::from_ref(tx))?.remove(0),
+                node: node.clone(),
+                stat: self.stat(*stat)?,
+            })),
             Field::Aggregate(a, stat) => Op::Aggregate(Box::new(Fold {
                 op: a.op,
                 input: match is_group(&a.from) {
@@ -837,6 +860,7 @@ impl<S: Sink> Exec<'_, S> {
             Op::Object(c) => self.object(c, f),
             Op::Scalar(l) => self.scalar(l, f),
             Op::Aggregate(a) => self.fold(a, f),
+            Op::Container(w) => self.whole(w, f),
             Op::List {
                 from,
                 kind,
@@ -887,6 +911,7 @@ impl<S: Sink> Exec<'_, S> {
                 self.stats.miss(*stat)
             }
             Op::Aggregate(a) => self.stats.miss(a.stat),
+            Op::Container(w) => self.stats.miss(w.stat),
             Op::Object(c) | Op::Optional { members: c, .. } => {
                 c.iter().for_each(|(_, op)| self.miss(op))
             }
@@ -1042,6 +1067,44 @@ impl<S: Sink> Exec<'_, S> {
                 self.stats.miss(a.stat);
                 self.sink.scalar(Value::Null)
             }
+        }
+    }
+
+    /// A container transform: the source as JSON, the transform, then `conform`. A missing source
+    /// writes the node's `x-empty`, a placeholder that is no fill.
+    fn whole<D: Doc>(&mut self, w: &Whole, f: &mut Frame<'_, D>) -> S::Out {
+        let mut budget = MAX_NODES;
+        // None: missing. Some(None): too deep to copy.
+        let input = match &w.from {
+            Input::Group => f.group.map(|g| {
+                let items = g.iter().map(|d| json(d, 1, &mut budget));
+                items.collect::<Option<_>>().map(J::Array)
+            }),
+            Input::At(at) => f.read(*at).map(|d| json(&d, 0, &mut budget)),
+        };
+        let Some(input) = input else {
+            self.stats.miss(w.stat);
+            let v = match w.node.empty {
+                Some(Empty::List) => J::Array(Vec::new()),
+                Some(Empty::Object) => J::Object(Default::default()),
+                _ => J::Null,
+            };
+            return self.sink.passthrough(&&v);
+        };
+        let out = match (&w.tx, input) {
+            (TxRef::Custom { index, arg, .. }, Some(v)) => self.custom.get(*index).and_then(|t| {
+                catch_unwind(AssertUnwindSafe(|| t.apply_container_out(&v, arg.as_ref())))
+                    .ok()
+                    .flatten()
+            }),
+            _ => None,
+        };
+        match out.and_then(|v| conform(&v, &w.node)) {
+            Some(v) if !v.is_null() => {
+                self.filled += 1;
+                self.sink.passthrough(&&v)
+            }
+            _ => self.not_a_list(w.stat),
         }
     }
 

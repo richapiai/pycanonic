@@ -202,3 +202,134 @@ def test_rejected_reason_comes_from_args():
     back = pickle.loads(pickle.dumps(e.value))
     assert type(back) is pycanonic.Rejected
     assert back.reason == e.value.reason == '{"missing":"data.name"}'
+
+
+def _ways(a, body):
+    raw = json.dumps(body).encode()
+    return [lambda: a.map(raw), lambda: a.map(body), lambda: json.loads(a.map_json(raw))]
+
+
+def _errors(a, field):
+    return a.stats_snapshot()["fields"][field]["errors"]
+
+
+TEAMS = {
+    "type": "object",
+    "properties": {
+        "teams": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"team": {"type": "string"}, "members": {"type": "array", "items": {"type": "string"}}},
+            },
+        }
+    },
+}
+
+
+def by_team(people):
+    out = {}
+    for p in people:
+        out.setdefault(p["team"], []).append(p["name"])
+    return [{"team": t, "members": m} for t, m in out.items()]
+
+
+def test_container_transform_returns_list():
+    body = {"staff": [{"name": "ada", "team": "core"}, {"name": "bo", "team": "web"}, {"name": "cy", "team": "core"}]}
+    want = {"teams": [{"team": "core", "members": ["ada", "cy"]}, {"team": "web", "members": ["bo"]}]}
+    spec = _spec({"teams[]": {"from": "staff", "transform": "by_team"}})
+    for way in _ways(pycanonic.compile_spec(spec, TEAMS, transforms={"by_team": by_team}), body):
+        assert way() == want
+    a = pycanonic.compile_spec(spec, TEAMS, transforms={"by_team": by_team})
+    b = pycanonic.load(a.plan_json(), transforms={"by_team": by_team})
+    assert json.loads(a.plan_json())["format"] == 2
+    for way in _ways(b, body):
+        assert way() == want
+    assert b.stats_snapshot()["fields"]["teams[]"] == {"fill": 3, "errors": 0}
+
+
+HQ = {
+    "type": "object",
+    "properties": {"hq": {"type": "object", "properties": {"a": {"type": "integer"}, "b": {"type": "string"}}}},
+}
+
+
+def test_container_transform_bad_shape_is_null():
+    bad = [lambda v: {"extra": 1}, lambda v: [1], lambda v: {"a": [1]}, lambda v: {"a": {1, 2}}, lambda v: None]
+
+    def boom(v):
+        raise ValueError("no")
+
+    for f in [*bad, boom]:
+        a = pycanonic.compile_spec(_spec({"hq": {"from": "office", "transform": "f"}}), HQ, transforms={"f": f})
+        for way in _ways(a, {"office": {"x": 1}}):
+            assert way() == {"hq": None}
+        assert _errors(a, "hq") == 3
+
+
+def test_container_transform_fills_missing_keys():
+    schema = {
+        "type": "object",
+        "properties": {
+            "hq": {
+                "type": "object",
+                "properties": {
+                    "a": {"type": "integer"},
+                    "b": {"type": "string"},
+                    "tags": {"type": "array", "items": {"type": "string"}, "x-empty": "[]"},
+                    "gone": {"type": "string", "x-empty": "missing"},
+                    "meta": {"type": "object", "x-open": True},
+                },
+            }
+        },
+    }
+    a = pycanonic.compile_spec(
+        _spec({"hq": {"from": "office", "transform": "f"}}), schema, transforms={"f": lambda v: {"meta": {"any": [1]}, "a": 1}}
+    )
+    for way in _ways(a, {"office": {}}):
+        out = way()
+        assert out == {"hq": {"a": 1, "b": None, "tags": [], "meta": {"any": [1]}}}
+        assert list(out["hq"]) == ["a", "b", "tags", "meta"]
+    # A missing source does not call the transform.
+    for way in _ways(a, {}):
+        assert way() == {"hq": None}
+    assert _errors(a, "hq") == 0
+
+
+def test_container_transform_is_language_2_only():
+    import pytest
+
+    lang1 = {**_spec({"hq": {"from": "office", "transform": "f"}}), "language": 1}
+    with pytest.raises(pycanonic.SpecError, match="canonical field is an object"):
+        pycanonic.compile_spec(lang1, HQ, transforms={"f": lambda v: v})
+    with pytest.raises(pycanonic.SpecError, match="a container transform takes only from and transform"):
+        pycanonic.compile_spec(_spec({"teams[]": {"from": "s", "transform": "f", "limit": 2}}), TEAMS, transforms={"f": by_team})
+
+
+def test_scalar_transform_still_rejects_dict():
+    for lang in [1, 2]:
+        spec = {**_spec({"name": {"from": "n", "transform": "f"}}), "language": lang}
+        a = pycanonic.compile_spec(spec, SCHEMA, transforms={"f": lambda v: {"a": v}})
+        for way in _ways(a, {"n": "x"}):
+            assert way() == {"name": None, "kind": None}
+        assert _errors(a, "name") == 3
+    # Language 1: a custom transform on an array field still maps each element.
+    spec = {**_spec({"teams[]": {"from": "t", "transform": "f"}}), "language": 1}
+    tags = {"type": "object", "properties": {"teams": {"type": "array", "items": {"type": "string"}}}}
+    a = pycanonic.compile_spec(spec, tags, transforms={"f": lambda v: v.upper()})
+    for way in _ways(a, {"t": ["a", "b"]}):
+        assert way() == {"teams": ["A", "B"]}
+
+
+def test_definition_stats_follow_each_use():
+    spec = {
+        **_spec({"people[]": {"from": "p", "item": {"$ref": "person"}}, "lead[]": {"from": "l", "item": {"$ref": "person"}}}),
+        "definitions": {"person": {"name": "n"}},
+    }
+    person = {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}}}}
+    a = pycanonic.compile_spec(spec, {"type": "object", "properties": {"people": person, "lead": person}})
+    for way in _ways(a, {"p": [{"n": "a"}], "l": [{}]}):
+        assert way() == {"people": [{"name": "a"}], "lead": [{"name": None}]}
+    fields = a.stats_snapshot()["fields"]
+    assert fields["people[].name"]["fill"] == 3
+    assert fields["lead[].name"]["fill"] == 0

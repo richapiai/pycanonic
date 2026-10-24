@@ -1,0 +1,107 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "definitions": {
+      "team": {
+        "name": "title",
+        "members[]": {
+          "from": "staff",
+          "item": {
+            "$ref": "person"
+          }
+        }
+      },
+      "person": {
+        "name": "n",
+        "city": "c"
+      }
+    },
+    "fields": {
+      "teams[]": {
+        "from": "teams",
+        "item": {
+          "$ref": "team"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "teams": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "members": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "city": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "teams": [
+          {
+            "title": "core",
+            "staff": [
+              {
+                "n": "Ada",
+                "c": "Oslo"
+              },
+              {
+                "n": "Bo"
+              }
+            ]
+          },
+          {
+            "title": "web"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "teams": [
+          {
+            "name": "core",
+            "members": [
+              {
+                "name": "Ada",
+                "city": "Oslo"
+              },
+              {
+                "name": "Bo",
+                "city": null
+              }
+            ]
+          },
+          {
+            "name": "web",
+            "members": null
+          }
+        ]
+      }
+    }
+  ]
+}

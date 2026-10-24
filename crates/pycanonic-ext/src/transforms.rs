@@ -2,8 +2,9 @@
 //! the spec gives an argument. A result that is not `str`, `int`, `float`, `bool` or `None`, or an
 //! `Exception`, is null, which the executor counts. Any other `BaseException` (KeyboardInterrupt,
 //! SystemExit) is held for the thread and raised from `map` once it returns. See `take_pending`.
+//! A container transform can return a list or dict. A result that is not JSON is `None`.
 
-use crate::pydoc::leaf;
+use crate::pydoc::{json, leaf};
 use crate::pysink::value;
 use canonic_core::{Transform, Value};
 use pyo3::exceptions::PyException;
@@ -50,10 +51,17 @@ pub fn json_to_py<'py>(py: Python<'py>, v: &J) -> Bound<'py, PyAny> {
 }
 
 impl PyTransform {
-    fn call(&self, py: Python<'_>, v: Bound<'_, PyAny>, arg: Option<&J>) -> Value<'static> {
+    /// `f(v)` or `f(v, arg)`, then `out` on its result. `None` for an exception.
+    fn call<'py, T>(
+        &self,
+        py: Python<'py>,
+        v: Bound<'py, PyAny>,
+        arg: Option<&J>,
+        out: impl FnOnce(&Bound<'py, PyAny>) -> Option<T>,
+    ) -> Option<T> {
         // After a KeyboardInterrupt or the like, the rest of this map call calls no more Python.
         if PENDING.with_borrow(Option::is_some) {
-            return Value::Null;
+            return None;
         }
         let f = self.0.bind(py);
         let r = match arg {
@@ -61,26 +69,36 @@ impl PyTransform {
             Some(a) => f.call1((v, json_to_py(py, a))),
         };
         match r {
-            Ok(r) => match leaf(&r) {
-                Value::Container => Value::Null,
-                v => v.into_owned(),
-            },
+            Ok(r) => out(&r),
             // An Exception is dropped here, which clears it: counted as an error, never printed.
-            Err(e) if e.is_instance_of::<PyException>(py) => Value::Null,
+            Err(e) if e.is_instance_of::<PyException>(py) => None,
             Err(e) => {
                 PENDING.set(Some(e));
-                Value::Null
+                None
             }
         }
+    }
+
+    fn scalar(&self, py: Python<'_>, v: Bound<'_, PyAny>, arg: Option<&J>) -> Value<'static> {
+        let out = |r: &Bound<'_, PyAny>| match leaf(r) {
+            Value::Container => None,
+            v => Some(v.into_owned()),
+        };
+        self.call(py, v, arg, out).unwrap_or(Value::Null)
     }
 }
 
 impl Transform for PyTransform {
     fn apply<'a>(&self, v: Value<'a>, arg: Option<&J>) -> Value<'a> {
-        Python::attach(|py| self.call(py, value(py, &v), arg))
+        Python::attach(|py| self.scalar(py, value(py, &v), arg))
     }
 
     fn apply_container(&self, v: &J, arg: Option<&J>) -> Value<'static> {
-        Python::attach(|py| self.call(py, json_to_py(py, v), arg))
+        Python::attach(|py| self.scalar(py, json_to_py(py, v), arg))
+    }
+
+    fn apply_container_out(&self, v: &J, arg: Option<&J>) -> Option<J> {
+        // A result that is not JSON (a set, a NaN, a non-str key) raises in `json`, a rejection.
+        Python::attach(|py| self.call(py, json_to_py(py, v), arg, |r| json(r, 0).ok()))
     }
 }

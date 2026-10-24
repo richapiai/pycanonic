@@ -44,7 +44,7 @@ pub use spec::{Issue, Path, Source, Spec, Status, Step, parse_spec, validate_spe
 pub use stats::{FieldStats, Stats, StatsSnapshot};
 pub use transforms::{
     ArgError, Builtin, CastTo, LANGUAGE_1_TRANSFORMS, NamePart, RangeEnd, Transform, builtin,
-    default_transform_names, validate,
+    conform, conforms, default_transform_names, validate,
 };
 pub use value::{Value, js_number_to_string};
 pub use write::write_json;

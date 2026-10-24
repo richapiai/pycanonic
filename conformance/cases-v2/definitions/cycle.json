@@ -1,0 +1,52 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "definitions": {
+      "a": {
+        "x[]": {
+          "from": "x",
+          "item": {
+            "$ref": "b"
+          }
+        }
+      },
+      "b": {
+        "x[]": {
+          "from": "x",
+          "item": {
+            "$ref": "a"
+          }
+        }
+      }
+    },
+    "fields": {
+      "x[]": {
+        "from": "x",
+        "item": {
+          "$ref": "a"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "x": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "array"
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": "acme people v1: definitions: cycle through \"a\" -> \"b\" -> \"a\""
+}

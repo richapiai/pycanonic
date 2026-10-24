@@ -1,0 +1,42 @@
+{
+  "spec": {
+    "language": 1,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "definitions": {
+      "person": {
+        "name": "n"
+      }
+    },
+    "fields": {
+      "people[]": {
+        "from": "people",
+        "item": {
+          "$ref": "person"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "people": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "city": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec: \"definitions\" needs \"language\": 2; spec.fields[\"people[]\"].item: \"$ref\" needs \"language\": 2"
+}

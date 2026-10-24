@@ -1,0 +1,55 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "definitions": {
+      "person": {}
+    },
+    "fields": {
+      "people[]": {
+        "from": "people",
+        "item": {
+          "$ref": 1
+        }
+      },
+      "lead[]": {
+        "from": "lead",
+        "item": {
+          "$ref": "person",
+          "name": "n"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "people": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "lead": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.definitions[\"person\"]: must be a non-empty object; spec.fields[\"people[]\"].item: must be {\"$ref\": <definition name>}; spec.fields[\"lead[]\"].item: must be {\"$ref\": <definition name>}"
+}

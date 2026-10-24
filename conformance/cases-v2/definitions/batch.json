@@ -1,0 +1,124 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "definitions": {
+      "person": {
+        "name": "full_name",
+        "city": "addr.city"
+      }
+    },
+    "fields": {
+      "people[]": {
+        "from": "people",
+        "wrap": true,
+        "item": {
+          "$ref": "person"
+        }
+      },
+      "lead[]": {
+        "from": "lead",
+        "item": {
+          "$ref": "person"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "people": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "city": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "lead": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "city": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "people": [
+          {
+            "full_name": "Ada",
+            "addr": {
+              "city": "Oslo"
+            }
+          },
+          {
+            "full_name": "Bo"
+          }
+        ],
+        "lead": [
+          {
+            "full_name": "Cy"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "people": [
+          {
+            "name": "Ada",
+            "city": "Oslo"
+          },
+          {
+            "name": "Bo",
+            "city": null
+          }
+        ],
+        "lead": [
+          {
+            "name": "Cy",
+            "city": null
+          }
+        ]
+      }
+    },
+    {
+      "body": {
+        "people": {
+          "full_name": "Ada",
+          "addr": {
+            "city": "Oslo"
+          }
+        }
+      },
+      "context": null,
+      "expected": {
+        "people": [
+          {
+            "name": "Ada",
+            "city": "Oslo"
+          }
+        ],
+        "lead": null
+      }
+    }
+  ]
+}

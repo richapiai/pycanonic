@@ -1,7 +1,7 @@
 //! The compiled plan: what codegen.ts knows about field order, stat naming and null/default/error
 //! semantics, as data. The executor runs it. `source()` prints it for humans.
 
-use crate::canonical::{Empty, Semantic};
+use crate::canonical::{Empty, Node, Semantic};
 use crate::cond::Cond;
 use crate::spec::{Aggregate, Path, Source, Status, Step};
 use crate::transforms::Builtin;
@@ -169,6 +169,16 @@ pub enum Field {
         omit: bool,
         field: Box<Field>,
     },
+    /// Language 2: one custom transform over the whole value at `from` (`$group`: the
+    /// group) of an array or object node. Its result goes out when it fits `node`
+    /// (`transforms::conform`), else null and an error. A missing source writes the node's
+    /// `x-empty`, a miss.
+    Container {
+        from: Path,
+        tx: TxRef,
+        node: Node,
+        stat: usize,
+    },
     /// Language 2: a canonical field the spec does not map, written as its `x-empty`:
     /// `List` (`[]`) or `Object` (`{}`). An unmapped null or left-out field is `Null` or `OmitNull`.
     Empty(Empty),
@@ -335,6 +345,7 @@ impl Plan {
                 | Field::OmitNull(_)
                 | Field::Empty(_)
                 | Field::Aggregate(..)
+                | Field::Container { .. }
                 | Field::When { .. } => true,
                 Field::Object {
                     members,
@@ -426,6 +437,14 @@ fn line(out: &mut String, name: &str, field: &Field) {
                 line += &format!(" ?? {d}");
             }
             _ = writeln!(out, "{line}");
+        }
+        Field::Container { from, tx, .. } => {
+            let tx = pipe(std::slice::from_ref(tx));
+            _ = writeln!(
+                out,
+                "{name} <- {}{tx} | checked against the schema",
+                path(from)
+            )
         }
         Field::Aggregate(a, _) => {
             let mut from = flat(&a.from, &a.flatten);

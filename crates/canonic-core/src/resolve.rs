@@ -22,6 +22,8 @@ fn json(s: &str) -> String {
 
 struct Resolver<'c> {
     custom: &'c [String],
+    /// Language 2: the spec's definitions, inlined where an item map names one.
+    definitions: &'c [(String, FieldMap)],
     /// The spec language. Only language 2 reserves `$group` and `$input`.
     language: u8,
     /// A scalar reads `$input` (language 2).
@@ -158,7 +160,12 @@ impl Resolver<'_> {
             }) => Some(children),
             _ => None,
         };
-        let kind = if let Some(item) = &r.item {
+        let defs = self.definitions;
+        let item = r.item.as_ref().or_else(|| {
+            let name = r.item_ref.as_ref()?;
+            defs.iter().find(|(n, _)| n == name).map(|(_, m)| m)
+        });
+        let kind = if let Some(item) = item {
             let Some(children) = object else {
                 return Err(format!("{at}: array of scalars; use pluck, or from alone"));
             };
@@ -192,6 +199,61 @@ impl Resolver<'_> {
             stat,
             ops,
         })
+    }
+
+    /// Language 2: `{"from": <path>, "transform": <one custom transform>}` on an array or
+    /// object node hands the transform the whole value. `None` for any other rule.
+    fn container(
+        &mut self,
+        rule: &Rule,
+        node: &Node,
+        stat: usize,
+        at: &str,
+    ) -> Result<Option<Field>, String> {
+        if self.language != 2 || matches!(node.kind, Kind::Scalar { .. }) {
+            return Ok(None);
+        }
+        let (from, tx, ops) = match rule {
+            Rule::Scalar(ScalarRule {
+                source: Source::From(p),
+                default: None,
+                transform,
+            }) => (p, transform, false),
+            Rule::Array(r) if r.item.is_none() && r.item_ref.is_none() && r.pluck.is_none() => {
+                let ops = r.missing.is_some()
+                    || r.empty.is_some()
+                    || r.wrap
+                    || !r.flatten.is_empty()
+                    || r.filter.is_some()
+                    || r.unique.is_some()
+                    || r.sort.is_some()
+                    || r.limit.is_some()
+                    || r.group.is_some();
+                (&r.from, &r.transform, ops)
+            }
+            _ => return Ok(None),
+        };
+        let [t] = tx.as_slice() else {
+            return Ok(None);
+        };
+        let tx = match self.tx(std::slice::from_ref(t), at)?.remove(0) {
+            tx @ TxRef::Custom { .. } => tx,
+            TxRef::Builtin(_) => return Ok(None),
+        };
+        if ops {
+            return Err(format!(
+                "{at}: a container transform takes only from and transform"
+            ));
+        }
+        let input = Step::Key("$input".into());
+        self.context |= from.first() == Some(&input);
+        let (from, node) = (from.clone(), node.clone());
+        Ok(Some(Field::Container {
+            from,
+            tx,
+            node,
+            stat,
+        }))
     }
 
     /// Resolves `map` against an object's children. Inside an item, `within` prefixes stat names.
@@ -264,7 +326,10 @@ impl Resolver<'_> {
                         if_empty: if_empty_null.then_some(Empty::Null),
                     }
                 }
-                Rule::Array(r) => self.array(r, target, stat, &kat)?,
+                Rule::Array(r) => match self.container(rule, target, stat, &kat)? {
+                    Some(f) => f,
+                    None => self.array(r, target, stat, &kat)?,
+                },
                 Rule::Aggregate(a) => match &target.kind {
                     Kind::Scalar { routing: true, .. } => {
                         return Err(format!("{kat}: routing fields can't be aggregates"));
@@ -279,7 +344,10 @@ impl Resolver<'_> {
                         return Err(format!("{kat}: canonical field is an object"));
                     }
                 },
-                Rule::Scalar(r) => Field::Scalar(self.scalar(r, target, stat, &kat)?),
+                Rule::Scalar(r) => match self.container(rule, target, stat, &kat)? {
+                    Some(f) => f,
+                    None => Field::Scalar(self.scalar(r, target, stat, &kat)?),
+                },
                 Rule::When { .. } => unreachable!("spec::rule wraps a rule once"),
             };
             if within.is_none() {
@@ -434,6 +502,7 @@ fn routing(fields: &[Named<Field>], stat_names: &[String], out: &mut Vec<Routing
             | Field::List { .. }
             | Field::Const(..)
             | Field::Aggregate(..)
+            | Field::Container { .. }
             | Field::Empty(_) => {}
             Field::OmitNull(_) | Field::When { .. } => unreachable!("inner() unwraps it"),
         }
@@ -471,6 +540,63 @@ fn check_anchor(field: Option<&Option<Scalar>>, key: &str, token: &str) -> Resul
     Ok(())
 }
 
+/// The definition names that `map` refers to, in nested item maps too, not through a reference.
+fn refs<'m>(map: &'m FieldMap, out: &mut Vec<&'m str>) {
+    for (_, r) in map {
+        let r = match r {
+            Rule::When { rule, .. } => &**rule,
+            r => r,
+        };
+        if let Rule::Array(a) = r {
+            out.extend(a.item_ref.as_deref());
+            if let Some(m) = &a.item {
+                refs(m, out);
+            }
+        }
+    }
+}
+
+/// Language 2: every name a spec refers to is a definition, and no definition refers to
+/// itself through others.
+fn check_definitions(fields: &FieldMap, defs: &[(String, FieldMap)]) -> Result<(), String> {
+    let get = |n: &str| defs.iter().find(|(k, _)| k == n).map(|(_, m)| m);
+    let mut all = Vec::new();
+    refs(fields, &mut all);
+    defs.iter().for_each(|(_, m)| refs(m, &mut all));
+    if let Some(n) = all.iter().find(|n| get(n).is_none()) {
+        return Err(format!("definitions: no definition {}", json(n)));
+    }
+    // A depth-first walk. `trail` is the chain of names to here, `done` the names with no cycle.
+    fn walk<'m>(
+        name: &'m str,
+        get: &impl Fn(&str) -> Option<&'m FieldMap>,
+        trail: &mut Vec<&'m str>,
+        done: &mut Vec<&'m str>,
+    ) -> Result<(), String> {
+        if let Some(i) = trail.iter().position(|t| *t == name) {
+            let chain: Vec<String> = trail[i..].iter().chain([&name]).map(|n| json(n)).collect();
+            return Err(format!("definitions: cycle through {}", chain.join(" -> ")));
+        }
+        if done.contains(&name) {
+            return Ok(());
+        }
+        trail.push(name);
+        let mut next = Vec::new();
+        refs(get(name).expect("checked above"), &mut next);
+        for n in next {
+            walk(n, get, trail, done)?;
+        }
+        trail.pop();
+        done.push(name);
+        Ok(())
+    }
+    let mut done = Vec::new();
+    for (name, _) in defs {
+        walk(name, &get, &mut Vec::new(), &mut done)?;
+    }
+    Ok(())
+}
+
 /// Validates the spec, loads the canonical schema and resolves one against the other.
 /// `custom` names the deployment's own transforms. `TxRef::Custom::index` points into it.
 pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, CompileError> {
@@ -482,6 +608,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
     let canonical = load_schema(schema, s.language).map_err(|i| fail(i.to_string()))?;
     let mut r = Resolver {
         custom,
+        definitions: &s.definitions,
         language: s.language,
         context: false,
         stat_names: Vec::new(),
@@ -489,6 +616,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
         top: HashMap::new(),
     };
     let resolved = (|| {
+        check_definitions(&s.fields, &s.definitions)?;
         let fields = r.object(&canonical.root, &s.fields, None, "fields")?;
         let mut routed = Vec::new();
         routing(&fields, &r.stat_names, &mut routed);

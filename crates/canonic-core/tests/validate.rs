@@ -431,6 +431,7 @@ fn parse_spec_returns_the_typed_spec() {
     let Rule::Array(ArrayRule {
         from,
         item: Some(item),
+        item_ref: None,
         pluck: None,
         transform,
         missing: None,

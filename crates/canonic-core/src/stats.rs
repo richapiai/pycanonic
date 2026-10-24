@@ -46,7 +46,8 @@ fn walk(fields: &[Named<Field>], list: Option<usize>, within: &mut [Option<usize
             Field::Object { members, .. } => walk(members, list, within),
             Field::Scalar(Scalar { stat, .. })
             | Field::Const(_, stat)
-            | Field::Aggregate(_, stat) => {
+            | Field::Aggregate(_, stat)
+            | Field::Container { stat, .. } => {
                 if let Some(w) = within.get_mut(*stat) {
                     *w = list;
                 }

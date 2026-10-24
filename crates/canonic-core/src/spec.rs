@@ -50,6 +50,8 @@ pub struct ScalarRule {
 pub struct ArrayRule {
     pub from: Path,
     pub item: Option<FieldMap>,
+    /// Language 2: `"item": {"$ref": <name>}`, a definition the resolver inlines as `item`.
+    pub item_ref: Option<String>,
     pub pluck: Option<Path>,
     pub transform: Vec<TransformRef>,
     /// Language 2: the output for a missing or null source, `Null` or `List`. None: the schema's
@@ -92,6 +94,8 @@ pub struct Aggregate {
     pub sep: Option<String>,
 }
 
+// A parse-time type, a few per field: its size does not matter.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Rule {
     Scalar(ScalarRule),
@@ -129,6 +133,8 @@ pub struct Spec {
     pub anchors: BTreeMap<String, String>,
     /// Language 2: each condition, with its spec JSON text, which names it in `Rejected`.
     pub reject: Vec<(Cond, String)>,
+    /// Language 2: named item maps, in spec order.
+    pub definitions: Vec<(String, FieldMap)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -462,7 +468,18 @@ impl Checker {
         if item.is_some() && pluck.is_some() {
             self.fail(at, "item and pluck can't be combined");
         }
-        if let Some(item) = item {
+        if let Some(o) = item
+            .and_then(Value::as_object)
+            .filter(|o| o.contains_key("$ref"))
+        {
+            self.lang2(&format!("{at}.item"), "$ref");
+            if o.len() != 1 || !o["$ref"].is_string() {
+                self.fail(
+                    &format!("{at}.item"),
+                    "must be {\"$ref\": <definition name>}",
+                );
+            }
+        } else if let Some(item) = item {
             let outer = std::mem::replace(&mut self.grouped, r.contains_key("group_by"));
             self.fields(item, &format!("{at}.item"));
             self.grouped = outer;
@@ -708,8 +725,16 @@ impl Checker {
             s,
             "spec",
             &[
-                "$schema", "language", "provider", "endpoint", "version", "status", "anchors",
-                "fields", "reject",
+                "$schema",
+                "language",
+                "provider",
+                "endpoint",
+                "version",
+                "status",
+                "anchors",
+                "fields",
+                "reject",
+                "definitions",
             ],
         );
         self.header(s);
@@ -718,6 +743,17 @@ impl Checker {
         }
         if let Some(r) = s.get("reject") {
             self.reject(r);
+        }
+        if let Some(d) = s.get("definitions") {
+            self.lang2("spec", "definitions");
+            match d.as_object() {
+                Some(d) => {
+                    for (name, map) in d {
+                        self.fields(map, &format!("spec.definitions[{}]", json_string(name)));
+                    }
+                }
+                None => self.fail("spec.definitions", "must be an object"),
+            }
         }
         self.fields(s.get("fields").unwrap_or(&Value::Null), "spec.fields");
     }
@@ -905,7 +941,13 @@ fn bare_rule(key: &str, r: &Value) -> Rule {
             group: r
                 .get("group_by")
                 .map(|p| (path(p), r.get("consecutive") != Some(&Value::Bool(false)))),
-            item: r.get("item").map(field_map),
+            item: r
+                .get("item")
+                .filter(|i| i.get("$ref").is_none())
+                .map(field_map),
+            item_ref: r
+                .get("item")
+                .and_then(|i| i.get("$ref")?.as_str().map(String::from)),
             pluck: r.get("pluck").map(path),
             transform: transform(r.get("transform")),
             missing: r.get("missing").and_then(list_empty),
@@ -983,6 +1025,13 @@ pub fn parse_spec(spec: &Value) -> Result<Spec, Vec<Issue>> {
                 let text = serde_json::to_string(c).expect("JSON serializes");
                 (cond::parse_reject(c).unwrap(), text)
             })
+            .collect(),
+        definitions: spec
+            .get("definitions")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+            .map(|(name, map)| (name.clone(), field_map(map)))
             .collect(),
     })
 }

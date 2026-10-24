@@ -2,7 +2,7 @@
 //! and never panics. The executor counts a `Null` from non-null input as a field error.
 //! Port of canonic/packages/canonic/src/transforms.ts.
 
-use crate::canonical::Semantic;
+use crate::canonical::{Empty, Kind, Node, Semantic};
 use crate::dates::{self, DateOut, Layout, date_from_epoch, date_from_string};
 use crate::strings::{self, Find, Otherwise, Pattern};
 use crate::value::{Value, js_number_to_string};
@@ -23,6 +23,59 @@ pub trait Transform: Send + Sync {
     ) -> Value<'static> {
         self.apply(Value::Container, arg).into_owned()
     }
+
+    /// Language 2: the whole source of an array or object field in, a list or dict out.
+    /// `None` is a rejection. The executor checks the result against the node (`conform`).
+    fn apply_container_out(
+        &self,
+        _v: &serde_json::Value,
+        _arg: Option<&serde_json::Value>,
+    ) -> Option<serde_json::Value> {
+        None
+    }
+}
+
+/// A container transform's result in the shape of `node`, `None` when it does not fit: a leaf
+/// takes any non-container, an array a list of fitting items, an object a dict of its own keys,
+/// an open map any dict. A missing or null key gets the value of its `x-empty`, in schema order.
+pub fn conform(v: &J, node: &Node) -> Option<J> {
+    match (&node.kind, v) {
+        (_, J::Null) => Some(J::Null),
+        (Kind::Scalar { .. }, J::Array(_) | J::Object(_)) => None,
+        (Kind::Scalar { .. }, v) => Some(v.clone()),
+        (Kind::Array { items: None, .. }, J::Array(_)) => Some(v.clone()),
+        (Kind::Array { items: Some(n), .. }, J::Array(xs)) => xs
+            .iter()
+            .map(|x| conform(x, n))
+            .collect::<Option<_>>()
+            .map(J::Array),
+        (Kind::Object { open: true, .. }, J::Object(_)) => Some(v.clone()),
+        (Kind::Object { children, .. }, J::Object(m)) => {
+            if m.keys().any(|k| !children.iter().any(|(c, _)| c == k)) {
+                return None;
+            }
+            let mut out = Map::new();
+            for (k, child) in children {
+                let x = match m.get(k).filter(|x| !x.is_null()) {
+                    Some(x) => conform(x, child)?,
+                    None => match child.empty {
+                        Some(Empty::Missing) => continue,
+                        Some(Empty::List) => J::Array(Vec::new()),
+                        Some(Empty::Object) => J::Object(Map::new()),
+                        _ => J::Null,
+                    },
+                };
+                out.insert(k.clone(), x);
+            }
+            Some(J::Object(out))
+        }
+        _ => None,
+    }
+}
+
+/// Whether a container transform's result fits `node` (`conform`).
+pub fn conforms(v: &J, node: &Node) -> bool {
+    conform(v, node).is_some()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
