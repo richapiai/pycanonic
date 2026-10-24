@@ -36,6 +36,19 @@ fn assert_issue(spec: J, want: &str) {
     assert_eq!(issues, [want]);
 }
 
+/// `map_json` of `body`, after checking that `map_bytes` and `map_doc` on the parsed body write the
+/// same text.
+fn map_three(a: &canonic_core::Artifact, body: &[u8]) -> Vec<u8> {
+    let text = a.map_json(body, None).unwrap();
+    let mut bytes = Vec::new();
+    canonic_core::write_json(&a.plan, &a.map_bytes(body, None).unwrap(), &mut bytes);
+    let parsed: J = serde_json::from_slice(body).unwrap();
+    let mut doc = Vec::new();
+    canonic_core::write_json(&a.plan, &a.map_doc(&&parsed, None).unwrap(), &mut doc);
+    assert_eq!((&bytes, &doc), (&text, &text));
+    text
+}
+
 fn plan_json(spec: J) -> J {
     serde_json::to_value(compile(&spec, &schema(), &[]).unwrap()).unwrap()
 }
@@ -232,12 +245,9 @@ fn empty_options_keep_one_error_on_a_non_array() {
         assert_eq!(text["format"], format, "{rule}");
         assert_eq!(serde_json::from_value::<Plan>(text).unwrap(), plan);
         let a = canonic_core::Artifact::new(plan, Default::default()).unwrap();
-        assert_eq!(
-            a.map_json(br#"{"labels": "x"}"#, None).unwrap(),
-            br#"{"tags":null}"#
-        );
+        assert_eq!(map_three(&a, br#"{"labels": "x"}"#), br#"{"tags":null}"#);
         let tags = &a.stats.snapshot().fields[0];
-        assert_eq!((tags.1.fill, tags.1.errors), (0, 1), "{rule}");
+        assert_eq!((tags.1.fill, tags.1.errors), (0, 3), "{rule}");
     }
 }
 
@@ -268,11 +278,8 @@ fn x_empty_missing_writes_format_2() {
     assert_eq!(text["format"], 2);
     let loaded: Plan = serde_json::from_value(text).unwrap();
     let a = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
-    assert_eq!(a.map_json(b"{}", None).unwrap(), b"{}");
-    assert_eq!(
-        a.map_json(br#"{"n": "a"}"#, None).unwrap(),
-        br#"{"name":"a"}"#
-    );
+    assert_eq!(map_three(&a, b"{}"), b"{}");
+    assert_eq!(map_three(&a, br#"{"n": "a"}"#), br#"{"name":"a"}"#);
 }
 
 #[test]
@@ -665,4 +672,27 @@ fn array_root_source_and_other_errors() {
 
 fn schema_obj() -> J {
     json!({"type": "object", "properties": {"tags": {"type": "array"}}})
+}
+
+#[test]
+fn stat_names_of_quoted_item_keys_follow_the_path_grammar() {
+    let item = json!({"type": "object", "properties": {"@id": {"type": "string"}, "n": {"type": "string"}}});
+    let schema =
+        json!({"type": "object", "properties": {"@graph": {"type": "array", "items": item}}});
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] =
+        json!({"[\"@graph\"][]": {"from": "nodes", "item": {"[\"@id\"]": "ref", "n": "n"}}});
+    let names = compile(&spec, &schema, &[]).unwrap().stat_names;
+    assert_eq!(
+        names,
+        [
+            "[\"@graph\"][]",
+            "[\"@graph\"][][\"@id\"]",
+            "[\"@graph\"][].n"
+        ]
+    );
+    let root = json!({"type": "array", "items": item});
+    spec["fields"] = json!({"[]": {"from": "$", "item": {"[\"@id\"]": "ref"}}});
+    let names = compile(&spec, &root, &[]).unwrap().stat_names;
+    assert_eq!(names, ["[]", "[][\"@id\"]"]);
 }

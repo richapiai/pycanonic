@@ -118,3 +118,13 @@ def test_container_transform_x_empty_list_on_missing_source() -> None:
 
 def test_rejected_without_args_has_no_reason() -> None:
     assert pycanonic.Rejected().reason is None
+
+
+def test_stat_names_of_quoted_item_keys_follow_the_path_grammar():
+    from pycanonic.cli.commands.diff import item_field
+
+    case = json.loads((CASES_V2 / "schema" / "quoted-keys.json").read_text())
+    a = pycanonic.compile_spec(case["spec"], case["schema"])
+    assert list(a.stats_snapshot()["fields"]) == ['["first-name"]', 'meta["@type"]', '["@graph"][]', '["@graph"][]["@id"]']
+    assert item_field('["@graph"][]["@id"]') == ('["@graph"][]', '["@id"]')
+    assert item_field("jobs[].title") == ("jobs[]", "title")

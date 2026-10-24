@@ -509,6 +509,7 @@ impl Checker {
                 }
                 self.group_source(&s[0], &format!("{at}.from"));
             }
+            Some(s) if s.len() > 1 => self.fail(at, "\"from\" with [] needs \"language\": 2"),
             _ => self.path(r.get("from"), &format!("{at}.from")),
         }
         if let Some(p) = from.and_then(parse_path) {

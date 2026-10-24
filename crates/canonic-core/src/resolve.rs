@@ -298,8 +298,13 @@ impl Resolver<'_> {
             let stat = self.stat_names.len();
             // An object rule reads no value of its own, so it has no stat slot.
             if !matches!(rule, Rule::Object { .. }) {
-                self.stat_names
-                    .push(format!("{}{key}", within.unwrap_or("")));
+                // No dot before a quoted key: `["@graph"][]["@id"]`, as the path grammar writes it.
+                let within = within.unwrap_or("");
+                let within = match key.starts_with('[') {
+                    true => within.strip_suffix('.').unwrap_or(within),
+                    false => within,
+                };
+                self.stat_names.push(format!("{within}{key}"));
             }
             // The grammar puts an array rule exactly on the keys ending in [].
             let field = match rule {

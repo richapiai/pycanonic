@@ -4,6 +4,7 @@ with just the broken fields re-inferred."""
 from __future__ import annotations
 
 import math
+import re
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -82,9 +83,10 @@ def dropped(spec: Spec, schema: Any, old: list[Any], now: list[Any], transforms:
 
 
 def item_field(field: str) -> tuple[str, str] | None:
-    """"jobs[].title" as (the list's spec key, the field inside its item map). None outside any list."""
-    i = field.find("[].")
-    return None if i == -1 else (field[: i + 2], field[i + 3 :])
+    """"jobs[].title" as (the list's spec key, the field inside its item map), also for a quoted
+    item key with no dot ('jobs[]["@id"]'). None outside any list."""
+    m = re.search(r"\[\](\.|(?=\[\"))", field)
+    return None if m is None else (field[: m.start() + 2], field[m.end() :])
 
 
 def items_at(schema: Any, path: str) -> Any:

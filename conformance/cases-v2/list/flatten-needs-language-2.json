@@ -1,0 +1,25 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "skills[]": {
+        "from": "jobs[].skills[]"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"skills[]\"]: \"from\" with [] needs \"language\": 2"
+}
