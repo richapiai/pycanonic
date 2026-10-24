@@ -27,7 +27,7 @@ def mismatches(expected: Any, actual: Any, at: str = "") -> list[str]:
         return [m for k, v in expected.items() for m in mismatches(v, actual.get(k), f"{at}.{k}" if at else k)]
     if isinstance(expected, list) and isinstance(actual, list) and len(expected) == len(actual):
         return [m for i, (e, a) in enumerate(zip(expected, actual)) for m in mismatches(e, a, f"{at}[{i}]")]
-    # Leaves are scalars here; JSON tells true from 1, Python's == does not.
+    # Leaves are scalars here. JSON tells true from 1, Python's == does not.
     if expected == actual and isinstance(expected, bool) == isinstance(actual, bool):
         return []
     return [f"{at}: expected {_js(expected)}, got {_js(actual)}"]

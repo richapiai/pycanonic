@@ -1,6 +1,6 @@
-"""Draft a spec from a canonical schema and sample responses. Offline; nothing here runs per request.
+"""Draft a spec from a canonical schema and sample responses. Offline: nothing here runs per request.
 Passes: one-to-one assignment of scalar fields (Hungarian), then coalesce, split and join for what a
-one-to-one match can't express, then arrays (item, recursively, pluck, or plain values), then anchors."""
+one-to-one match cannot express, then arrays (item, recursively, pluck, or plain values), then anchors."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from .tokens import SEED, Synonyms, similarity, split, synonyms_of, tokens
 @dataclass(frozen=True)
 class FieldReport:
     """One line of the report. `how` is match, coalesce, split, join, item, pluck, values, ask or
-    unmapped; `confidence` is the score (for unmapped, the best candidate's, if any); `check` marks
+    unmapped. `confidence` is the score (for unmapped, the best candidate's, if any). `check` marks
     the lines the report flags with `<- check`."""
 
     field: str
@@ -55,7 +55,7 @@ class Inferred:
     spec: dict[str, Any]
     fields: list[FieldReport]
     unmapped: list[dict[str, Any]]
-    """Canonical fields left unmapped, with the best candidate that didn't make the threshold."""
+    """Canonical fields left unmapped, with the best candidate that did not make the threshold."""
 
 
 def with_steps(steps: Steps) -> dict[str, Any]:
@@ -158,7 +158,7 @@ class Pass:
         return [t for n in l.names for t in tokens(n, self.ctx.syn)]
 
     def names(self) -> None:
-        """first_name and last_name split from one full-name source; full_name joined from first and last."""
+        """first_name and last_name split from one full-name source, and full_name joined from first and last."""
         fulls = [
             s
             for s in self.scalars
@@ -186,7 +186,7 @@ class Pass:
         self.put(FieldReport(l.path, "split", {"from": full.path, "transform": {"split_name": part}}, confidence))
 
     def with_tokens(self, want: list[str]) -> Source | None:
-        """The best source for a first or last name: its key reads like want, and it isn't a list element."""
+        """The best source for a first or last name: its key reads like want, and it is not a list element."""
         found = [
             (s, sim)
             for s in self.scalars
@@ -204,7 +204,7 @@ class Pass:
         scores = [[self.array_score(a, s, subs[i][k]) for k, s in enumerate(objects)] for i, a in enumerate(items)]
         picks = assign([[x if x >= self.ctx.min else 0 for x in row] for row in scores])
         for i, k in enumerate(picks):
-            # A name match with no item field mapped would give "item": {}, which isn't a valid rule.
+            # A name match with no item field mapped would give "item": {}, which is not a valid rule.
             if k == -1 or not subs[i][k].fields:
                 continue
             a = items[i]
@@ -221,7 +221,7 @@ class Pass:
         n = len(walk_canonical(a.item)[0])
         total = sum(r.confidence or 0 for r in sub.report)
         quality = (total / n if n else math.inf) if sub.report else 0
-        # The response itself (`$`) has no name to compare; its elements decide.
+        # The response itself (`$`) has no name to compare, so its elements decide.
         return min(1, quality) if not s.segs else 0.5 * name + 0.5 * min(1, quality)
 
     def scalar_arrays(self, a: ArrayField, objects: list[Source]) -> list[tuple[Source, Source, float, bool]]:
@@ -278,7 +278,7 @@ class Pass:
 
 
 def noise_prefixes(sources: list[Source], leaves: list[Leaf], objects: set[str], syn: Synonyms) -> dict[str, str]:
-    """First tokens of three or more keys that aren't words: short, not a synonym, not canonical. A
+    """First tokens of three or more keys that are not words: short, not a synonym, not canonical. A
     one-letter prefix that starts exactly one canonical object's name stands for it ("c" -> company)."""
     words = {t for l in leaves for t in [*split(l.parent), *(w for n in l.names for w in split(n))]}
     firsts = [t for s in sources for t in split(last_seg(s))[:1] if len(t) <= 3]
@@ -331,14 +331,14 @@ def infer_draft(
     raws: list[str] | None = None,
     min_score: float = 0.4,
 ) -> Inferred:
-    """The TypeScript `infer()`: synonyms merge over the seed; anchors are only proposed with raws."""
+    """The TypeScript `infer()`: synonyms merge over the seed, and anchors are only proposed with raws."""
     ctx = ScoreCtx(syn={**SEED, **(synonyms or {})}, known=known, min=min_score)
     p = infer_object(schema, samples, ctx)
     spec: dict[str, Any] = {"provider": provider, "endpoint": endpoint, "version": 1, "status": "draft", "fields": p.fields}
     a = anchors(walk_canonical(schema)[0], p.fields, collect(samples), raws) if raws is not None else {}
     if a:
         spec["anchors"] = a
-    # The draft must compile; a failure here is a bug in inference. An empty spec isn't valid, so it's skipped.
+    # The draft must compile, so a failure here is a bug in inference. An empty spec is not valid, so it is skipped.
     if p.fields:
         compile_spec(spec, schema)
     return Inferred(spec, p.report, p.unmapped())
@@ -359,10 +359,10 @@ def infer(
 ) -> tuple[dict[str, Any], list[FieldReport]]:
     """The draft spec (status "draft") and one report line per canonical field.
 
-    `known` is the canonical output per sample (None where unknown); `learn` takes approved specs to
-    learn synonyms from (`synonyms` wins on conflicts); `ask` is a shell command asked about each
-    doubtful scalar field; `raws` is each sample's raw text, needed to propose anchors."""
-    from .ask import LOW, ask_low_confidence, ask_with  # here, not at the top: ask.py imports FieldReport from this module
+    `known` is the canonical output per sample (None where unknown). `learn` takes approved specs to
+    learn synonyms from (`synonyms` wins on conflicts). `ask` is a shell command asked about each
+    doubtful scalar field. `raws` is each sample's raw text, needed to propose anchors."""
+    from .ask import LOW, ask_low_confidence, ask_with  # here, not at the top, because ask.py imports FieldReport from this module
 
     for i, s in enumerate(learn or []):
         if not (isinstance(s, dict) and isinstance(s.get("fields"), dict)):

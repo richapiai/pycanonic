@@ -73,10 +73,10 @@ class FillMonitor:
 
 @final
 class View:
-    """A lazy canonical object: each field is mapped on its first read and kept; no stats.
+    """A lazy canonical object: each field is mapped on its first read and kept. A view records no stats.
 
     `view.name` reads a field unless `View` has an attribute of that name (`to_dict`) or the name
-    is a `__dunder__`; `view["name"]` always reads the field and raises `KeyError` for an unknown one.
+    is a `__dunder__`. `view["name"]` always reads the field and raises `KeyError` for an unknown one.
     """
 
     def __getattr__(self, field: str) -> Any: ...
@@ -120,14 +120,14 @@ def validator(semantic: str, value: _T) -> _T | None: ...
 def shape(value: object) -> list[str]:
     """Sorted key paths of a parsed response, or of JSON text given as `bytes`.
 
-    Only a `dict` and a `list`/`tuple` have members; anything else (a `str`, a `set`) is a scalar.
+    Only a `dict` and a `list`/`tuple` have members. Anything else (a `str`, a `set`) is a scalar.
     A Python object deeper than 512 levels, with more than 1,000,000 containers or 64 MiB of
     distinct paths (a cyclic one, or one that shares its children) raises `ValueError` rather than
     giving a cut shape. `bytes` are parsed and never cut.
     """
 
 def fingerprint(value: object) -> str:
-    """FNV-1a over `shape(value)`, as 8 hex digits, equal to canonic's; raises where `shape` does."""
+    """FNV-1a over `shape(value)`, as 8 hex digits, equal to canonic's. Raises where `shape` raises."""
 
 class _FieldDiff(TypedDict):
     compared: int

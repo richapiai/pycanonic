@@ -121,6 +121,6 @@ A canonical field with `routing: true` needs a `semantic` from this table. The c
 | `iso_date` | a string with no surrounding whitespace in a form `parse_date` accepts: `"2014-06"`, `"2014-06-01"` | `"2024-02-30"`, `" 2014-06-01"`, `"June 2014"` |
 | `money` | a positive finite number, or a string of digits with commas and dots. In front, an optional `$ € £ ¥ ₹` or 3-letter uppercase code. Behind, an optional ` XXX` code and an optional `K`/`M`/`B` suffix: `"$1,200.50"`, `"USD 3.2M"`, `"1200 EUR"`, `"€40k"` | `"$"`, `"USD"`, `"-5"`, `"12 apples"`, `"1..2"`, `0` |
 
-Validators check format only. A personal address passes `email` just as a work address does. [drift-and-learning-loop.md](drift-and-learning-loop.md) covers the known-entity check that catches that.
+Validators check format only. A personal address passes `email` the same way a work address does. [drift-and-learning-loop.md](drift-and-learning-loop.md) covers the known-entity check that catches that.
 
 Routing fields cannot have a `default`. `compile_spec` rejects it, because the default skips the validator.

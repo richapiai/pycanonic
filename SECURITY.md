@@ -10,6 +10,6 @@ Specs are trusted input. They live in your repository and go through review like
 
 Response bodies are untrusted. The parser caps nesting at 512 levels and never panics on malformed input. `map` and the view read only the keys a spec names, and transforms return null on anything they cannot handle. The fuzz targets in `crates/canonic-core/fuzz/` run the parser, `map_bytes`, `extract` and `stream` on generated input every night. The only `unsafe` code is the SIMD block scan in `crates/canonic-core/src/json/simd.rs`.
 
-The extractor (`extract`, `stream`, `routing_tap`) does not check that its input is JSON. On malformed input it can return a wrong value without an error. Map the full body before you act on a value, and treat the extractor as a fast path that you check.
+The extractor (`extract`, `stream`, `routing_tap`) does not check that its input is JSON. On malformed input it can return a wrong value without an error. Map the full body before you act on a value.
 
 Custom transforms and the `--transforms` module of the CLI are your own Python code, and pycanonic runs them as given. `canonic infer --ask` runs its argument through the shell. Pass only a command you trust.

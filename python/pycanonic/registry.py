@@ -9,8 +9,8 @@ class Registry:
     """The artifacts being served, by provider and endpoint.
 
     `put` swaps a reference, so a request already holding the old artifact finishes on it.
-    Readers need no lock: a dict item assignment is atomic under the GIL. Writers are
-    expected to be serial (one deploy at a time).
+    Readers need no lock: a dict item assignment is atomic under the GIL. Writers must be
+    serial (one deploy at a time).
     """
 
     def __init__(self) -> None:

@@ -13,11 +13,11 @@ from . import _core
 from ._core import Artifact
 
 Transform = Callable[..., Any]
-"""`f(value)` or `f(value, arg)`; returns the new value, or `None` to reject it."""
+"""`f(value)` or `f(value, arg)`. It returns the new value, or `None` to reject the value."""
 
 
 class SpecError(ValueError):
-    """A spec or canonical schema `compile_spec` rejects; the message names the field."""
+    """A spec or canonical schema that `compile_spec` rejects. The message names the field."""
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,7 @@ def compile_spec(
 ) -> Artifact:
     """Compile `spec` against the `canonical` schema (each a `dict` or JSON text).
 
-    `transforms` adds your own transforms by name; a name that matches a default replaces it.
+    `transforms` adds your own transforms by name. A name that matches a default replaces it.
     Raises `SpecError` (a `ValueError`) naming the field when the spec or the schema is wrong.
     """
     try:
@@ -53,7 +53,7 @@ def load(
     """An artifact from a plan written by `Artifact.plan_json()`, without compiling the spec again.
 
     An `os.PathLike` is a file path, read as UTF-8. A `str` naming an existing file is read the
-    same way; a `str` starting with `{` or `[`, and `bytes`, is the plan JSON itself. Any other
+    same way. A `str` that starts with `{` or `[`, and `bytes`, are the plan JSON itself. Any other
     `str` is a missing file: `FileNotFoundError`. Pass the same `transforms` the plan was
     compiled with.
     """
@@ -71,12 +71,12 @@ def load(
 
 
 def validate_spec(spec: dict[str, Any] | str | bytes) -> list[Issue]:
-    """Every grammar problem in `spec`, without a schema and without compiling; empty when fine."""
+    """Every grammar problem in `spec`, found without a schema and without compiling. Empty when there is none."""
     return [Issue(at, message) for at, message in _core.validate_spec(spec)]
 
 
 def validate_canonical(schema: dict[str, Any] | str | bytes) -> list[Issue]:
-    """What `compile_spec` would reject in a canonical schema, without a spec; empty when it loads."""
+    """What `compile_spec` rejects in a canonical schema, checked without a spec. Empty when the schema loads."""
     return [Issue(at, message) for at, message in _core.validate_canonical(schema)]
 
 
@@ -142,7 +142,7 @@ class FillMonitor:
         )
 
     def check(self, window: Mapping[str, Any]) -> list[FieldAlert]:
-        """Feeds one window; the fields whose fill fell or whose errors rose, once it is big enough."""
+        """Feeds one window. Returns the fields whose fill fell or whose errors rose, once the window is big enough."""
         return [FieldAlert(**a) for a in self._core.check(window)]
 
 
@@ -161,7 +161,7 @@ def merge_gate(
     known: Sequence[tuple[Mapping[str, Any], Mapping[str, Any]] | Mapping[str, Mapping[str, Any]]] | None = None,
     fill_alerts: Sequence[FieldAlert | Mapping[str, Any]] | None = None,
 ) -> GateResult:
-    """Whether a shadow candidate may be promoted without a person, given `ShadowDiff.snapshot()`.
+    """Whether a shadow candidate can be promoted without a person, given `ShadowDiff.snapshot()`.
 
     Routing fields: no regressions, no conflicts, improvements only when a `known` entity states
     the field's value. Every other field: regressions plus conflicts at most `max_change` of

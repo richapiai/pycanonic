@@ -28,7 +28,7 @@ def run(args: list[str], loaded: Transforms) -> int:
     if not a.schema or not a.specs:
         raise UsageError(USAGE)
     canonical = read_json(a.schema)
-    # Only the names matter at build time; load() receives the real functions.
+    # Only the names matter at build time. load() receives the real functions.
     transforms: Transforms = {**{name: _declared for name in a.transform}, **loaded}
     for path in a.specs:
         out = path.removesuffix(".json") + ".plan.json"

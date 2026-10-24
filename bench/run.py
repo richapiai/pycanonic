@@ -181,7 +181,7 @@ def gate(ratios, baseline):
 
 # --- --vs-ts --------------------------------------------------------------------------------------
 
-# Python row -> (TypeScript rows whose times add up to the same work, gated?). TypeScript has no
+# Python row -> (TypeScript rows whose times add up to the same work, gated or not). TypeScript has no
 # bytes-in path, so bytes in and JSON out are compared with JSON.parse plus map on the parsed object.
 VS_TS = {
     "map, bytes in": ([("map", "canonic"), ("map", "JSON.parse (input)")], True),
@@ -232,7 +232,7 @@ def vs_ts(checkout, rows):
     for name, (refs, gated) in VS_TS.items():
         missing = [r for r in refs if r not in ts]
         if missing:
-            print(f"--vs-ts: no TypeScript row {missing} in the bench output; the table format changed?", file=sys.stderr)
+            print(f"--vs-ts: no TypeScript row {missing} in the bench output. If the TypeScript table format changed, update ROW in bench/run.py.", file=sys.stderr)
             return False
         t = sum(ts[r] for r in refs)
         ratio = py[name] / t
@@ -278,7 +278,7 @@ def main(argv):
     elif "--gate" in argv:
         baseline = json.loads(BASELINE.read_text()).get(PLATFORM)
         if not baseline:
-            # An unrecorded platform must not pass: CI would gate nothing. Paste this run's ratios into baseline.json.
+            # An unrecorded platform must not pass, or CI gates nothing. Paste this run's ratios into baseline.json.
             print(f"\nno baseline for {PLATFORM}; add this to bench/baseline.json (or run --update-baseline on that platform):", file=sys.stderr)
             print(json.dumps({PLATFORM: {k: round(r, 3) for k, r in ratios.items()}}, indent=2), file=sys.stderr)
             return 1

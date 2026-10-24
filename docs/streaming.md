@@ -79,7 +79,7 @@ Something must iterate the tap. If nothing reads it, the tap never sees a chunk 
 
 ## What the extractor trusts
 
-The extractor does not validate JSON. It trusts its input.
+The extractor does not check that its input is JSON. It trusts its input.
 
 - Malformed or truncated input never raises. The extractor returns the fields read before the damage, and `None` for the rest. `extract(b'{"e_mail":"a@b.com", oops')` returns the email.
 - Duplicate keys resolve to the first occurrence, where a path read in `map` takes the last. For `{"e_mail":"first@a.com","e_mail":"last@a.com"}`, `extract` gives `first@a.com` and `map(raw)` gives `last@a.com`.
@@ -88,7 +88,7 @@ Use `extract` and `stream` to route early: pick the next provider, fail fast on 
 
 ## Numbers
 
-`bench/run.py` reads 3 routing fields from 5.9 KB bodies. It also reads 5 routing fields from 10.7 KB bodies, placed from 10% to 90% into the body. Every implementation must return the same output before the script times anything. On an Apple M3 Max with Python 3.14.7, on a machine under load. The pycanonic and TypeScript columns come from one session at pycanonic e425f48. The `orjson.loads` column comes from the earlier run at 74dae8f:
+`bench/run.py` reads 3 routing fields from 5.9 KB bodies. It also reads 5 routing fields from 10.7 KB bodies, placed from 10% to 90% into the body. Every implementation must return the same output before the script times anything. The machine was an Apple M3 Max with Python 3.14.7, under load. The pycanonic and TypeScript columns come from one session at pycanonic 68197d1. The `orjson.loads` column comes from the earlier run at 8841588:
 
 | Case | pycanonic | `orjson.loads` + read | TypeScript canonic |
 |---|---:|---:|---:|

@@ -11,7 +11,7 @@ from ..io import is_obj, js_keys
 from .score import walk_canonical
 from .tokens import SEED, Synonyms, split, synonyms_of, tokens
 
-# The key segments of a spec path. canonic's own path parser isn't part of its public API.
+# The key segments of a spec path. canonic's own path parser is not part of its public API.
 SEGMENT = re.compile(r'([A-Za-z_$][A-Za-z0-9_$-]*)|\["((?:[^"\\]|\\.)*)"\]|\[[0-9]+\]')
 
 
@@ -38,7 +38,7 @@ def prefixes(keys: list[str]) -> set[str]:
 def learn_synonyms(specs: list[dict[str, Any]], canonical: Any, base: Synonyms = SEED) -> Synonyms:
     """Learns token -> canonical tokens from approved specs' fields. Only a key with exactly one unexplained
     token is used, and only when neither the key nor its parent already shares a word with the
-    canonical name ("emails.work" says email through its parent, so "work" isn't learned as email)."""
+    canonical name ("emails.work" says email through its parent, so "work" is not learned as email)."""
     leaves = walk_canonical(canonical)[0]
     by_path = {l.path: l for l in leaves}
     vocabulary = {t for l in leaves for t in [*split(l.parent), *(w for n in l.names for w in split(n))]}

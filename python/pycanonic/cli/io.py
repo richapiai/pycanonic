@@ -18,7 +18,7 @@ Transforms = dict[str, Transform]
 
 
 class UsageError(Exception):
-    """The command could not run as asked; the message (usually the usage text) goes to stderr."""
+    """The command could not run as asked. The message (usually the usage text) goes to stderr."""
 
 
 class _Parser(argparse.ArgumentParser):

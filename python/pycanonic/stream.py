@@ -15,7 +15,7 @@ class RoutingTap:
     """An async iterator over `source` that yields each chunk unchanged and pushes it into an
     `artifact.stream()` on the way.
 
-    `routing` resolves with the routing values as soon as every routing field has been seen, or at
+    `routing` resolves with the routing values as soon as the tap sees every routing field, or at
     the end of the body with `None` for the rest. Something must iterate the tap: awaiting
     `routing` before you start reading can hang. If the reader stops early (`break`, an
     exception), `routing` stays pending, so race it with your own timeout. The future is made on

@@ -1,6 +1,6 @@
 """Providers written after the heuristics were tuned on providers.py, to measure how well the tuning
-generalizes; ported from the TypeScript CLI's test/eval/unseen.ts. Add new providers here rather than
-tuning against these."""
+generalizes. Ported from the TypeScript CLI's test/eval/unseen.ts. Add new providers here. Do not
+tune the heuristics against these."""
 
 from __future__ import annotations
 

@@ -61,7 +61,7 @@ def path_drift(old: list[Any], now: list[Any]) -> list[str]:
 
 
 def fill_rates(spec: Spec, schema: Any, samples: list[Any], transforms: Transforms) -> dict[str, float]:
-    """Fill rate of every spec field over the samples; a field inside an item map ("jobs[].title") is a rate over elements."""
+    """Fill rate of every spec field over the samples. A field inside an item map ("jobs[].title") is a rate over elements."""
     a = compile_spec(spec, schema, transforms=transforms)
     for x in samples:
         a.map(x)
@@ -77,7 +77,7 @@ def dropped(spec: Spec, schema: Any, old: list[Any], now: list[Any], transforms:
 
 
 def item_field(field: str) -> tuple[str, str] | None:
-    """"jobs[].title" as (the list's spec key, the field inside its item map); None outside any list."""
+    """"jobs[].title" as (the list's spec key, the field inside its item map). None outside any list."""
     i = field.find("[].")
     return None if i == -1 else (field[: i + 2], field[i + 3 :])
 
@@ -91,7 +91,7 @@ def items_at(schema: Any, path: str) -> Any:
 
 
 def replace(rules: dict[str, Any], fresh: dict[str, Any], broken: list[str], at: str = "") -> list[str]:
-    """Replaces each broken rule in `rules` with the re-inferred one, and says what it did."""
+    """Replaces each broken rule in `rules` with the re-inferred one. Returns one report line per rule."""
     lines = []
     for f in broken:
         if f not in fresh:
@@ -108,7 +108,7 @@ def fix_items(spec: Spec, schema: Any, now: list[Any], options: dict[str, Any], 
     rule = spec["fields"][key]
     source = next((s for s in collect(now) if s.path == rule.get("from") and s.kind == "objects"), None)
     items = items_at(schema, key[:-2])
-    # Known outputs and raw texts are per response; elements have neither.
+    # Known outputs and raw texts are per response. Elements have neither.
     opts = {k: v for k, v in options.items() if k not in ("known", "raws")}
     fresh = infer_draft(items, elements(source), provider=spec["provider"], endpoint=spec["endpoint"], **opts).spec["fields"] if source and items else {}
     item = {**(rule.get("item") or {})}
@@ -120,7 +120,7 @@ def propose(spec: Spec, schema: Any, now: list[Any], options: dict[str, Any], dr
     fields = {**spec["fields"]}
     broken = [f for f in dropped if not item_field(f)]
     lines = replace(fields, draft["fields"], broken)
-    # A list that broke as a whole was just re-inferred with its items; only lists that are still there need their items fixed.
+    # infer_draft above re-inferred a list that broke as a whole, with its items. Only the lists that are still there need their items fixed.
     in_lists: dict[str, list[str]] = {}
     for key, sub in (x for x in map(item_field, dropped) if x):
         if key not in broken:

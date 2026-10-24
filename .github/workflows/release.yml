@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # libFuzzer needs nightly; nothing else in CI uses it.
+      # libFuzzer needs nightly. Nothing else in CI uses it.
       - uses: dtolnay/rust-toolchain@nightly
       - run: cargo install cargo-fuzz --locked
       - working-directory: crates/canonic-core
@@ -123,7 +123,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # wheel and python are the axes; each include entry names its wheel, so it only adds
+        # wheel and python are the axes. Each include entry names its wheel, so it only adds
         # os (and alpine) to that wheel's jobs.
         wheel: [manylinux-x86_64, manylinux-aarch64, musllinux-x86_64, macos-universal2, windows-x86_64]
         python: ["3.10", "3.14"]
@@ -138,7 +138,7 @@ jobs:
           - wheel: musllinux-x86_64
             os: ubuntu-latest
             alpine: true
-          # Runs the arm64 half of the universal2 wheel; the x86_64 half is built, not run.
+          # Runs the arm64 half of the universal2 wheel. The x86_64 half is built, not run.
           - wheel: macos-universal2
             os: macos-latest
             alpine: false

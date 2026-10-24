@@ -87,14 +87,14 @@ class Artifact:
     def stats_reset(self) -> None: ...      # the same as stats.reset()
 ```
 
-`Json` is JSON text: `bytes | str | bytearray | memoryview`. A `bytearray` or `memoryview` is copied before parsing. `Parsed` is what `json.loads` returns (`dict`, `list`, `int`, `float`, `bool`, `None`), a `tuple`, or any other `Mapping` at the root, which is copied one level into a `dict`. Below the root only `dict`, `list` and `tuple` have members.
+`Json` is JSON text: `bytes | str | bytearray | memoryview`. A `bytearray` or `memoryview` is copied before parsing. `Parsed` is what `json.loads` returns (`dict`, `list`, `int`, `float`, `bool`, `None`) or a `tuple`. At the root, it can also be any other `Mapping`, which is copied one level into a `dict`. Below the root only `dict`, `list` and `tuple` have members.
 
 - `map(src)` returns the full canonical object as nested dicts. It never raises on bad data, and it counts stats. A root that is neither `Json` nor `Parsed` (a `set`, an arbitrary object) raises `TypeError`.
 - `map_json(raw)` takes JSON text and returns the canonical object as JSON `bytes`. It builds no Python objects and counts stats. The bytes equal what `JSON.stringify` writes for the same value in the TypeScript package.
 - `view(src)` returns a lazy canonical object. Each field is mapped the first time you read it and then kept. It counts no stats.
 - `extract(raw)` reads the routing fields from JSON text without parsing the whole body. The result is flat and keyed by spec field (`{"company.domain": "acme.com"}`).
 - `stream()` returns a new incremental reader for the same fields. Use one per response.
-- `plan_json()` returns the compiled plan as JSON, for `load`. The JSON carries `"format": 1`. `load` raises `ValueError` for a plan without it or with another value: rebuild the plan from its spec.
+- `plan_json()` returns the compiled plan as JSON, for `load`. The JSON carries `"format": 1`. `load` raises `ValueError` for a plan without it or with another value. In that case, rebuild the plan from its spec.
 
 ### `View`
 
@@ -152,7 +152,7 @@ class Registry:
     def get_shadow(self, provider: str, endpoint: str) -> Artifact | None: ...  # the shadow artifact
 ```
 
-The registry holds one promoted and at most one shadow artifact per provider and endpoint. `put` raises `ValueError` for a `draft` or `deprecated` artifact. It also raises for an artifact whose provider, endpoint or version differ from the arguments. A promoted artifact with the version in the shadow slot clears that slot. Readers need no lock. Writers are expected to run one at a time.
+The registry holds one promoted and at most one shadow artifact per provider and endpoint. `put` raises `ValueError` for a `draft` or `deprecated` artifact. It also raises for an artifact whose provider, endpoint or version differ from the arguments. A promoted artifact with the version in the shadow slot clears that slot. Readers need no lock. Run one writer at a time.
 
 ## Drift
 
@@ -181,7 +181,7 @@ class FieldAlert:
     responses: int   # what the rate is out of: elements for a field inside an item map
 ```
 
-On a Python object, `shape` and `fingerprint` raise `ValueError` past 512 levels, 1,000,000 containers or 64 MiB of path text. `bytes` input is parsed and never truncated; deeper than 512 levels raises `ValueError("invalid JSON: Depth")`. Only `dict`, `list` and `tuple` have members. Any other value, a `str` included, is a scalar.
+On a Python object, `shape` and `fingerprint` raise `ValueError` past 512 levels, 1,000,000 containers or 64 MiB of path text. `bytes` input is parsed and never truncated. A body deeper than 512 levels raises `ValueError("invalid JSON: Depth")`. Only `dict`, `list` and `tuple` have members. Any other value, a `str` included, is a scalar.
 
 ## Shadow comparison
 

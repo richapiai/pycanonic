@@ -1,4 +1,4 @@
-"""The hot-path table of task 24b over the 64 bench bodies (6 KB each), median of `measure`.
+"""Hot-path timings over the 64 bench bodies (6 KB each): map, map_json, extract and view, median of `measure`.
 Run after `maturin develop --release`:
     .venv/bin/python scripts/bench_hot.py
 """

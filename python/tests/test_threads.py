@@ -38,7 +38,7 @@ def test_concurrent_maps_count_every_response():
         while not done.is_set():
             s = a.stats_snapshot()
             seen.append(s["responses"])
-            # An assert here would only reach threading.excepthook; collect and check after join.
+            # An assert here would only reach threading.excepthook. Collect the results and check them after join.
             failures.extend(n for n, f in s["fields"].items() if f["fill"] > f.get("total", s["responses"]))
             # A spinning Python thread holds the GIL for a whole switch interval at a time.
             time.sleep(0.001)

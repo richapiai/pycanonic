@@ -10,7 +10,7 @@ This page lists the places where pycanonic can give you a wrong or missing value
 
 `map(bytes)` and `map_json` never raise on a bad body. A body that is not JSON maps to the full canonical shape with every leaf `None`. Every field counts as a miss in `artifact.stats`, and nothing counts as an error. So a broken body looks like an empty one, except in the stats. If you need to tell them apart, parse the body yourself first.
 
-The same goes for a body nested deeper than 512 levels in any part the plan reads, a field or a passed-through container: the whole body maps to the all-`None` shape, not just the deep field. A deep part no field reads is skipped and does not count. A parsed object (`map(dict)`) has no such cap, so the same body maps normally once you parse it yourself.
+The same goes for a body nested deeper than 512 levels in any part the plan reads, a field or a passed-through container. The whole body maps to the all-`None` shape, not just the deep field. A deep part no field reads is skipped and does not count. A parsed object (`map(dict)`) has no such cap, so the same body maps normally once you parse it yourself.
 
 ## Duplicate keys
 
@@ -54,7 +54,7 @@ A JSON string can hold an escape such as `\ud800` with no partner. A UTF-8 strin
 
 ## Limits of shape and fingerprint
 
-On a Python object, `shape` and `fingerprint` raise `ValueError` past 512 levels of nesting, 1,000,000 containers or 64 MiB of path text. A cyclic object, or one that shares its children many times, hits these caps. On `bytes` input the response is parsed first, and the result is never truncated; a body deeper than 512 levels raises `ValueError("invalid JSON: Depth")`.
+On a Python object, `shape` and `fingerprint` raise `ValueError` past 512 levels of nesting, 1,000,000 containers or 64 MiB of path text. A cyclic object, or one that shares its children many times, hits these caps. On `bytes` input the response is parsed first, and the result is never truncated. A body deeper than 512 levels raises `ValueError("invalid JSON: Depth")`.
 
 ## A view inside its own source
 

@@ -1,5 +1,5 @@
 """The `canonic` dispatcher. Exit 1 is a command's own verdict (a failed fixture, drift). Anything
-that stopped it from running (a missing file, an unknown flag, a spec that doesn't compile) exits 2,
+that stopped it from running (a missing file, an unknown flag, a spec that does not compile) exits 2,
 so a script can tell them apart."""
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _load_transforms(args: list[str]) -> tuple[list[str], Transforms]:
     file = args[i + 1]
     spec = importlib.util.spec_from_file_location(os.path.splitext(os.path.basename(file))[0], file)
     if spec is None or spec.loader is None:
-        raise UsageError(f"--transforms: can't import {file}")
+        raise UsageError(f"--transforms: cannot import {file}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     fns: dict[str, Callable[..., object]] = {

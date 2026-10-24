@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # The corpus runners live in `cargo test` and `pytest python/tests`; this fails once the
+      # The corpus runners live in `cargo test` and `pytest python/tests`. This job fails once the
       # last conformance/sync.sh run (line 3 of SOURCE_COMMIT) is more than 30 days old.
       - run: |
           synced=$(sed -n 3p conformance/SOURCE_COMMIT)

@@ -32,8 +32,6 @@ A transform is `f(value)` or `f(value, arg)`.
 
 An injected transform with the same name as a default replaces it for that artifact. `compile_spec(spec, schema, transforms={"trim": my_trim})` calls `my_trim` wherever the spec says `"trim"`. The same holds for a loaded plan. `load(path, transforms={"cast": my_cast})` replaces the default `cast`, and `my_cast` gets the argument from the spec.
 
-A name matches only a function you passed.
-
 ## Unknown names fail at compile time
 
 A spec that names a transform nobody registered does not compile:

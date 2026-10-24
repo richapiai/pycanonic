@@ -48,7 +48,7 @@ PROMOTED = compile_fields(BASE, 1)
 
 
 def bodies(shape: Any = lambda i: {}) -> list[dict[str, Any]]:
-    """1,000 responses; one in 200 has a patent count, so that field is rarely filled."""
+    """1,000 responses. One in 200 has a patent count, so that field is rarely filled."""
     return [
         {
             "role": f"Role {i}",
@@ -104,7 +104,7 @@ def test_classifies_each_field_and_skips_responses_where_both_sides_are_null() -
 
 def test_inside_arrays_key_order_doesnt_count_and_a_null_key_equals_a_missing_one() -> None:
     d = ShadowDiff([])
-    # The left side is what hand-written code returned; the right is map() output for the same body.
+    # The left side is what hand-written code returned. The right side is map() output for the same body.
     d.add(
         {"jobs": [{"title": "CTO", "org": {"name": "Acme"}}]},
         {"jobs": [{"org": {"name": "Acme", "domain": None}, "title": "CTO", "start": None}]},
@@ -137,7 +137,7 @@ def test_artifact_routing_lists_canonical_paths() -> None:
 
 
 def test_a_routing_field_rename_auto_merges_once_known_entities_confirm_it() -> None:
-    # The provider renamed workEmail to email. Promoted now maps null; the candidate reads the new key.
+    # The provider renamed workEmail to email. Promoted maps null, and the candidate reads the new key.
     responses = bodies(lambda i: {"email": f"u{i}@acme.com"})
     candidate = compile_fields({**BASE, "email": "email"}, 2)
     report = soak(candidate, responses)
@@ -160,7 +160,7 @@ def test_a_routing_field_rename_auto_merges_once_known_entities_confirm_it() -> 
 
 
 def test_a_non_routing_field_that_changes_meaning_escalates_to_a_person() -> None:
-    # Re-inference maps title to the department key: every value still fills, and every value differs.
+    # Re-inference maps title to the department key. Every value still fills, and every value differs.
     report = soak(compile_fields({**BASE, "title": "dept"}, 2), bodies())
     assert merge_gate(report) == GateResult(
         merge=False, reasons=["title: 0 regressions and 1000 conflicts in 1000 compared"]
@@ -170,7 +170,7 @@ def test_a_non_routing_field_that_changes_meaning_escalates_to_a_person() -> Non
 def test_a_candidate_that_drops_a_rarely_filled_field_doesnt_auto_merge() -> None:
     rest = {k: v for k, v in BASE.items() if k != "patent_count"}
     report = soak(compile_fields(rest, 2), bodies())
-    # Five responses had a value; the candidate lost all five. Among 1,000 responses that's 0.5%.
+    # Five responses had a value and the candidate lost all five. Among 1,000 responses that is 0.5%.
     assert report["fields"]["patent_count"] == counts(5, 0, 0, 5, 0)
     assert merge_gate(report).reasons == ["patent_count: 5 regressions and 0 conflicts in 5 compared"]
 
@@ -277,7 +277,7 @@ def test_nested_keys_take_javascripts_order() -> None:
 def test_a_bench_soak_with_real_fill_alerts(bench_spec: tuple[dict[str, Any], dict[str, Any], list[str]]) -> None:
     spec, schema, raws = bench_spec
     promoted = compile_spec(spec, schema)
-    # The candidate reads title from a key the bench bodies don't have.
+    # The candidate reads title from a key the bench bodies do not have.
     title = {"from": "profile.title", "transform": "trim"}
     candidate = compile_spec({**spec, "version": 2, "status": "shadow", "fields": {**spec["fields"], "title": title}}, schema)
     monitor = FillMonitor(min_responses=len(raws))

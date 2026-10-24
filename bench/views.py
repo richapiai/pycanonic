@@ -1,5 +1,5 @@
-"""Port of canonic's bench/views.js: view cost against schema size. Constructing a view should
-cost the same at 20 fields as at 2,000; map() writes every field and grows with the schema.
+"""Port of canonic's bench/views.js: view cost against schema size. Constructing a view is meant to
+cost the same at 20 fields as at 2,000. map() writes every field and grows with the schema.
 Reported, not gated.    python bench/views.py"""
 
 import platform

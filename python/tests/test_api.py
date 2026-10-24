@@ -1,4 +1,4 @@
-"""The public surface of `pycanonic`; typed, and checked with `mypy --strict` by the last test."""
+"""The public surface of `pycanonic`. It is typed, and the last test checks it with `mypy --strict`."""
 
 from __future__ import annotations
 

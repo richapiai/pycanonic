@@ -74,7 +74,7 @@ def test_with_a_spec_only_the_broken_field_gets_a_proposal(capsys: pytest.Captur
     nxt = json.loads(r[1])
     assert nxt["version"] == 2 and nxt["status"] == "shadow"
     assert nxt["fields"]["phone"] == {"from": "contact.phoneNumber", "transform": "normalize_phone"}
-    # Only the broken field changes; the reviewed rules stay as they were.
+    # Only the broken field changes. The reviewed rules stay as they were.
     assert {**nxt["fields"], "phone": SPEC["fields"]["phone"]} == SPEC["fields"]
     # A re-mapped routing field gets a fresh anchor.
     assert nxt["anchors"] == {"phone": '"phoneNumber":'}

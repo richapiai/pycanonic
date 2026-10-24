@@ -32,7 +32,7 @@ class Leaf:
 class ArrayField:
     path: str
     name: str
-    item: Any  # the items schema; an object schema for item, anything else for pluck
+    item: Any  # the items schema: an object schema for item, anything else for pluck
     objects: bool
 
 
@@ -48,7 +48,7 @@ def to_leaf(s: dict[str, Any], name: str, path: str, parent: str) -> Leaf:
 
 
 def walk_canonical(schema: Any, prefix: str = "", parent: str = "") -> tuple[list[Leaf], list[ArrayField]]:
-    """Leaves and arrays of a canonical JSON Schema object, in schema order. Arrays aren't descended."""
+    """Leaves and arrays of a canonical JSON Schema object, in schema order. Arrays are not descended."""
     leaves: list[Leaf] = []
     arrays: list[ArrayField] = []
     props = schema["properties"] if is_obj(schema) and is_obj(schema.get("properties")) else {}
@@ -136,7 +136,7 @@ def looks_full_name(v: Any) -> bool:
 
 
 def looks_epoch(v: Any) -> bool:
-    """Seconds or milliseconds between 2001 and 2033: counts and IDs rarely land in both ranges' shape."""
+    """Seconds or milliseconds between 2001 and 2033. Counts and IDs rarely land in either range."""
     return is_num(v) and (isinstance(v, int) or v.is_integer()) and (1e9 <= v < 2e9 or 1e12 <= v < 2e12)
 
 
@@ -160,7 +160,7 @@ def datey(l: Leaf) -> bool:
 
 
 def semantic_of(l: Leaf, s: Source) -> str | None:
-    """The leaf's semantic type; without one, the type detected in the values when the leaf's name agrees
+    """The leaf's semantic type. Without one, the type detected in the values when the leaf's name agrees
     ("linkedin_url" with LinkedIn URLs, "updated_at" with dates or epoch timestamps)."""
     if l.semantic:
         return l.semantic
@@ -248,7 +248,7 @@ class ScoreCtx:
     known: list[Any] | None
     min: float = 0.4
     noise: dict[str, str] = field(default_factory=dict)
-    """Key prefixes shared across this provider's keys: "c" in c_nm, c_dom -> "company" when it's the
+    """Key prefixes shared across this provider's keys: "c" in c_nm, c_dom -> "company" when it is the
     initial of one canonical object, "" (dropped) otherwise, like "p" in p_fn, p_ln."""
     objects: set[str] = field(default_factory=set)
     """Tokens of the canonical objects (company, location): a path naming one belongs to it."""
@@ -277,7 +277,7 @@ def name_score(l: Leaf, s: Source, ctx: ScoreCtx) -> float:
 
 
 def same(a: Any, b: Any) -> bool:
-    """Known values are canonical output already, so they're compared exactly (`===` or equal JSON)."""
+    """Known values are canonical output already, so they are compared exactly (`===` or equal JSON)."""
     return js_json(a) == js_json(b)
 
 
@@ -300,7 +300,7 @@ def overlap_with(l: Leaf, s: Source, known: list[Any] | None, steps: Steps) -> f
     return hits / n if n else None
 
 
-# Known values show choices the samples alone can't, like lowercasing an industry name.
+# Known values show choices the samples alone cannot, like lowercasing an industry name.
 VARIANTS: list[Steps] = [[], ["trim"], ["lower"], ["trim", "lower"]]
 
 
@@ -353,7 +353,7 @@ def is_first_or_last(l: Leaf, syn: Synonyms) -> bool:
 
 
 def combine(typed: bool, name: float, value: float, overlap: float | None) -> float:
-    """Known values outweigh everything; for typed fields (email, phone) the values carry half; otherwise names
+    """Known values outweigh everything. For typed fields (email, phone) the values carry half. Otherwise names
     lead. Dates count as untyped: every date column passes a date check, so only the name tells them apart."""
     if overlap is not None:
         return 0.6 * overlap + 0.25 * name + 0.15 * value
@@ -369,14 +369,14 @@ def typed(sem: str | None) -> bool:
 def structure(l: Leaf, s: Source, ctx: ScoreCtx) -> float:
     """Multipliers for structure: what the path says about where the value belongs."""
     f = 1.0
-    # One element of a list is weak evidence for a single-valued field; it's fine as a coalesce backup.
+    # One element of a list is weak evidence for a single-valued field. It is fine as a coalesce backup.
     if any(isinstance(x, int) for x in s.segs):
         f *= 0.5
     # A path through another canonical object ("org_name" for full_name) belongs to that object.
     own = {*tokens(l.parent, ctx.syn), *(t for n in l.names for t in tokens(n, ctx.syn))}
     if any(t in ctx.objects and t not in own for t in path_tokens(s, ctx)):
         f *= 0.6
-    # A full name mapped straight into first_name is wrong; the split pass handles it.
+    # A full name mapped straight into first_name is wrong. The split pass handles it.
     if is_first_or_last(l, ctx.syn) and share(present(s), looks_full_name) >= 0.8:
         f *= 0.5
     return f

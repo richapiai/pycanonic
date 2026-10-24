@@ -84,7 +84,7 @@ SEED: Synonyms = {
     "till": ["end"],
 }
 
-# ASCII classes, as in the TypeScript (no `u` flag there): a non-ASCII letter starts no token.
+# ASCII classes, as in the TypeScript (no `u` flag there), so a non-ASCII letter starts no token.
 WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+")
 
 
@@ -94,7 +94,7 @@ def split(name: str) -> list[str]:
 
 
 def singular(t: str) -> str:
-    """Plural to singular for the common English endings; names are short and regular enough."""
+    """Plural to singular for the common English endings. Key names are short and regular enough for that."""
     if len(t) > 4 and t.endswith("ies"):
         return t[:-3] + "y"
     if len(t) > 4 and re.search(r"(ss|x|ch|sh)es\Z", t):
@@ -129,7 +129,7 @@ def tokens(name: str, synonyms: Synonyms) -> list[str]:
 
 
 WRAPPERS = {"data", "result", "response", "payload", "body", "attribute", "field", "record", "detail", "info"}
-"""Keys that wrap a payload rather than name anything; they don't count in path matching."""
+"""Keys that wrap a payload rather than name anything. They do not count in path matching."""
 
 
 def subsequence(short: str, long: str) -> bool:
@@ -142,7 +142,7 @@ def subsequence(short: str, long: str) -> bool:
 
 def abbreviates(s: str, c: str) -> bool:
     """Whether source token s abbreviates canonical token c: same first letter, letters in order ("nm" for
-    name, "ctry" for country). Two-letter abbreviations only count for short words, so "id" isn't
+    name, "ctry" for country). Two-letter abbreviations only count for short words, so "id" is not
     "industry"."""
     if len(s) < 2 or len(s) >= len(c) or s[0] != c[0]:
         return False

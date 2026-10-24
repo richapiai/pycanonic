@@ -7,13 +7,13 @@ from collections.abc import Callable
 
 
 def assign(score: list[list[float]]) -> list[int]:
-    """score[i][j] for row i and column j. Returns, per row, the column it's assigned or -1.
-    Rows get a column only when there are enough columns; pairs with score 0 count as unassigned."""
+    """score[i][j] for row i and column j. Returns, per row, the column it is assigned or -1.
+    Rows get a column only when there are enough columns. Pairs with score 0 count as unassigned."""
     rows = len(score)
     cols = len(score[0]) if score else 0
     if rows == 0 or cols == 0:
         return [-1] * rows
-    # The algorithm wants rows <= columns; pad with zero-score columns.
+    # The algorithm wants rows <= columns, so pad with zero-score columns.
     m = max(rows, cols)
 
     def cost(i: int, j: int) -> float:  # i and j are 1-based
@@ -32,7 +32,7 @@ def assign(score: list[list[float]]) -> list[int]:
     return out
 
 
-# positional state is the textbook form of this algorithm; kept so it can be checked against it.
+# positional state is the textbook form of this algorithm. It stays so a reader can check the code against the textbook.
 def augment(i: int, m: int, cost: Callable[[int, int], float], u: list[float], v: list[float], p: list[int], way: list[int]) -> None:
     minv = [math.inf] * (m + 1)
     used = [False] * (m + 1)

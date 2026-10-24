@@ -1,6 +1,6 @@
 """The optional model pass. Scalar fields that inference left unmapped, or matched below the
 confidence bar, go to an ask function (the CLI's --ask pipes each question to a command). It
-answers with a source path or None; an answer that isn't one of the sample paths is ignored.
+answers with a source path or None. An answer that is not one of the sample paths is ignored.
 The report always flags an answer for a person to check."""
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from .score import Leaf, steps_for, walk_canonical
 from .sources import Source, collect
 
 Question = dict[str, Any]
-"""{instruction, field, type?, semantic?, current?, sources: [{path, examples}]}; `current` is the
+"""{instruction, field, type?, semantic?, current?, sources: [{path, examples}]}. `current` is the
 source inference picked, when it picked one with low confidence."""
 
 Ask = Callable[[Question], "str | None"]
@@ -28,7 +28,7 @@ Ask = Callable[[Question], "str | None"]
 LOW = 0.6
 """Matches below this confidence are flagged for review, and asked about."""
 INSTRUCTION = "Which source path holds this canonical field? Reply with exactly one path from sources, or null if none of them does."
-# the first 200 scalar paths only; rank them by score first if real payloads need more
+# the first 200 scalar paths only. If real payloads need more, rank them by score first.
 MAX_SOURCES = 200
 
 
@@ -126,12 +126,12 @@ def ask_low_confidence(r: Inferred, schema: Any, samples: list[Any], ask: Ask) -
     else:
         spec.pop("anchors", None)
     if fields:
-        compile_spec(spec, schema)  # an empty draft isn't a valid spec, as in infer_draft()
+        compile_spec(spec, schema)  # an empty draft is not a valid spec, as in infer_draft()
     return replace(r, spec=spec, fields=report, unmapped=unmapped)
 
 
 def ask_with(command: str) -> Ask:
-    """Runs the --ask command once per question. A failing command skips that field; it's never required."""
+    """Runs the --ask command once per question. A failing command skips that field: the command is never required."""
 
     def run(q: Question) -> str | None:
         try:

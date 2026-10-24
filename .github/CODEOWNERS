@@ -1,0 +1,7 @@
+# A maintainer reviews changes to the spec grammar, the compiler, the plan format and the benchmarks that the README numbers come from.
+/spec.schema.json                         @vicky002
+/crates/canonic-core/src/spec.rs          @vicky002
+/crates/canonic-core/src/resolve.rs       @vicky002
+/crates/canonic-core/src/plan.rs          @vicky002
+/crates/canonic-core/src/artifact.rs      @vicky002
+/bench/                                   @vicky002

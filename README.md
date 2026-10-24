@@ -12,13 +12,13 @@ On the 5.9 KB benchmark body with 18 spec fields, `artifact.map(bytes)` takes 8.
 
 A product that gets the same kind of data from several providers ends up with one block of glue code per provider. The data can be people, companies, prices or shipments. Each block turns that provider's response into the product's own shape. That code is tedious to write and easy to get subtly wrong. It also breaks without an error the day a provider renames a key. pycanonic turns it into data you can review, test and monitor.
 
-- **A provider is a JSON file.** `canonic infer` drafts the spec from 5 to 20 sample responses and scores every field. A person reviews a diff. A second provider for an endpoint adds a file, not a code path.
-- **The mapper is faster than glue code.** On bytes, `map` beats `orjson.loads` plus hand-written Python by 3.2 times. It is 17 to 142 times faster than six of the eight interpreted mapping libraries we measured. The numbers and the exceptions are below.
-- **Fill and error counts per field show a renamed key.** Every `map` counts them, fields inside list items included. `FillMonitor` raises an alert for a field whose fill drops. `canonic diff` proposes the fixed spec. `merge_gate` decides whether it can ship without a person.
-- **A routing value that fails its format check becomes `None`.** A routing field (email, phone, domain, URL) carries a validator. A provider that answers `"N/A"` gives you `None` and a counted error. The check is on format only, so it cannot tell a personal address from a work one.
-- **One contract, any number of providers.** Callers get your canonical keys, in a fixed order, whichever provider answered.
-- **Bytes in, bytes out.** `map_json` takes the raw body and returns canonical JSON without building a Python object. It runs with the GIL released.
-- **Specs live in git.** A bad spec fails at compile time, with the field named. `artifact.source` lists the compiled plan, one line per field.
+- A provider is a JSON file. `canonic infer` drafts the spec from 5 to 20 sample responses and scores every field. A person reviews a diff. A second provider for an endpoint adds a file, not a code path.
+- The mapper is faster than glue code. On bytes, `map` beats `orjson.loads` plus hand-written Python by 3.2 times. It is 17 to 142 times faster than six of the eight interpreted mapping libraries we measured. The numbers and the exceptions are below.
+- Fill and error counts per field show a renamed key. Every `map` counts them, fields inside list items included. `FillMonitor` raises an alert for a field whose fill drops. `canonic diff` proposes the fixed spec. `merge_gate` decides whether it can ship without a person.
+- A routing value that fails its format check becomes `None`. A routing field (email, phone, domain, URL) carries a validator. A provider that answers `"N/A"` gives you `None` and a counted error. The check is on format only, so it cannot tell a personal address from a work one.
+- One contract, any number of providers. Callers get your canonical keys, in a fixed order, whichever provider answered.
+- Bytes in, bytes out. `map_json` takes the raw body and returns canonical JSON without building a Python object. It runs with the GIL (the CPython global interpreter lock) released.
+- Specs live in git. A bad spec fails at compile time, with the field named. `artifact.source` lists the compiled plan, one line per field.
 
 pycanonic is the wrong tool for one provider whose shape you control. It is also the wrong tool for queries or aggregation over JSON (use jq or JSONata). And it does not reject invalid input (use a schema validator). pycanonic maps what it can and counts the rest.
 
@@ -28,7 +28,7 @@ pycanonic is the wrong tool for one provider whose shape you control. It is also
 pip install pycanonic
 ```
 
-This installs the library and the `canonic` command. Wheels are abi3 builds for CPython 3.10 and later. They cover manylinux x86_64 and aarch64, musllinux x86_64, macOS universal2 and Windows x86_64. The package has no runtime dependencies.
+This installs the library and the `canonic` command. Wheels are abi3 builds, so one wheel per platform covers CPython 3.10 and later. They cover manylinux x86_64 and aarch64, musllinux x86_64, macOS universal2 and Windows x86_64. The package has no runtime dependencies.
 
 ## Quick start
 
@@ -96,7 +96,7 @@ acme person.enrich v1: fields["email"]: unknown transform "shout"
 
 The default transforms are `cast`, `lower`, `trim`, `split_name`, `join`, `parse_date`, `normalize_phone`, `normalize_linkedin` and `to_domain`. Pass your own with `compile_spec(spec, canonical, transforms={"my_transform": fn})`. pycanonic catches an `Exception` from your function and counts it as a field error. See [docs/transforms.md](https://github.com/richapiai/pycanonic/blob/main/docs/transforms.md), [docs/custom-transforms.md](https://github.com/richapiai/pycanonic/blob/main/docs/custom-transforms.md) and [docs/spec-format.md](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md).
 
-The registry holds one promoted and at most one shadow artifact per provider and endpoint:
+A shadow artifact is a candidate version that you run next to the promoted one to compare their output. The registry holds one promoted and at most one shadow artifact per provider and endpoint:
 
 ```python
 registry = pycanonic.Registry()
@@ -132,7 +132,7 @@ TypeScript has no bytes-in path, so the bytes rows compare with `JSON.parse` plu
 
 ### The 6 KB rows against Python references
 
-The same 5.9 KB bodies, against what a Python user writes by hand. The hand-written reference calls the same Rust transforms as pycanonic, which makes it the harder bar. "pycanonic is" is pycanonic time over the reference time.
+This table runs the same 5.9 KB bodies against what a Python user writes by hand. The hand-written reference calls the same Rust transforms as pycanonic, which makes it the harder bar. "pycanonic is" is pycanonic time over the reference time.
 
 | Case | pycanonic | Reference | pycanonic is |
 |---|---:|---|---:|
@@ -262,7 +262,7 @@ pycanonic is at 0.1. The spec format follows the TypeScript package, and the Pyt
 
 ## Contributing
 
-[CONTRIBUTING.md](https://github.com/richapiai/pycanonic/blob/main/CONTRIBUTING.md) covers setup, the test, fuzz and bench commands, and how a release is cut. Report a vulnerability through the repository's Security tab, as [SECURITY.md](https://github.com/richapiai/pycanonic/blob/main/SECURITY.md) describes.
+[CONTRIBUTING.md](https://github.com/richapiai/pycanonic/blob/main/CONTRIBUTING.md) covers setup, the test, fuzz and bench commands, and how a release is cut. The project follows a [code of conduct](https://github.com/richapiai/pycanonic/blob/main/CODE_OF_CONDUCT.md). Report a vulnerability through the repository's Security tab, as [SECURITY.md](https://github.com/richapiai/pycanonic/blob/main/SECURITY.md) describes.
 
 ## License
 

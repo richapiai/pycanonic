@@ -38,7 +38,7 @@ def test_bench_prints_the_header_and_one_timed_row_per_path(capsys: pytest.Captu
     head, blank, *rows = out.splitlines()
     assert re.fullmatch(r"globex person\.enrich v1: 3 samples, \d+\.\d KB average, \d+ routing fields", head)
     assert blank == ""
-    # pad(name, 30) as bench.ts: a 30-character name gets one space; then the value right-aligned in 10.
+    # pad(name, 30) as bench.ts: a 30-character name gets one space, then the value right-aligned in 10.
     assert [r[:-10].rstrip() for r in rows] == ROWS
     assert all(len(r[:-10]) == max(30, len(name) + 1) for r, name in zip(rows, ROWS))
     assert all(re.fullmatch(r" *(\d+\.\d\d µs|\d+ ns)", r[-10:]) for r in rows), rows

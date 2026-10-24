@@ -18,7 +18,7 @@ Before it times anything, the script checks that every library produces the same
 
 ## Results
 
-Apple M3 Max (36 GB, macOS 27.0), Python 3.14.7, release build, pycanonic at `e425f48`. The machine was under load (load average 3.5 to 5). This is one run.
+Apple M3 Max (36 GB, macOS 27.0), Python 3.14.7, release build, pycanonic at `68197d1`. The machine was under load (load average 3.5 to 5). This is one run.
 
 | Library | Bytes in | vs pycanonic | Dict in | vs pycanonic |
 |---|---:|---:|---:|---:|
@@ -51,9 +51,9 @@ The interpreters read their mapping description while they map: a JSONata expres
 
 ## The three that miss 10x
 
-- **pydantic** compiles its models once into a Rust validator tree (pydantic-core). On a parsed dict it does the same kind of work as pycanonic: it walks a Python dict from Rust and builds Python objects. It is not an interpreter in the JSONata sense. So 10x over it is not a target.
-- **jsonbender** (8.0x) and **jmespath** without transforms (9.6x) are light pure-Python interpreters. They spend under 1 µs per field. pycanonic spends about 76 ns per field, so both land just under 10x.
-- On bytes, pycanonic's 39 µs splits into about 12 µs of parse, 16 µs of plan execution and 10 µs to build the Python objects. `orjson.loads` of the 7.3 KB output alone takes 19 µs, so object building has little left in it.
+- pydantic compiles its models once into a Rust validator tree (pydantic-core). On a parsed dict it does the same kind of work as pycanonic: it walks a Python dict from Rust and builds Python objects. It is not an interpreter in the JSONata sense. So 10x over it is not a target.
+- jsonbender (8.0x) and jmespath without transforms (9.6x) are light pure-Python interpreters. They spend under 1 µs per field. pycanonic spends about 76 ns per field, so both land just under 10x.
+- On bytes, pycanonic takes 39 µs: about 12 µs to parse, 16 µs to run the plan and 10 µs to build the Python objects. `orjson.loads` of the 7.3 KB output alone takes 19 µs, so object building has little left in it.
 
 A plan compiled into per-field kernels is the next step to clear the last two. It is not in 0.1.0.
 

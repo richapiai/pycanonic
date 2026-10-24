@@ -48,11 +48,11 @@ jobs[].title <- role
 
 Reading the plan:
 
-- **Fixed key order.** Keys come out in schema order, mapped or not. So every record from every provider has the same keys in the same order, and `map_json` writes the same text.
-- **Transforms are direct calls.** A default transform is a Rust enum variant with its argument bound at compile time. So `{ "cast": "integer" }` dispatches once, with no lookup by name. A routing field's validator is one more step at the end of its pipeline.
-- **Counters count misses.** A field that comes out empty adds one to its miss slot. A transform that rejects a value adds one to its error slot. A filled field writes nothing. Fill is the total minus the misses.
-- **Keys are interned.** Linking turns every path segment into a key id. Reads from a parsed body compare ids, and reads from a Python dict use one interned Python string per key.
-- **Shared prefixes are read once.** Many fields often read below the same object (`org.website`, `org.size`). The executor resolves the shared prefix once per `map` call and reuses it.
+- Fixed key order. Keys come out in schema order, mapped or not. So every record from every provider has the same keys in the same order, and `map_json` writes the same text.
+- Transforms are direct calls. A default transform is a Rust enum variant with its argument bound at compile time. So `{ "cast": "integer" }` dispatches once, with no lookup by name. A routing field's validator is one more step at the end of its pipeline.
+- Counters count misses. A field that comes out empty adds one to its miss slot. A transform that rejects a value adds one to its error slot. A filled field writes nothing. Fill is the total minus the misses.
+- Keys are interned. Linking turns every path segment into a key id. Reads from a parsed body compare ids, and reads from a Python dict use one interned Python string per key.
+- Shared prefixes are read once. Many fields often read below the same object (`org.website`, `org.size`). The executor resolves the shared prefix once per `map` call and reuses it.
 
 ## The bytes path
 

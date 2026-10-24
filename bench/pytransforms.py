@@ -1,6 +1,6 @@
-"""Pure-Python ports of the transforms and validators the person.enrich bench uses (from the proof
-of concept), for the `hand-written py (pure-Python transforms)` reference. They cover the bench
-inputs, which test_payloads.py checks against the TypeScript outputs; they are not a full port."""
+"""Pure-Python ports of the transforms and validators the person.enrich bench uses,
+for the `hand-written py (pure-Python transforms)` reference. They cover the bench
+inputs, which test_payloads.py checks against the TypeScript outputs. They are not a full port."""
 
 from datetime import datetime, timezone
 

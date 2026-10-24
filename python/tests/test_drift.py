@@ -35,7 +35,7 @@ def test_a_parsed_value_shapes_like_its_bytes(doc: Any) -> None:
 
 
 def test_a_str_is_a_scalar_and_scalars_have_an_empty_shape() -> None:
-    # As TypeScript: only bytes are JSON text; a str, even one holding JSON, is a scalar.
+    # As in TypeScript, only bytes are JSON text. A str, even one holding JSON, is a scalar.
     assert shape("text") == shape('{"a": 1}') == shape(b"3") == shape(None) == []
     assert fingerprint("text") == fingerprint(3) == fingerprint({}) == "811c9dc5"
     assert shape({"t": ({"a": 1},)}) == ['"t"[]', '"t"[]."a"']

@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")/.."
 src=../canonic/conformance/cases
 if [ ! -d "$src" ]; then
-  echo "sync.sh: $src not found; check out canonic next to this repo" >&2
+  echo "sync.sh: $src not found. Check out canonic next to this repo." >&2
   exit 1
 fi
 if ! git -C ../canonic diff --quiet HEAD -- conformance/cases; then

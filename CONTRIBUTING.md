@@ -1,6 +1,6 @@
 # Contributing to pycanonic
 
-This file covers how to set up the repo, the commands CI runs, how to add a transform, and how a release is cut. [docs/how-it-works.md](docs/how-it-works.md) walks through the compiler, the parser and the executor.
+This file covers how to set up the repo, the commands CI runs, how to add a transform, and how a release is cut. [docs/how-it-works.md](docs/how-it-works.md) walks through the compiler, the parser and the executor. By taking part you agree to the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Setup
 
@@ -59,7 +59,7 @@ A transform that only one deployment needs belongs in that deployment. Pass it t
 - The only `unsafe` code lives in `crates/canonic-core/src/json/simd.rs`.
 - `map`, `map_json`, `extract` and the view never raise on bad data.
 - A divergence from the TypeScript package goes into `conformance/EXCLUDED.md` and [docs/known-limits.md](docs/known-limits.md) in the same PR.
-- No interface with one implementation, no config for a value that never changes, no abstraction for a later PR.
+- No interface with one implementation, no configuration for a value that never changes, no abstraction for a later PR.
 - A performance number changes in the README only with the script that produced it, the machine and the commit.
 - Prose in the README and `docs/` follows the same rules as canonic. The first sentence says what changed, and every speed claim has a number and a script. No filler words, no emoji.
 - Never commit a real provider's payload or response shape. The example specs use fictional providers.
@@ -91,7 +91,7 @@ To cut a release:
    .venv/bin/python bench/interpreters.py --gate
    ```
 
-   `interpreters.py --gate` skips the three libraries in `bench/interpreters-exempt.json` (jmespath, jsonbender, pydantic; the README says why) and fails on any other mapping library under 10x.
+   `interpreters.py --gate` skips the three libraries in `bench/interpreters-exempt.json` (jmespath, jsonbender and pydantic) and fails on any other mapping library under 10x. The README says why the three are exempt.
 
 3. Run the local checks: `cargo test --workspace`, `.venv/bin/pytest python/tests -q`, `cargo audit`, `scripts/leak-scan.sh` and `scripts/leak-scan.sh --history`.
 4. Tag and push:

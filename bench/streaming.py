@@ -1,6 +1,6 @@
 """Port of canonic's bench/streaming.js: read the 5 routing fields from ~10.7 KB bodies
 (routing.py), whole and in chunks, every output checked against the hand-written read first.
-The npm streaming parsers there have no counterpart here yet; the references are orjson and json.
+The npm streaming parsers there have no counterpart here. The references are orjson and json.
 Reported, not gated.    python bench/streaming.py"""
 
 import json

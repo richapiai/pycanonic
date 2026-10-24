@@ -4,13 +4,15 @@
 
 `bench/run.py` is the port of canonic's `bench/run.js`. `bench/person.py` and `bench/routing.py` build the same bodies as `person.js` and `routing.js`, byte for byte. `bench/test_payloads.py` checks this against `bench/ts_outputs.json`, which `node bench/dump.mjs ../canonic` writes. Every case checks that canonic and its references give identical output before any timing starts.
 
-How it measures (`measure`, shared with `canonic bench`): every function runs once to warm up and once more to find a batch size that takes at least 4 ms. Then 21 rounds run every function in the case in turn, starting from a different function each round, so drift hits all of them alike. The number is the median per-op time over the 21 batches. The loop is plain Python (`for i in ix: sink = fn(i)`), so each op includes a lambda call, an index and a list step. An empty lambda measures 18 ns this way, and one that indexes the input list measures 25 ns. canonic and every reference pay the same cost. The TypeScript bench uses the same loop shape with its own JIT costs. The Hetzner tables are the median of three runs. The Apple M3 Max tables are one run each.
+How it measures (`measure`, shared with `canonic bench`): every function runs once to warm up and once more to find a batch size that takes at least 4 ms. Then 21 rounds run every function in the case in turn, starting from a different function each round, so drift hits all of them alike. The number is the median per-op time over the 21 batches.
+
+The loop is plain Python (`for i in ix: sink = fn(i)`), so each op includes a lambda call, an index and a list step. An empty lambda measures 18 ns this way, and one that indexes the input list measures 25 ns. canonic and every reference pay the same cost. The TypeScript bench uses the same loop shape with its own JIT costs. The Hetzner tables are the median of three runs. The Apple M3 Max tables are one run each.
 
 ### References
 
 Every hand-written reference calls the same transforms canonic runs, as `person.js` does with `T` and `V`. In Python those are `pycanonic.default_transforms` and `pycanonic.validators`, and each call dispatches by name into Rust. That dispatch costs about 60 ns more than a plain method call: `T["lower"]("ABC")` measures 97 ns, while `"ABC".lower()` measures 35 ns. `hand_written` makes 35 such calls per payload, so roughly 2.5 to 3 µs of its 5.2 µs goes to transform calls (summed from per-transform timings, loop cost taken out).
 
-To show what idiomatic glue would cost, `map, parsed in` and `map, bytes in` also have a `hand-written py (pure-Python transforms)` row: the same glue over pure-Python ports of the eight transforms and three validators the bench needs (`bench/pytransforms.py`). The trivial ports are faster than the Rust calls (trim 66 ns against 90 ns, lower 61 against 83), but the ones that do real work are slower: to_domain takes 1.27 µs against 141 ns, normalize_linkedin 708 against 142 ns, and parse_date on an epoch 1.65 µs against 120 ns. In total the pure-Python reference takes about 15 µs on a parsed dict, three times the shared-transforms reference. So the shared-transforms row is the harder bar for canonic, and it is the one the gate uses.
+To show the cost of idiomatic glue, `map, parsed in` and `map, bytes in` also have a `hand-written py (pure-Python transforms)` row: the same glue over pure-Python ports of the eight transforms and three validators the bench needs (`bench/pytransforms.py`). The trivial ports are faster than the Rust calls (trim 66 ns against 90 ns, lower 61 against 83), but the ones that do real work are slower: to_domain takes 1.27 µs against 141 ns, normalize_linkedin 708 against 142 ns, and parse_date on an epoch 1.65 µs against 120 ns. In total the pure-Python reference takes about 15 µs on a parsed dict, three times the shared-transforms reference. So the shared-transforms row is the harder bar for canonic, and it is the one the gate uses.
 
 ### Against TypeScript canonic
 
@@ -43,7 +45,7 @@ Measured on an Apple M3 Max (36 GB, macOS 27.0) with Python 3.14.7 and Node 26.1
 ```
 
 ```
-pycanonic e425f48 against canonic 936d6fd, same session
+pycanonic 68197d1 against canonic 936d6fd, same session
 
 case                  TypeScript rows                         TypeScript   pycanonic   py / ts  gate
 map, bytes in         map + JSON.parse (input)                  15.25 µs     5.64 µs     0.37x  PASS
@@ -62,10 +64,10 @@ stream, 1 KB chunks   canonic stream                            18.20 µs     8.
 
 TypeScript has no bytes-in path, so `map, bytes in` and `map, JSON out` are compared with `JSON.parse` plus `map` on the parsed object. The stream row comes from `streaming.js` (the 5-field 10.7 KB bodies in 1 KB chunks). `map, parsed in` and `view, construct` are reported and not gated. On a parsed object, V8 reads its own objects faster than Rust reads Python dicts, and a view's construct time is mostly the cost of the Python call. A Python call that returns an extension object costs about 100 ns before Rust runs.
 
-The table above is from pycanonic e425f48 (after the second hot-path pass). The Python table is from the earlier run at 74dae8f:
+The table above is from pycanonic 68197d1 (after the second hot-path pass). The Python table is from the earlier run at 8841588:
 
 ```
-Python 3.14.7 darwin-arm64, pycanonic 74dae8f, payloads from canonic 936d6fd
+Python 3.14.7 darwin-arm64, pycanonic 8841588, payloads from canonic 936d6fd
 person.enrich: 5.9 KB payloads, 18 spec fields; extract 5: 10.7 KB, fields at 10% to 90% of the body
 
 case                  implementation                                                 per op      ops/sec   canonic is
@@ -117,25 +119,27 @@ The two timing smoke tests in `bench/test_run.py` are opt-in: `PYCANONIC_BENCH_T
 
 ## Against mapping libraries
 
-`bench/interpreters.py` is the port of canonic's `bench/interpreters.js`. It builds the same 501-field nested payload from the same rules (`GROUPS`, `ARRAYS`, `SKILLS`, and the transforms `null`, `toNumber`, `trimLower`, `toBool`) and gives the same mapping to pycanonic and to every library. `bench/test_interpreters.py` checks that the 64 generated payloads hash to the same bytes as `JSON.stringify` of `genPayload(1..64)` in the JavaScript (the hash was taken once in Node at canonic 936d6fd, because `interpreters.js` does not export its payloads). The JavaScript uses 100 payloads; this port uses 64 because `measure` cycles through indices 0 to 63.
+`bench/interpreters.py` is the port of canonic's `bench/interpreters.js`. It builds the same 501-field nested payload from the same rules (`GROUPS`, `ARRAYS`, `SKILLS`, and the transforms `null`, `toNumber`, `trimLower`, `toBool`). It gives the same mapping to pycanonic and to every library. `bench/test_interpreters.py` checks that the 64 generated payloads hash to the same bytes as `JSON.stringify` of `genPayload(1..64)` in the JavaScript. The hash was taken once in Node at canonic 936d6fd, because `interpreters.js` does not export its payloads. The JavaScript uses 100 payloads. This port uses 64 because `measure` cycles through indices 0 to 63.
 
-The rule from the owner: every published Python mapping library must be at least 10x slower than pycanonic on this mapping, bytes in and dict in. `--gate` checks exactly that and exits 1 otherwise. orjson and the hand-written row are not mappers, so they are reported and never gated.
+The project rule is that every published Python mapping library must be at least 10x slower than pycanonic on this mapping, bytes in and dict in. `--gate` checks exactly that and exits 1 otherwise. orjson and the hand-written row are not mappers, so they are reported and never gated.
 
-The rule does not hold today. Three libraries are less than 10x slower. On the Hetzner box, pydantic is 2.4x to 2.8x, jsonbender 6.8x to 6.9x, and plain jmespath without transforms 7.6x to 7.9x. On the Apple M3 Max they were 2.3x to 3x, 7.5x to 8x and 9.2x to 9.6x. The reasons are below the tables. These three are listed with their reasons in `bench/interpreters-exempt.json`. The gate marks their rows `exempt`, prints the reasons under the table and does not fail on them. Every other mapping library still has to be 10x slower. `--exempt FILE` reads another list; the names are distribution names, the first word of the row.
+The rule does not hold today. Three libraries are less than 10x slower. On the Hetzner box, pydantic is 2.4x to 2.8x, jsonbender 6.8x to 6.9x, and plain jmespath without transforms 7.6x to 7.9x. On the Apple M3 Max they were 2.3x to 3x, 7.5x to 8x and 9.2x to 9.6x. The reasons are below the tables.
+
+These three are listed with their reasons in `bench/interpreters-exempt.json`. The gate marks their rows `exempt`, prints the reasons under the table and does not fail on them. Every other mapping library still has to be 10x slower. `--exempt FILE` reads another list. The names in it are distribution names, the first word of the row.
 
 ### Method
 
-- Identical output first. Before timing, every library maps all 64 payloads and its output must serialize to the same bytes as pycanonic's (`orjson.dumps` with sorted keys, so `1` and `1.0` or `1` and `True` count as different). A library that does not match is printed as `EXCLUDED` and not timed. `pytest bench` runs the same check on three payloads.
-- `bytes in` is `orjson.loads` and then the library, which is what a Python user would write. pycanonic gets the bytes directly. pydantic's `model_validate_json` and jq's `input_text` were tried and were not faster than `orjson.loads` plus the dict call.
+- Identical output first. Before timing, every library maps all 64 payloads, and its output must serialize to the same bytes as pycanonic's. The comparison uses `orjson.dumps` with sorted keys, so `1` and `1.0`, or `1` and `True`, count as different. A library that does not match is printed as `EXCLUDED` and not timed. `pytest bench` runs the same check on three payloads.
+- `bytes in` is `orjson.loads` and then the library, which is what a Python user writes. pycanonic gets the bytes directly. pydantic's `model_validate_json` and jq's `input_text` were tried and were not faster than `orjson.loads` plus the dict call.
 - `dict in` maps an already parsed dict.
 - Each mapping is built once, outside the timed loop: compiled JMESPath and jq programs, parsed JSONPath paths, a glom spec, a jsonbender mapping, pydantic models made with `create_model`, a JSONata expression. Timing uses `measure`, the same loop and settings as `run.py`.
-- The transforms are the JavaScript's: `toNumber` is `Number(v)` (an int when the value is whole, as pycanonic's `cast: number` returns), `trimLower` is strip then lower, `toBool` is `v == "true"`. Where a library has these built in it uses its own (JSONata `$number`, `$trim`, `$lowercase`; jq `tonumber`, `trim`, `ascii_downcase`; jmespath-community `to_number`, `trim`, `lower`; pydantic `int | float`, `bool` and `StringConstraints`). The others call the same three Python functions.
+- The transforms are the JavaScript's: `toNumber` is `Number(v)` (an int when the value is whole, as pycanonic's `cast: number` returns), `trimLower` is strip then lower, `toBool` is `v == "true"`. Where a library has these built in, it uses its own. JSONata uses `$number`, `$trim` and `$lowercase`. jq uses `tonumber`, `trim` and `ascii_downcase`. jmespath-community uses `to_number`, `trim` and `lower`. pydantic uses `int | float`, `bool` and `StringConstraints`. The others call the same three Python functions.
 
 How each library expresses it:
 
 | library | the mapping |
 |---|---|
-| glom | one spec tree; `(path, fn)` for a transform, `(path, [subspec])` for a list |
+| glom | one spec tree, with `(path, fn)` for a transform and `(path, [subspec])` for a list |
 | jmespath | one compiled multiselect-hash expression |
 | jsonpath-ng | one compiled path per field, the output tree built around them |
 | jsonbender | `S(...)`, `>> F(fn)`, `Forall.bend` for lists, `Forall` for the pluck |
@@ -146,7 +150,7 @@ How each library expresses it:
 
 ### Results
 
-Apple M3 Max (36 GB, macOS 27.0), Python 3.14.7, release build, pycanonic at e425f48 (after the second hot-path pass), payloads from canonic 936d6fd. The machine was not idle (load average 3.5 to 5). One run each. The first run, at d330865 before any of the large-payload work, is in the second table.
+Apple M3 Max (36 GB, macOS 27.0), Python 3.14.7, release build, pycanonic at 68197d1 (after the second hot-path pass), payloads from canonic 936d6fd. The machine was not idle (load average 3.5 to 5). One run each. The first run, at f1d7b96 before any of the large-payload work, is in the second table.
 
 `jmespath` and `jmespath-community` install the same `jmespath` module, and `jsonata-python` and `jsonata-rs` the same `jsonata` module, so they need separate environments. `requirements.txt` holds the first of each pair and `requirements-alt.txt` the second.
 
@@ -181,7 +185,7 @@ jmespath-community==1.1.3
 jsonata-rs==0.1.4
 ```
 
-`vs pycanonic` is time divided by pycanonic's `map` time in the same case. Rows marked `<10x` fail the gate. Rows in both environments are shown from the main run; the alt run agreed within 5%.
+`vs pycanonic` is time divided by pycanonic's `map` time in the same case. Rows marked `<10x` fail the gate. Rows in both environments are shown from the main run. The alt run agreed within 5%.
 
 | implementation | bytes in | vs pycanonic | dict in | vs pycanonic |
 |---|---:|---:|---:|---:|
@@ -199,7 +203,7 @@ jsonata-rs==0.1.4
 | jmespath-community 1.1.3 (alt env) | 881.77 µs | 22.7x | 850.34 µs | 22.3x |
 | jsonata-rs 0.1.4 (alt env) | 593.25 µs | 15.2x | 570.19 µs | 15.0x |
 
-At d330865, before the key-table fix:
+At f1d7b96, before the key-table fix:
 
 | implementation | bytes in | vs pycanonic | dict in | vs pycanonic |
 |---|---:|---:|---:|---:|
@@ -221,11 +225,11 @@ For context, `node bench/interpreters.js` in the canonic checkout on the same ma
 
 ### Why three libraries miss 10x
 
-- **pydantic** compiles its models once into a Rust validator tree (pydantic-core). On a parsed dict it does the same kind of work pycanonic does: walk a Python dict from Rust and build Python objects. `model_validate` alone takes about 54 µs; `model_dump` adds about 30 µs to give back a dict. It is not an interpreter in the JSONata sense, so it is the hardest bar here.
-- **jsonbender** and **jmespath** are pure-Python interpreters, but light ones: about 290 to 370 µs for 501 fields, under 1 µs a field. pycanonic takes about 38 µs on a dict and 39 µs on bytes, about 76 ns a field, so both land at 7.5x to 9.6x. The pure-Python hand-written row takes 60 µs on a dict. TypeScript canonic takes 9.2 µs for the same mapping on this machine.
-- Where pycanonic's 39 µs on bytes goes (Rust benches in `benches/wide.rs`, per body): the parse takes 11.8 µs for 8.7 KB that is nearly all wanted, the plan 16 µs (about 6 µs of it in the transforms: trim, lower, number and boolean casts), and building the Python objects about 10 µs. `orjson.loads` of the 7.3 KB output alone takes 19 µs, so object building has little left in it.
-- On a dict, a quarter of the time is CPython's `dict` lookup of each source key: the keys `json.loads` makes are not the interned strings pycanonic looks up with, so every hit ends in a string compare. Reading the dict in order (`PyDict_Next`) instead would need `unsafe` outside `simd.rs`.
-- Task 24c (second hot-path pass) brought bytes in from 48 to 39 µs and dict in from 44 to 38 µs: shared path prefixes resolved once per document, a moving read hint on large parsed objects (the key table is built only when the hint misses), the parser trying the next listed key before hashing, and faster number and boolean casts.
+- pydantic compiles its models once into a Rust validator tree (pydantic-core). On a parsed dict it does the same kind of work pycanonic does: walk a Python dict from Rust and build Python objects. `model_validate` alone takes about 54 µs, and `model_dump` adds about 30 µs to give back a dict. It is not an interpreter in the JSONata sense, so it is the hardest bar here.
+- jsonbender and jmespath are pure-Python interpreters, but light ones: about 290 to 370 µs for 501 fields, under 1 µs a field. pycanonic takes about 38 µs on a dict and 39 µs on bytes, about 76 ns a field, so both land at 7.5x to 9.6x. The pure-Python hand-written row takes 60 µs on a dict. TypeScript canonic takes 9.2 µs for the same mapping on this machine.
+- The Rust benches in `benches/wide.rs` show where pycanonic's 39 µs on bytes goes, per body. The parse takes 11.8 µs for 8.7 KB that is nearly all wanted. The plan takes 16 µs, about 6 µs of it in the transforms (trim, lower, number and boolean casts). Building the Python objects takes about 10 µs. `orjson.loads` of the 7.3 KB output alone takes 19 µs, so object building has little left in it.
+- On a dict, a quarter of the time is CPython's `dict` lookup of each source key. The keys `json.loads` makes are not the interned strings pycanonic looks up with, so every hit ends in a string compare. Reading the dict in order (`PyDict_Next`) instead needs `unsafe` outside `simd.rs`.
+- The second hot-path pass brought bytes in from 48 to 39 µs and dict in from 44 to 38 µs. It resolves shared path prefixes once per document. It adds a moving read hint on large parsed objects, and builds the key table only when the hint misses. The parser tries the next listed key before hashing. Number and boolean casts are faster.
 - jmespath runs without transforms, so it does less work than the other rows, as in the TypeScript bench. jmespath-community has `trim`, `lower` and `to_number` and runs with them (22.7x bytes in, 22.3x dict in).
 
 ### Searched on PyPI
@@ -234,10 +238,10 @@ Each candidate was installed with `uv pip install` into a scratch Python 3.14 en
 
 | package | result |
 |---|---|
-| glom, jmespath, jsonpath-ng, jsonbender, pydantic | in the table (named in the task) |
+| glom, jmespath, jsonpath-ng, jsonbender, pydantic | in the table |
 | jsonata-python 0.7.1 | in the table: a JSONata implementation in pure Python |
-| jsonata-rs 0.1.4 | in the table (alt environment): JSONata in Rust; same `jsonata` module as jsonata-python |
-| jmespath-community 1.1.3 | in the table (alt environment): the JMESPath fork with string functions; same `jmespath` module as jmespath |
+| jsonata-rs 0.1.4 | in the table (alt environment): JSONata in Rust, same `jsonata` module as jsonata-python |
+| jmespath-community 1.1.3 | in the table (alt environment): the JMESPath fork with string functions, same `jmespath` module as jmespath |
 | jq 1.13.0 | in the table: Python bindings to the jq C library, a JSON-to-JSON language |
 | python-json-mapper, jsontransform, json-mapping-engine, remap | not on PyPI, or no installable version |
 | jsonmapping 0.1.x | does not install: needs PyICU, which needs a system ICU build |
@@ -245,16 +249,16 @@ Each candidate was installed with `uv pip install` into a scratch Python 3.14 en
 | json-mapper 0.1.15 | Python 2 only (`dict.iteritems`) |
 | json-transformer 0.0.1 | does not import (`from parser import ...`, Python 2 style) |
 | jsonmorph 0.0.6 | reads and writes files, and turns every value into a string, so the output cannot match |
-| objectpath 0.6.1 | a query language; returns lazy generators for arrays, no trim, emits SyntaxWarnings on import, last release 2017 |
+| objectpath 0.6.1 | a query language that returns lazy generators for arrays, no trim, emits SyntaxWarnings on import, last release 2017 |
 | jsonmapper 0.2 | wraps a dict in a Python object (a 2011 ODM), not JSON to JSON |
-| dpath, python-benedict, dictor, jsonpointer, python-jsonpath, jsonpath-python, jsonpath-rw, jsonpath-rust-bindings | path accessors, not mappers; jsonpath-ng covers the one-path-per-field style |
-| jqpy 1.0.0 | runs the jq binary in a subprocess; jq.py covers jq |
+| dpath, python-benedict, dictor, jsonpointer, python-jsonpath, jsonpath-python, jsonpath-rw, jsonpath-rust-bindings | path accessors, not mappers. jsonpath-ng covers the one-path-per-field style. |
+| jqpy 1.0.0 | runs the jq binary in a subprocess. jq.py covers jq. |
 | object-mapper, dataclass-mapper, pymapper, py-object-mapper | map between Python classes, not JSON documents |
-| json-logic | evaluates rules to one value; it does not build objects |
+| json-logic | evaluates rules to one value and does not build objects |
 | datamorph 2.4.0 | no metadata, and its template code raises `StopIteration` inside a generator, which is an error since Python 3.7 |
 | kmap, morph-py | unrelated packages that share the name |
 
-marshmallow and cattrs are in pydantic's category (schemas over classes); pydantic is the one in the table.
+marshmallow and cattrs are in pydantic's category (schemas over classes). pydantic is the one in the table.
 
 ### Hetzner box
 
@@ -294,9 +298,9 @@ The TypeScript interpreter comparison (`pnpm bench:interp`) was not run on the b
 
 ## Hot path
 
-Measured on an Apple M3 Max with Python 3.14.7 and a release build (`maturin develop --release`), on a machine that was not idle. Two payloads: the 64 bench bodies in `crates/canonic-core/tests/fixtures/bench_bodies.json` (6,189 bytes each, `specs/bench.json`, 18 fields), and the 64 bodies of `bench/interpreters.py` (8.7 KB each, 501 fields), which `scripts/export_wide.py` writes to `tests/fixtures/wide_bodies.json` for the Rust bench.
+Measured on an Apple M3 Max with Python 3.14.7 and a release build (`maturin develop --release`), on a machine that was not idle. There are two payloads. The first is the 64 bench bodies in `crates/canonic-core/tests/fixtures/bench_bodies.json` (6,189 bytes each, `specs/bench.json`, 18 fields). The second is the 64 bodies of `bench/interpreters.py` (8.7 KB each, 501 fields), which `scripts/export_wide.py` writes to `tests/fixtures/wide_bodies.json` for the Rust bench.
 
-The Python rows are the median of `measure` (4 ms batches, 21 rounds, round-robin) over all 64 bodies: `scripts/bench_hot.py` for the 6 KB body, `bench/interpreters.py` for the 501-field one. "Start" is the code before task 24b (`f9b518e`) for the 6 KB rows and before task 26's fix (`1b52414`) for the 501-field rows. "Now" is `e425f48`.
+The Python rows are the median of `measure` (4 ms batches, 21 rounds, round-robin) over all 64 bodies: `scripts/bench_hot.py` for the 6 KB body, `bench/interpreters.py` for the 501-field one. "Start" is the code at `27612b8` for the 6 KB rows and at `b965e83` for the 501-field rows. "Now" is `68197d1`.
 
 | case | start | now | target | TypeScript here |
 |---|---:|---:|---:|---:|
@@ -322,9 +326,9 @@ The Python rows are the median of `measure` (4 ms batches, 21 rounds, round-robi
 | `hot` parse | 6.56 µs | 2.4 µs |
 | `hot` plan execution into `Out` | 2.87 µs | 2.0 µs |
 | `hot` map_json | 10.27 µs | 4.4 µs |
-| `wide` parse | 17.4 µs (`1b52414`) | 11.8 µs |
-| `wide` plan execution into `Out` | 20.8 µs (`7ce4d59`) | 16.1 µs |
-| `wide` map_json | 41.6 µs (`1b52414`) | 29.7 µs |
+| `wide` parse | 17.4 µs (`b965e83`) | 11.8 µs |
+| `wide` plan execution into `Out` | 20.8 µs (`f8df059`) | 16.1 µs |
+| `wide` map_json | 41.6 µs (`b965e83`) | 29.7 µs |
 
 The parser no longer builds the stage 1 index (`structurals`). It still has its bench and its tests, but it is off the hot path.
 

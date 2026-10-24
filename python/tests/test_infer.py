@@ -81,7 +81,7 @@ def test_tokens(name: str, out: list[str]) -> None:
 
 
 def test_full_names_are_letters_in_any_script_but_not_digits() -> None:
-    # \p{L} in the TypeScript; str.isalpha() here. Digits, including non-ASCII ones, are not letters.
+    # \p{L} in the TypeScript, str.isalpha() here. Digits, including non-ASCII ones, are not letters.
     assert looks_full_name("  José  Ñúñez ") and looks_full_name("Анна Каренина") and looks_full_name("O'Brien Smith-Jones")
     assert not looks_full_name("Ada") and not looks_full_name("Ada 2") and not looks_full_name("Ada ٣")
     assert looks_full_name("Ada　Lovelace")  # JavaScript \s includes the ideographic space
@@ -128,7 +128,7 @@ def test_assign_matches_the_brute_force_optimum_on_random_matrices_square_or_not
 
 def test_reproduces_the_hand_written_spec_except_what_the_samples_cant_show() -> None:
     r = infer_draft(CANONICAL, PAYLOADS, **OPTS, raws=[js_json(s) for s in PAYLOADS])
-    # No sample lacks workEmail, so nothing suggests the fallback; lowercasing is a house style.
+    # No sample lacks workEmail, so nothing suggests the fallback. Lowercasing is a house style.
     assert differs(r.spec["fields"]) == ["email", "company.industry", "skills[]"]
     assert r.spec["fields"]["email"] == {"from": "contact.workEmail", "transform": ["trim", "lower"]}
     assert r.spec["anchors"] == {"email": '"workEmail":', "phone": '"mobile":', "company.domain": '"website":'}
@@ -182,7 +182,7 @@ def test_a_snake_case_provider_with_abbreviations() -> None:
         "company.name": "org.org_name",
         "company.domain": {"from": "org.url", "transform": "to_domain"},
     }
-    # A plain array maps as it is; one whose name matches nothing stays unmapped.
+    # A plain array maps as it is. An array whose name matches nothing stays unmapped.
     assert fields["skills[]"] == {"from": "skill_list"}
     assert "ids" not in js_json(fields)
     out = pycanonic.compile_spec(r.spec, CANONICAL).map(samples[1])
@@ -260,7 +260,7 @@ def test_the_first_value_of_a_plain_array_can_fill_a_single_valued_field() -> No
 
 
 def test_integer_like_keys_come_first_as_in_javascript() -> None:
-    # Object.entries order: "10" and "2" before "b", in numeric order; "01" is not an index.
+    # Object.entries order: "10" and "2" before "b", in numeric order. "01" is not an index.
     samples = [{"b": {"x": i}, "10": f"t{i}", "2": f"u{i}", "01": f"v{i}"} for i in range(3)]
     r = infer_draft({"type": "object", "properties": {"q": {"type": "string"}}}, samples, **OPTS)
     assert r.unmapped == [{"field": "q", "best": '["2"]', "score": 0.35}]
@@ -342,7 +342,7 @@ def test_an_ask_answer_is_used_and_a_failing_command_skips_the_field(capsys: pyt
 
 @pytest.mark.parametrize("command", ["printf '\\377\\n'", "echo '{not json'", "echo 42", "echo '[\"zq7\"]'", "exit 1", "true"])
 def test_any_ask_reply_that_is_not_a_known_path_skips_the_field(capsys: pytest.CaptureFixture[str], command: str) -> None:
-    # A non-UTF-8 byte, text that isn't JSON, JSON that isn't a string, a failing or silent command.
+    # A non-UTF-8 byte, text that is not JSON, JSON that is not a string, a failing or silent command.
     plain = run(capsys, *infer_args(str(CLI / "odd")))
     code, out, _ = run(capsys, *infer_args(str(CLI / "odd"), "--ask", command))
     assert (code, out) == (0, plain[1])

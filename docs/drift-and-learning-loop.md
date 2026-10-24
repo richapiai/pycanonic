@@ -95,7 +95,7 @@ Every canonical leaf is classified on every response, keyed by canonical path (`
 
 A list is judged the way a scalar is. Say the candidate's list has the same length and only fills fields that the promoted list left null. That is an improvement, which is what a fixed rename inside list items looks like. The reverse is a regression. A changed value or a different length is a conflict.
 
-- A response where both sides are null is not counted at all. Counting it lets a rarely filled field that the candidate dropped hide behind a 99% match.
+- A response where both sides are null is not counted at all. If it counted, a rarely filled field that the candidate dropped can hide behind a 99% match.
 - Improvement: promoted null, candidate has a value. A fixed rename looks like this.
 - Regression: promoted has a value, candidate null.
 - Conflict: both have values and they differ.
