@@ -713,6 +713,7 @@ def test_object_never_empty_gets_if_empty_for_review() -> None:
     assert result.spec is not None and result.spec["fields"]["org"] == {"if_empty": "null"}
     rows = {r.field: r for r in result.fields}
     assert (rows["org"].kind, rows["org"].tier, rows["org.name"].tier) == ("if_empty", "review", "auto")
+    assert rows["org"].note == "The default sent this object in all 10 pairs, never empty, so its empty form is a guess."
     art = pycanonic.compile_spec(result.spec, schema)
     assert art.map({"n": "x", "employer": None}) == {"name": "x", "org": None}
 
@@ -740,6 +741,9 @@ def test_reject_runtime_rejects_less_goes_manual(monkeypatch: pytest.MonkeyPatch
     row = {r.field: r for r in result.fields}["reject[0]"]
     assert (row.tier, row.kind) == ("manual", "reject")
     assert "p1.json" in row.note
+    rows = {r.field: r for r in result.fields}
+    # the failover pairs come back once the reject is dropped (R32): p0 has no full_name, so name misses it
+    assert [(rows[k].support, rows[k].total) for k in ("name", "email")] == [(29, 30), (30, 30)]
 
 
 def test_case_drift_sets_case_insensitive_keys() -> None:
