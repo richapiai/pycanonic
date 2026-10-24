@@ -46,3 +46,15 @@ def test_x_empty_missing_leaves_the_key_out():
         text = a.map_json(raw)
         assert b'"k":' not in text
         assert json.loads(text) == a.map(raw) == a.map(body) == {"name": "a"}
+
+
+def test_view_reads_an_optional_object_whole():
+    schema = {"type": "object", "properties": {"hq": {"type": "object", "properties": {"city": {"type": "string"}}}}}
+    a = pycanonic.compile_spec(_spec({"hq": {"present": "d"}, "hq.city": "d.city"}), schema)
+    for body in [{}, {"d": {"city": "x"}}]:
+        want = a.map(body)
+        for src in [body, json.dumps(body).encode()]:
+            v = a.view(src)
+            assert v.hq == want["hq"]
+            assert v.to_dict() == want
+    assert a.view({}).hq is None

@@ -90,7 +90,15 @@ pub enum Field {
     /// A canonical field the spec does not map.
     Null,
     Scalar(Scalar),
-    Object(Vec<Named<Field>>),
+    /// A canonical object. Language 2: when a `present` path is missing or null, the object
+    /// is null and nothing inside it is mapped. With `if_empty_null`, an object that writes
+    /// nothing but null is null. Without either it is written as `[members]`, as in format 1.
+    #[serde(serialize_with = "object_out", deserialize_with = "object_in")]
+    Object {
+        members: Vec<Named<Field>>,
+        present: Vec<Path>,
+        if_empty_null: bool,
+    },
     List {
         from: Path,
         kind: ListKind,
@@ -104,6 +112,59 @@ pub enum Field {
     OmitNull(Box<Field>),
     /// Language 2: a value written as it is, whatever the body. Always a fill. The `usize` is the stat slot.
     Const(Value, usize),
+    /// Language 2: a canonical field the spec does not map, written as its `x-empty`:
+    /// `List` (`[]`) or `Object` (`{}`). An unmapped null or left-out field is `Null` or `OmitNull`.
+    Empty(Empty),
+}
+
+/// The members, present paths and option of a `Field::Object`, in the variant's field order.
+type ObjectParts = (Vec<Named<Field>>, Vec<Path>, bool);
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum ObjectForm {
+    /// Format 1: the members alone.
+    Plain(Vec<Named<Field>>),
+    Optional {
+        members: Vec<Named<Field>>,
+        present: Vec<Path>,
+        if_empty_null: bool,
+    },
+}
+
+fn object_out<S: serde::Serializer>(
+    members: &[Named<Field>],
+    present: &[Path],
+    if_empty_null: &bool,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    if present.is_empty() && !if_empty_null {
+        return members.serialize(s);
+    }
+    #[derive(Serialize)]
+    struct Optional<'a> {
+        members: &'a [Named<Field>],
+        present: &'a [Path],
+        if_empty_null: bool,
+    }
+    let if_empty_null = *if_empty_null;
+    Optional {
+        members,
+        present,
+        if_empty_null,
+    }
+    .serialize(s)
+}
+
+fn object_in<'de, D: Deserializer<'de>>(d: D) -> Result<ObjectParts, D::Error> {
+    Ok(match ObjectForm::deserialize(d)? {
+        ObjectForm::Plain(members) => (members, Vec::new(), false),
+        ObjectForm::Optional {
+            members,
+            present,
+            if_empty_null,
+        } => (members, present, if_empty_null),
+    })
 }
 
 /// A routing field as `extract` reads it. `name` is the spec key, for example "company.domain".
@@ -198,8 +259,14 @@ impl Plan {
         fn field(f: &Field) -> bool {
             match f {
                 Field::Null | Field::Scalar(_) => false,
-                Field::Const(..) | Field::OmitNull(_) => true,
-                Field::Object(c) => c.iter().any(|n| field(&n.value)),
+                Field::Const(..) | Field::OmitNull(_) | Field::Empty(_) => true,
+                Field::Object {
+                    members,
+                    present,
+                    if_empty_null,
+                } => {
+                    !present.is_empty() || *if_empty_null || members.iter().any(|n| field(&n.value))
+                }
                 Field::List { kind, ops, .. } => {
                     !ops.is_default()
                         || match kind {
@@ -235,7 +302,26 @@ fn line(out: &mut String, name: &str, field: &Field) {
             line(out, name, f);
         }
         Field::Const(v, _) => _ = writeln!(out, "{name} <- const {v}"),
-        Field::Object(c) => lines(out, &format!("{name}."), c),
+        Field::Empty(e) => {
+            _ = writeln!(
+                out,
+                "{name} <- {}",
+                if *e == Empty::List { "[]" } else { "{}" }
+            )
+        }
+        Field::Object {
+            members,
+            present,
+            if_empty_null,
+        } => {
+            if !present.is_empty() {
+                _ = writeln!(out, "{name}: null unless present({})", list(present));
+            }
+            if *if_empty_null {
+                _ = writeln!(out, "{name}: null when empty");
+            }
+            lines(out, &format!("{name}."), members)
+        }
         Field::Scalar(s) => {
             let src = match &s.source {
                 Source::From(p) => path(p),

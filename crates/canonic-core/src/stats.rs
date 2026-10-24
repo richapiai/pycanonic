@@ -37,9 +37,9 @@ fn counters(n: usize) -> Box<[AtomicU64]> {
 fn walk(fields: &[Named<Field>], list: Option<usize>, within: &mut [Option<usize>]) {
     for f in fields {
         match f.value.inner() {
-            Field::Null => {}
+            Field::Null | Field::Empty(_) => {}
             Field::OmitNull(_) => unreachable!("inner() unwraps it"),
-            Field::Object(c) => walk(c, list, within),
+            Field::Object { members, .. } => walk(members, list, within),
             Field::Scalar(Scalar { stat, .. }) | Field::Const(_, stat) => {
                 if let Some(w) = within.get_mut(*stat) {
                     *w = list;

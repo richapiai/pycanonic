@@ -89,8 +89,13 @@ pub fn levels(py: Python<'_>, names: &[String], fields: &[Named<Field>]) -> Vec<
             .map(|(i, f)| {
                 let mut p = path.clone();
                 p.push(i);
+                // An object that can be null is mapped whole on read, not a nested view.
                 let child = match f.value.inner() {
-                    Field::Object(c) => Some(walk(out, ty, names, c, p.clone())),
+                    Field::Object {
+                        members,
+                        present,
+                        if_empty_null: false,
+                    } if present.is_empty() => Some(walk(out, ty, names, members, p.clone())),
                     _ => None,
                 };
                 LevelField {

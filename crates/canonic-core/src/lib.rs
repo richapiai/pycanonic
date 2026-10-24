@@ -2,6 +2,7 @@
 
 pub mod artifact;
 pub mod canonical;
+pub mod cond;
 pub mod doc;
 pub mod drift;
 pub mod exec;

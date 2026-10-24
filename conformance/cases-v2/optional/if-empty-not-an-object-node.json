@@ -1,0 +1,34 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "name": {
+        "if_empty": "null"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "hq": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "error": "acme people v1: fields[\"name\"]: if_empty needs an object node"
+}

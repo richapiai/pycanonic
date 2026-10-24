@@ -340,7 +340,7 @@ fn stat_names_follow_codegen() {
         for f in fields {
             assert_eq!(plan.names[f.name_idx], f.name);
             match &f.value {
-                Field::Object(c)
+                Field::Object { members: c, .. }
                 | Field::List {
                     kind: ListKind::Item(c),
                     ..

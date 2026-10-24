@@ -172,8 +172,11 @@ impl Resolver<'_> {
                 format!("{kat}: canonical schema has no field {}", json(name))
             })?;
             let stat = self.stat_names.len();
-            self.stat_names
-                .push(format!("{}{key}", within.unwrap_or("")));
+            // An object rule reads no value of its own, so it has no stat slot.
+            if !matches!(rule, Rule::Object { .. }) {
+                self.stat_names
+                    .push(format!("{}{key}", within.unwrap_or("")));
+            }
             // The grammar puts an array rule exactly on the keys ending in [].
             let field = match rule {
                 Rule::Const(_)
@@ -182,6 +185,26 @@ impl Resolver<'_> {
                     return Err(format!("{kat}: canonical field is not an array"));
                 }
                 Rule::Const(v) => Field::Const(v.clone(), stat),
+                Rule::Object {
+                    present,
+                    if_empty_null,
+                } => {
+                    let open = !matches!(target.kind, Kind::Object { open: false, .. });
+                    if key.ends_with("[]") || open {
+                        let rule = if present.is_empty() {
+                            "if_empty"
+                        } else {
+                            "present"
+                        };
+                        return Err(format!("{kat}: {rule} needs an object node"));
+                    }
+                    // `build` fills the members.
+                    Field::Object {
+                        members: Vec::new(),
+                        present: present.clone(),
+                        if_empty_null: *if_empty_null,
+                    }
+                }
                 Rule::Array(r) => self.array(r, target, stat, &kat)?,
                 Rule::Scalar(r) => Field::Scalar(self.scalar(r, target, stat, &kat)?),
             };
@@ -221,15 +244,38 @@ impl Resolver<'_> {
             .map(|(name, child)| {
                 let path = [prefix, std::slice::from_ref(name)].concat();
                 let value = match (mapped.remove(&path), &child.kind) {
+                    (
+                        Some(Field::Object {
+                            present,
+                            if_empty_null,
+                            ..
+                        }),
+                        Kind::Object { children: c, .. },
+                    ) => Field::Object {
+                        members: self.build(c, &path, mapped),
+                        present,
+                        if_empty_null,
+                    },
                     (Some(f), _) => f,
+                    // a node with `x-empty` that nothing maps follows it, as a missing
+                    // source does. Without `x-empty`, an object keeps its null leaves.
                     (
                         None,
                         Kind::Object {
                             children: c,
                             open: false,
                         },
-                    ) => Field::Object(self.build(c, &path, mapped)),
-                    (None, _) => Field::Null,
+                    ) if child.empty.is_none() || mapped.keys().any(|k| k.starts_with(&path)) => {
+                        Field::Object {
+                            members: self.build(c, &path, mapped),
+                            present: Vec::new(),
+                            if_empty_null: false,
+                        }
+                    }
+                    (None, _) => match child.empty {
+                        Some(e @ (Empty::List | Empty::Object)) => Field::Empty(e),
+                        _ => Field::Null,
+                    },
                 };
                 // A mapped array handles `x-empty: "missing"` itself (`ListOps::missing`).
                 let value = match (child.empty, value) {
@@ -272,7 +318,7 @@ fn routing(fields: &[Named<Field>], stat_names: &[String], out: &mut Vec<Routing
     for f in fields {
         // Every variant by name, so a new wrapper cannot hide a routing field.
         match f.value.inner() {
-            Field::Object(c) => routing(c, stat_names, out),
+            Field::Object { members, .. } => routing(members, stat_names, out),
             Field::Scalar(s) if s.validator.is_some() => {
                 let (name, scalar) = (stat_names[s.stat].clone(), s.clone());
                 out.push(RoutingField {
@@ -281,7 +327,11 @@ fn routing(fields: &[Named<Field>], stat_names: &[String], out: &mut Vec<Routing
                     anchor: None,
                 });
             }
-            Field::Scalar(_) | Field::Null | Field::List { .. } | Field::Const(..) => {}
+            Field::Scalar(_)
+            | Field::Null
+            | Field::List { .. }
+            | Field::Const(..)
+            | Field::Empty(_) => {}
             Field::OmitNull(_) => unreachable!("inner() unwraps it"),
         }
     }

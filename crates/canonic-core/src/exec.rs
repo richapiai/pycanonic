@@ -14,9 +14,12 @@
 //! - Language 2: a list's `ListOps` choose `[]` or null for a missing and for an empty source.
 //!   `Empty::Missing` leaves the key out when the source is missing or null. `OmitNull` leaves the
 //!   key out when nothing under it is written as something other than null.
+//! - Language 2: an object whose `present` path is missing or null is null, and every field
+//!   inside it is a miss. With `if_empty`, an object that writes nothing but null is rewound to null.
 
 use crate::canonical::{Empty, Semantic};
-use crate::doc::{Doc, Key};
+use crate::cond::{Cond, holds};
+use crate::doc::{Doc, Key, KeyPath as Path, KeyStep as Step, read};
 use crate::plan::{CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, Sink, copy};
 use crate::spec::{self, Source};
@@ -27,13 +30,6 @@ use serde_json::Value as J;
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
-
-enum Step {
-    Key(Key),
-    Idx(usize),
-}
-
-type Path = Vec<Step>;
 
 /// A path read in one `Scope`: the number of its node in the scope's prefix tree.
 type At = usize;
@@ -150,8 +146,16 @@ enum Op {
         stat: usize,
         ops: ListOps,
     },
-    /// Written as it is. Counts no miss, so it is always a fill.
-    Const(J),
+    /// Written as it is. Counts no miss, so it is always a fill. The stat slot is `None` for an
+    /// unmapped field's `x-empty`.
+    Const(J, Option<usize>),
+    /// An object with `present` paths (all of them `Cond::Present`), or `if_null`: null when it
+    /// writes nothing but null.
+    Optional {
+        members: Vec<(usize, Op)>,
+        present: Cond<Path>,
+        if_null: bool,
+    },
     /// Left out of its object when it writes nothing but null.
     OmitNull(Box<Op>),
 }
@@ -260,10 +264,34 @@ impl Builder<'_> {
         Ok(match field {
             Field::Null => Op::Null,
             Field::Scalar(s) => Op::Scalar(self.leaf(s)?),
-            Field::Object(c) => Op::Object(self.fields(c)?),
-            Field::Const(v, stat) => {
-                self.stat(*stat)?;
-                Op::Const(v.clone())
+            Field::Object {
+                members,
+                present,
+                if_empty_null,
+            } => {
+                let members = self.fields(members)?;
+                if present.is_empty() && !if_empty_null {
+                    Op::Object(members)
+                } else {
+                    let present = present
+                        .iter()
+                        .map(|p| Cond::Present(self.path(p), true))
+                        .collect();
+                    Op::Optional {
+                        members,
+                        present: Cond::All(present),
+                        if_null: *if_empty_null,
+                    }
+                }
+            }
+            Field::Const(v, stat) => Op::Const(v.clone(), Some(self.stat(*stat)?)),
+            Field::Empty(e) => {
+                let v = match e {
+                    Empty::List => J::Array(Vec::new()),
+                    Empty::Object => J::Object(Default::default()),
+                    Empty::Null | Empty::Missing => J::Null,
+                };
+                Op::Const(v, None)
             }
             Field::OmitNull(inner) => Op::OmitNull(Box::new(self.op(inner)?)),
             Field::List {
@@ -315,18 +343,6 @@ impl Program {
     pub fn keys(&self) -> &[String] {
         &self.keys
     }
-}
-
-/// The value at `path`, `None` when it or any step is missing or null.
-fn read<D: Doc>(doc: Option<&D>, path: &[Step]) -> Option<D> {
-    let mut cur = doc?.clone();
-    for s in path {
-        cur = match s {
-            Step::Key(k) => cur.get(k)?,
-            Step::Idx(i) => cur.idx(*i)?,
-        };
-    }
-    (!cur.is_null()).then_some(cur)
 }
 
 /// One document being read in its scope, with the prefixes resolved so far.
@@ -631,11 +647,46 @@ impl<S: Sink> Exec<'_, S> {
                 stat,
                 ops,
             } => self.list(*from, kind, *stat, *ops, f),
-            Op::Const(v) => {
+            Op::Const(v, _) => {
                 self.filled += !v.is_null() as usize;
                 self.sink.passthrough(&v)
             }
             Op::OmitNull(inner) => self.op(inner, f),
+            Op::Optional {
+                members,
+                present,
+                if_null,
+            } => {
+                // Inside an item map the frame's document is the element, which `holds` then reads.
+                if !holds(present, f.doc.as_ref(), None, None) {
+                    members.iter().for_each(|(_, op)| self.miss(op));
+                    return self.sink.scalar(Value::Null);
+                }
+                if !if_null {
+                    return self.object(members, f);
+                }
+                let (mark, filled) = (self.sink.mark(), self.filled);
+                let out = self.object(members, f);
+                if self.filled > filled {
+                    return out;
+                }
+                self.sink.rewind(mark);
+                self.sink.scalar(Value::Null)
+            }
+        }
+    }
+
+    /// Counts a miss for every field in `op`, which is not mapped.
+    fn miss(&self, op: &Op) {
+        match op {
+            Op::Null | Op::Const(_, None) => {}
+            Op::Scalar(Leaf { stat, .. }) | Op::List { stat, .. } | Op::Const(_, Some(stat)) => {
+                self.stats.miss(*stat)
+            }
+            Op::Object(c) | Op::Optional { members: c, .. } => {
+                c.iter().for_each(|(_, op)| self.miss(op))
+            }
+            Op::OmitNull(op) => self.miss(op),
         }
     }
 

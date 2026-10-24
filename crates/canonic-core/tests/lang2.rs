@@ -283,3 +283,78 @@ fn a_routing_leaf_with_x_empty_missing_still_extracts() {
     assert_eq!(a.map_json(br#"{"e": "a@b.co"}"#), br#"{"email":"a@b.co"}"#);
     assert_eq!(a.map_json(br#"{"e": null}"#), b"{}");
 }
+
+fn hq_schema(x_empty: Option<&str>) -> J {
+    let mut hq = json!({"type": "object", "properties": {
+        "city": {"type": "string"},
+        "email": {"type": "string", "semantic": "email", "routing": true}}});
+    if let Some(e) = x_empty {
+        hq["x-empty"] = json!(e);
+    }
+    json!({"type": "object", "properties": {"hq": hq}})
+}
+
+fn hq_artifact(rule: Option<J>, x_empty: Option<&str>) -> canonic_core::Artifact {
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = json!({"hq.city": "d.city", "hq.email": "d.email"});
+    if let Some(r) = rule {
+        spec["fields"]["hq"] = r;
+    }
+    let plan = compile(&spec, &hq_schema(x_empty), &[]).unwrap();
+    canonic_core::Artifact::new(plan, Default::default()).unwrap()
+}
+
+#[test]
+fn a_routing_leaf_in_an_x_empty_missing_object_still_extracts() {
+    let a = hq_artifact(None, Some("missing"));
+    assert_eq!(a.plan.routing.len(), 1);
+    assert_eq!(a.plan.routing[0].name, "hq.email");
+    let body = br#"{"d": {"email": "a@b.co"}}"#;
+    assert_eq!(
+        a.extract(body),
+        [Some(canonic_core::Value::Str("a@b.co".into()))]
+    );
+    assert_eq!(
+        a.map_json(body),
+        br#"{"hq":{"city":null,"email":"a@b.co"}}"#
+    );
+    assert_eq!(a.map_json(b"{}"), b"{}");
+}
+
+#[test]
+fn optional_objects_write_format_2_and_load_back() {
+    for rule in [json!({"present": "d"}), json!({"if_empty": "null"})] {
+        let a = hq_artifact(Some(rule), None);
+        let text = serde_json::to_value(&*a.plan).unwrap();
+        assert_eq!(text["format"], 2);
+        let loaded: Plan = serde_json::from_value(text.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&loaded).unwrap(), text);
+        let b = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
+        assert_eq!(b.map_json(b"{}"), br#"{"hq":null}"#);
+        assert_eq!(
+            b.map_json(br#"{"d": {"city": "x"}}"#),
+            br#"{"hq":{"city":"x","email":null}}"#
+        );
+    }
+    // A plain object keeps the format 1 layout: its members alone.
+    let text = serde_json::to_value(&*hq_artifact(None, None).plan).unwrap();
+    assert_eq!(text["format"], 1);
+    assert!(text["fields"][0]["value"]["Object"].is_array());
+}
+
+#[test]
+fn a_failed_present_counts_a_miss_for_each_leaf_and_still_routes() {
+    let a = hq_artifact(Some(json!({"present": "d.ok"})), None);
+    let body = br#"{"d": {"city": "x", "email": "a@b.co"}}"#;
+    assert_eq!(a.map_json(body), br#"{"hq":null}"#);
+    let fills: Vec<(String, u64)> = (a.stats.snapshot().fields.into_iter())
+        .map(|(name, f)| (name, f.fill))
+        .collect();
+    // Nothing inside the object is mapped. The object rule has no stat slot of its own.
+    assert_eq!(fills, [("hq.city".into(), 0), ("hq.email".into(), 0)]);
+    // `extract` reads routing fields and ignores `present`.
+    assert_eq!(
+        a.extract(body),
+        [Some(canonic_core::Value::Str("a@b.co".into()))]
+    );
+}

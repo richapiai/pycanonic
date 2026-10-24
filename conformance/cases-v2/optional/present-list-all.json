@@ -1,0 +1,100 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "name": "n",
+      "hq": {
+        "present": [
+          "data.hq",
+          "data.id"
+        ]
+      },
+      "hq.city": "data.hq.city",
+      "hq.country": "data.hq.country"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "hq": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "data": {
+          "hq": {
+            "city": "x"
+          },
+          "id": 1
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": null,
+        "hq": {
+          "city": "x",
+          "country": null
+        }
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "hq": {
+            "city": "x"
+          }
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": null,
+        "hq": null
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "hq": {
+            "city": "x"
+          },
+          "id": null
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": null,
+        "hq": null
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "id": 1
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": null,
+        "hq": null
+      }
+    }
+  ]
+}

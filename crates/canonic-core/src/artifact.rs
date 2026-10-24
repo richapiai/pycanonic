@@ -160,9 +160,17 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
     for x in fs {
         match x.value.inner() {
             // A const reads nothing.
-            Field::Null | Field::Const(..) => {}
+            Field::Null | Field::Const(..) | Field::Empty(_) => {}
             Field::OmitNull(_) => unreachable!("inner() unwraps it"),
-            Field::Object(c) => fields(f, c),
+            Field::Object {
+                members, present, ..
+            } => {
+                // A present check reads only whether the value is there and not null.
+                for p in present {
+                    node(f, p);
+                }
+                fields(f, members)
+            }
             Field::Scalar(s) => scalar(f, s),
             Field::List { from, kind, .. } => {
                 let e = node(f, from).elems.get_or_insert_default();

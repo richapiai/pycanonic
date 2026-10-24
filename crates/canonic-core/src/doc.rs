@@ -24,6 +24,27 @@ impl Key {
     }
 }
 
+/// One step of a path the executor reads, its keys interned per `Program`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum KeyStep {
+    Key(Key),
+    Idx(usize),
+}
+
+pub type KeyPath = Vec<KeyStep>;
+
+/// The value at `path`, `None` when it or any step is missing or null.
+pub(crate) fn read<D: Doc>(doc: Option<&D>, path: &[KeyStep]) -> Option<D> {
+    let mut cur = doc?.clone();
+    for s in path {
+        cur = match s {
+            KeyStep::Key(k) => cur.get(k)?,
+            KeyStep::Idx(i) => cur.idx(*i)?,
+        };
+    }
+    (!cur.is_null()).then_some(cur)
+}
+
 /// Read access to a parsed document. A missing member and a `null` are both "absent" to the plan.
 // `len` is "is this an array, and how long". An is_empty adds nothing.
 #[allow(clippy::len_without_is_empty)]

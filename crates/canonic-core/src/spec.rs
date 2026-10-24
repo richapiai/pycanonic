@@ -63,6 +63,12 @@ pub enum Rule {
     Array(ArrayRule),
     /// Language 2: `{"const": <any JSON value>}`, written as it is.
     Const(Value),
+    /// Language 2, on an object node: `{"present": <path> | [<path>, ...]}` and/or
+    /// `{"if_empty": "null"}`. The object's leaves keep their own keys.
+    Object {
+        present: Vec<Path>,
+        if_empty_null: bool,
+    },
 }
 
 /// Canonical field path to its rule, in spec order. A key ending in `[]` holds a `Rule::Array`.
@@ -359,6 +365,28 @@ impl Checker {
             self.transform(t, &format!("{at}.transform"));
         }
     }
+    fn optional(&mut self, o: &Map<String, Value>, at: &str) {
+        self.keys(o, at, &["present", "if_empty"]);
+        if let Some(p) = o.get("present") {
+            self.lang2(at, "present");
+            let pat = format!("{at}.present");
+            match p {
+                Value::Array(a) if !a.is_empty() => {
+                    for (i, p) in a.iter().enumerate() {
+                        self.path(Some(p), &format!("{pat}[{i}]"));
+                    }
+                }
+                Value::Array(_) => self.fail(&pat, "must be a path or a non-empty array of paths"),
+                p => self.path(Some(p), &pat),
+            }
+        }
+        if let Some(v) = o.get("if_empty") {
+            self.lang2(at, "if_empty");
+            if v != "null" {
+                self.fail(&format!("{at}.if_empty"), "must be \"null\"");
+            }
+        }
+    }
     fn fields(&mut self, v: &Value, at: &str) {
         let Some(o) = v.as_object().filter(|o| !o.is_empty()) else {
             return self.fail(at, "must be a non-empty object");
@@ -380,6 +408,8 @@ impl Checker {
             } else if let Some(o) = r.as_object().filter(|o| o.contains_key("const")) {
                 self.lang2(&kat, "const");
                 self.keys(o, &kat, &["const"]);
+            } else if let Some(o) = r.as_object().filter(|o| optional(o)) {
+                self.optional(o, &kat);
             } else if k.ends_with("[]") {
                 self.array(r, &kat);
             } else {
@@ -465,6 +495,11 @@ fn language(v: Option<&Value>) -> Option<u8> {
     }
 }
 
+/// A rule object for an object node: it has `present` or `if_empty`.
+fn optional(o: &Map<String, Value>) -> bool {
+    o.contains_key("present") || o.contains_key("if_empty")
+}
+
 /// An array rule's `missing` or `empty` value.
 fn list_empty(v: &Value) -> Option<Empty> {
     match v.as_str()? {
@@ -523,6 +558,16 @@ fn field_map(v: &Value) -> FieldMap {
 fn rule(key: &str, r: &Value) -> Rule {
     if let Some(c) = r.get("const") {
         return Rule::Const(c.clone());
+    }
+    if let Some(o) = r.as_object().filter(|o| optional(o)) {
+        return Rule::Object {
+            present: match o.get("present") {
+                Some(Value::Array(a)) => a.iter().map(path).collect(),
+                Some(p) => vec![path(p)],
+                None => Vec::new(),
+            },
+            if_empty_null: o.contains_key("if_empty"),
+        };
     }
     if key.ends_with("[]") {
         return Rule::Array(ArrayRule {
