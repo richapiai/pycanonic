@@ -5,6 +5,7 @@ Run as a script, it writes the auto share table to RESULTS.md next to this file.
 
 from __future__ import annotations
 
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -23,6 +24,7 @@ from pycanonic.cli.fit.fit import FitOptions, _eq, fit_pairs
 from pycanonic.cli.fit.leaves import _segs
 from pycanonic.cli.fit.pairs import Pair
 from pycanonic.cli.fit.report import FitResult
+from pycanonic.cli.fit.verify import run as verify
 
 from .providers import PROVIDERS, Provider
 from .world import entities
@@ -48,6 +50,7 @@ class Outcome:
     rejected: int  # fresh pairs the spec rejects: a failover, not a wrong value
     seconds: float
     wrong: list[Wrong] = field(default_factory=list)
+    shape: list[tuple[str, str, str, str]] = field(default_factory=list)  # (auto field, pair, path, message) from verify
 
     def tiers(self) -> dict[str, int]:
         return self.result.summary()
@@ -63,6 +66,12 @@ def _value(doc: Any, path: str) -> Any:
 
 def _show(v: Any) -> Any:
     return "<missing>" if v is MISSING else v
+
+
+def _touches(key: str, path: str) -> bool:
+    """A verify path (`jobs[0].org`, `$`) is at, above or below the field key (`jobs[].org.name`)."""
+    p = "" if path == "$" else re.sub(r"\[\d+\]", "[]", path)
+    return not p or key == p or key.startswith((p + ".", p + "[")) or p.startswith((key + ".", key + "["))
 
 
 def differs(got: Any, want: Any, parts: list[str]) -> Any:
@@ -90,7 +99,10 @@ def evaluate(name: str) -> Outcome:
     if result.spec is not None and auto:
         art = pycanonic.compile_spec(result.spec, schema)
         seen: set[str] = set()
-        for x in pairs(p, 2, FRESH):
+        fresh = pairs(p, 2, FRESH)
+        for name, path, msg in verify(result.spec, schema, fresh, 0.0, None).shape_failures:
+            out.shape += [(r.field, name, path, msg) for r in auto if _touches(r.field, path)]
+        for x in fresh:
             try:
                 mapped = art.map(x.provider)
             except pycanonic.Rejected:

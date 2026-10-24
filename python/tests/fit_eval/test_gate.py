@@ -21,6 +21,10 @@ def test_world_has_the_traps() -> None:
     assert len(rare(fresh, "region")) > 1 and len(rare(fresh, "plan")) > 1
     assert rare(train, "nickname") == {None} != rare(fresh, "nickname")
     assert all(e["company"] for e in train) and not all(e["company"] for e in fresh)
+    industry = lambda es: {e["company"]["industry"] for e in es if e["company"]}
+    assert industry(fresh) - industry(train)
+    assert rare(fresh, "currency") - rare(train, "currency")
+    assert any(b["start"] != a["end"] for e in fresh for a, b in zip(e["jobs"], e["jobs"][1:]))
     ids = [[j["company_id"] for j in e["jobs"]] for e in fresh]
     assert any(any(a == c != b for a, b, c in zip(x, x[1:], x[2:])) for x in ids)
     assert len(PROVIDERS) >= 12
@@ -31,6 +35,13 @@ def test_zero_wrong_auto(name: str) -> None:
     o = evaluate(name)
     lines = [f"{o.provider} {w.field} ({w.kind}, {w.rule}): {w.pair} default {w.want!r}, mapped {w.got!r}" for w in o.wrong]
     assert not lines, "wrong auto fields:\n" + "\n".join(lines)
+
+
+@pytest.mark.parametrize("name", [p.name for p in PROVIDERS])
+def test_verify_no_shape_failure_on_auto(name: str) -> None:
+    """`canonic verify` over the 60 fresh pairs finds no shape failure at, above or below an auto field."""
+    o = evaluate(name)
+    assert not o.shape, "shape failures on auto fields:\n" + "\n".join(f"{o.provider} {f}: {p} {at} {m}" for f, p, at, m in o.shape[:20])
 
 
 def test_auto_share_reported(capsys: pytest.CaptureFixture[str]) -> None:
