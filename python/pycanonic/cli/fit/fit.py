@@ -120,6 +120,10 @@ class _Fitter:
             if rule:
                 self.fields[key] = rule
                 self.rows.append(Row(key, "", "presence", rule, len(self.pairs), len(self.pairs), 1.0, []))
+            elif "x-empty" not in node and not any(map(_empty, vals)):
+                # never empty in the samples: null when every leaf is null, the usual form
+                self.fields[key] = rule = {"if_empty": "null"}
+                self.rows.append(Row(key, "", "if_empty", rule, len(self.pairs), len(self.pairs), 1.0, []))
         else:
             self.leaf(key, node, [None if v is MISSING else v for v in vals])
 
@@ -227,7 +231,7 @@ def _check(f: _Fitter) -> None:
             if r.kind == "empty":
                 r.support, r.total = sum(map(_eq, got, want)), n
                 continue
-            if r.kind == "presence":
+            if r.kind in ("presence", "if_empty"):
                 support = sum(_empty(g) == _empty(w) for g, w in zip(got, want))
             else:
                 live = [j for j in range(n) if want[j] is not MISSING and want[j] is not None]

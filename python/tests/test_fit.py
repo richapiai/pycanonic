@@ -702,3 +702,17 @@ def test_one_default_value_never_auto() -> None:
     assert rows["name"].tier == rows["jobs[].t"].tier == rows["jobs[]"].tier == "auto"
     assert tier(replace(lf("path", 10, 10), one_value=True)) == "review"
 
+
+def test_object_never_empty_gets_if_empty_for_review() -> None:
+    """An object that the default sent in every pair has no empty form in the samples: fit writes
+    `if_empty: null` for review, so a provider with no company gives null, not an object of
+    nulls (fit_eval found every company leaf wrong on a fresh pair)."""
+    pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "org": {"name": f"o{i}", "size": i}}, {"n": f"n{i}", "employer": {"orgName": f"o{i}", "count": i}}, None) for i in range(10)]
+    schema = derive_schema([p.default for p in pairs])
+    result = fit_pairs(pairs, schema, FitOptions("acme", "e"))
+    assert result.spec is not None and result.spec["fields"]["org"] == {"if_empty": "null"}
+    rows = {r.field: r for r in result.fields}
+    assert (rows["org"].kind, rows["org"].tier, rows["org.name"].tier) == ("if_empty", "review", "auto")
+    art = pycanonic.compile_spec(result.spec, schema)
+    assert art.map({"n": "x", "employer": None}) == {"name": "x", "org": None}
+

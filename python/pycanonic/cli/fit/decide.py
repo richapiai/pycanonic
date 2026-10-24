@@ -10,7 +10,7 @@ Tier = Literal["auto", "review", "manual"]
 
 # The kinds that can be auto. Every other kind with a rule goes to review: the design's always-review
 # list (lookup, const, regex, group, omit, when, reject, null_if, keys, absent) and the kinds the safe
-# list does not name (wrap, flatten, filter, presence, split and the other transforms).
+# list does not name (wrap, flatten, filter, presence, if_empty, split and the other transforms).
 AUTO = {"path", "cast", "trim", "lower", "upper", "format_date", "parse_date", "strip_prefix", "strip_suffix", "join", "coalesce", "empty"}
 MANUAL = {"none", "disagree"}
 # A person decided these (kept, asked) or must decide them (absent, reject), whatever the support.
