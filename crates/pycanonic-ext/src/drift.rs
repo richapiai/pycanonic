@@ -75,6 +75,8 @@ impl FillMonitor {
         }
         let snap = StatsSnapshot {
             responses: window.get_item("responses")?.extract()?,
+            // The monitor reads fill and errors only.
+            rejected: 0,
             fields,
         };
         self.0

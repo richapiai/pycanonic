@@ -49,9 +49,16 @@ fn run(case: &J) -> Result<Vec<String>, String> {
         };
         let want = &input["expected"];
         let ctx = Some(&input["context"]).filter(|c| !c.is_null());
-        // Task 9 adds Rejected. Until then a case that uses it fails.
-        if want.get("$rejected").is_some() {
-            fails.push(format!("inputs[{i}]: $rejected is not implemented yet"));
+        if let Some(reason) = want.get("$rejected") {
+            let got = [
+                ("map_bytes", a.map_bytes(&body, ctx).err()),
+                ("map_json", a.map_json(&body, ctx).err()),
+            ];
+            for (way, r) in got {
+                if r.as_ref().map(|r| r.reason.as_str()) != reason.as_str() {
+                    fails.push(format!("{way}[{i}]: got {r:?}, want Rejected({reason})"));
+                }
+            }
             continue;
         }
         let mut text = Vec::new();

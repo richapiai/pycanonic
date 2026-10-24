@@ -1,0 +1,26 @@
+{
+  "spec": {
+    "language": 1,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "reject": [
+      {
+        "missing": "name"
+      }
+    ],
+    "fields": {
+      "name": "name"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "invalid spec: spec: \"reject\" needs \"language\": 2"
+}

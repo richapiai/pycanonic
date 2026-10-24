@@ -1,0 +1,105 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "name": "name",
+      "bio": {
+        "from": "bio",
+        "when": {
+          "path": "$input.full",
+          "eq": true
+        }
+      },
+      "tags[]": {
+        "from": "tags",
+        "when": {
+          "path": "$input.full",
+          "eq": true
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "bio": {
+        "type": "string",
+        "x-empty": "missing"
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "x-empty": "missing"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "name": "a",
+        "bio": "b",
+        "tags": [
+          "t"
+        ]
+      },
+      "context": {
+        "full": true
+      },
+      "expected": {
+        "name": "a",
+        "bio": "b",
+        "tags": [
+          "t"
+        ]
+      }
+    },
+    {
+      "body": {
+        "name": "a",
+        "bio": "b",
+        "tags": [
+          "t"
+        ]
+      },
+      "context": {
+        "full": false
+      },
+      "expected": {
+        "name": "a"
+      }
+    },
+    {
+      "body": {
+        "name": "a"
+      },
+      "context": {
+        "full": true
+      },
+      "expected": {
+        "name": "a"
+      }
+    },
+    {
+      "body": {
+        "name": "a",
+        "bio": null,
+        "tags": null
+      },
+      "context": {
+        "full": true
+      },
+      "expected": {
+        "name": "a"
+      }
+    }
+  ]
+}

@@ -165,6 +165,7 @@ fn a_response_that_is_itself_an_array_shapes_like_any_other_array() {
 fn snap(responses: u64, fields: &[(&str, u64, u64)]) -> StatsSnapshot {
     StatsSnapshot {
         responses,
+        rejected: 0,
         fields: fields
             .iter()
             .map(|&(f, fill, errors)| {
@@ -324,6 +325,7 @@ fn an_item_field_is_judged_only_in_windows_with_enough_elements() {
     let mut m = monitor();
     let w = |fill: u64, total: u64| StatsSnapshot {
         responses: 1000,
+        rejected: 0,
         fields: vec![(
             "jobs[].title".into(),
             FieldStats {

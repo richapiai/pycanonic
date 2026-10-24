@@ -1,0 +1,76 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "reject": [
+      {
+        "path": "status",
+        "eq": "none"
+      },
+      {
+        "path": "$input.block",
+        "eq": true
+      }
+    ],
+    "fields": {
+      "name": "name"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "name": "a",
+        "status": "none"
+      },
+      "context": null,
+      "expected": {
+        "$rejected": "{\"path\":\"status\",\"eq\":\"none\"}"
+      }
+    },
+    {
+      "body": {
+        "name": "a",
+        "status": "ok"
+      },
+      "context": null,
+      "expected": {
+        "name": "a"
+      }
+    },
+    {
+      "body": {
+        "name": "a",
+        "status": "ok"
+      },
+      "context": {
+        "block": true
+      },
+      "expected": {
+        "$rejected": "{\"path\":\"$input.block\",\"eq\":true}"
+      }
+    },
+    {
+      "body": {
+        "name": "a",
+        "status": "ok"
+      },
+      "context": {
+        "block": false
+      },
+      "expected": {
+        "name": "a"
+      }
+    }
+  ]
+}

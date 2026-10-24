@@ -15,7 +15,7 @@ from ._api import (
     validate_spec,
     validators,
 )
-from ._core import Artifact, ShadowDiff, Stats, fingerprint, shape
+from ._core import Artifact, Rejected, ShadowDiff, Stats, fingerprint, shape
 from .registry import Registry
 
 __version__ = "0.1.0"
@@ -27,6 +27,7 @@ __all__ = [
     "GateResult",
     "Issue",
     "Registry",
+    "Rejected",
     "ShadowDiff",
     "SpecError",
     "Stats",

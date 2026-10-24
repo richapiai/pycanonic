@@ -212,12 +212,18 @@ pub struct Program {
     root: Vec<(usize, Op)>,
     scope: Scope,
     keys: Vec<String>,
+    /// `Plan::reject`, read against the root.
+    reject: Vec<Cond<Path>>,
+    /// Some path reads `$input`, the request context.
+    input: bool,
 }
 
 struct Builder<'p> {
     plan: &'p Plan,
     keys: Vec<String>,
     scope: ScopeBuilder,
+    /// A path read so far reads `$input`.
+    input: bool,
 }
 
 impl Builder<'_> {
@@ -269,6 +275,13 @@ impl Builder<'_> {
     }
 
     fn cond(&mut self, c: &Cond) -> Cond<Path> {
+        // A condition path that starts with `$input` always reads the context (`cond::holds`).
+        let input = |p: &spec::Path| matches!(p.first(), Some(spec::Step::Key(k)) if k == "$input");
+        self.input |= match c {
+            Cond::Present(p, _) | Cond::Eq(p, _) | Cond::In(p, _) => input(p),
+            Cond::Missing(p) | Cond::Empty(p) => input(p),
+            Cond::All(_) => false,
+        };
         match c {
             Cond::Present(p, b) => Cond::Present(self.path(p), *b),
             Cond::Eq(p, v) => Cond::Eq(self.path(p), v.clone()),
@@ -299,6 +312,7 @@ impl Builder<'_> {
     fn at(&mut self, p: &spec::Path) -> At {
         let steps = self.path(p);
         if self.plan.context && matches!(p.first(), Some(spec::Step::Key(k)) if k == "$input") {
+            self.input = true;
             self.scope.input = self.scope.at(steps[..1].to_vec());
         }
         self.scope.at(steps)
@@ -346,7 +360,7 @@ impl Builder<'_> {
                 } else {
                     let present = present
                         .iter()
-                        .map(|p| Cond::Present(self.path(p), true))
+                        .map(|p| self.cond(&Cond::Present(p.clone(), true)))
                         .collect();
                     Op::Optional {
                         members,
@@ -422,8 +436,10 @@ impl Program {
             plan,
             keys: Vec::new(),
             scope: ScopeBuilder::default(),
+            input: false,
         };
         let root = b.fields(&plan.fields)?;
+        let reject = plan.reject.iter().map(|r| b.cond(&r.cond)).collect();
         let scope = std::mem::take(&mut b.scope).finish();
         // Routing fields are only checked here (`extract` reads them). Their paths join no scope.
         for r in &plan.routing {
@@ -433,7 +449,19 @@ impl Program {
             root,
             scope,
             keys: b.keys,
+            reject,
+            input: b.input,
         })
+    }
+
+    /// Whether some path reads `$input`. A plan that does not ignores the context.
+    pub fn reads_input(&self) -> bool {
+        self.input
+    }
+
+    /// The index of the first `reject` condition that holds on `doc`, `$input` reading `ctx`.
+    pub fn rejected<D: Doc>(&self, doc: Option<&D>, ctx: Option<&D>) -> Option<usize> {
+        self.reject.iter().position(|c| holds(c, doc, None, ctx))
     }
 
     /// Distinct path keys. A `Key`'s `tag` is its index here.

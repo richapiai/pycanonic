@@ -79,3 +79,112 @@ def test_context_mapping_and_errors():
             a.map(raw, context=bad)
         with pytest.raises(TypeError):
             a.map(body, context=bad)
+
+
+def _reject_artifact():
+    schema = {"type": "object", "properties": {"email": {"type": "string", "semantic": "email", "routing": True}, "name": {"type": "string"}}}
+    spec = _spec({"email": "contact.email", "name": "data.name"})
+    spec["reject"] = [{"missing": "data.name"}]
+    return pycanonic.compile_spec(spec, schema)
+
+
+def test_rejected_is_exception():
+    import pycanonic._core
+
+    assert issubclass(pycanonic.Rejected, Exception)
+    assert pycanonic.Rejected is pycanonic._core.Rejected
+    assert pycanonic.Rejected.__module__ == "pycanonic._core"
+
+
+def test_rejected_counts():
+    import pytest
+
+    body = {"contact": {"email": "ada@example.com"}, "data": {}}
+    raw = json.dumps(body).encode()
+    for way in [lambda a: a.map(raw), lambda a: a.map(body), lambda a: a.map_json(raw)]:
+        a = _reject_artifact()
+        with pytest.raises(pycanonic.Rejected) as e:
+            way(a)
+        assert e.value.reason == '{"missing":"data.name"}'
+        assert str(e.value) == e.value.reason
+        s = a.stats_snapshot()
+        assert s["rejected"] == 1
+        assert s["responses"] == 0
+        a.stats.reset()
+        assert a.stats.snapshot()["rejected"] == 0
+    assert "rejected" not in pycanonic.compile_spec(_spec({"name": "n"}), SCHEMA).stats_snapshot()
+
+
+def test_extract_ignores_reject():
+    a = _reject_artifact()
+    raw = json.dumps({"contact": {"email": "ada@example.com"}, "data": {}}).encode()
+    assert a.extract(raw) == {"email": "ada@example.com"}
+    s = a.stream()
+    s.push(raw)
+    assert s.result() == {"email": "ada@example.com"}
+
+
+def _ways_with(a, body, ctx):
+    raw = json.dumps(body).encode()
+    return [
+        lambda: a.map(raw, context=ctx),
+        lambda: a.map(body, context=ctx),
+        lambda: json.loads(a.map_json(raw, context=ctx)),
+    ]
+
+
+def test_context_is_validated_the_same_on_every_path():
+    import math
+    import types
+
+    import pytest
+
+    a = pycanonic.compile_spec(_spec({"name": "$input.who", "kind": "k"}), SCHEMA)
+    body = {"k": "x"}
+    good = {"who": "Ada", "deep": [1, 2.5, {"n": None, "b": True}], "big": 2**70}
+    for way in _ways_with(a, body, good):
+        assert way() == {"name": "Ada", "kind": "x"}
+    bad = [
+        {1: "x"},
+        {"who": {1: "x"}},
+        {"who": math.nan},
+        {"who": [math.inf]},
+        {"who": object()},
+        {"who": types.MappingProxyType({"a": 1})},
+        [1],
+        "x",
+    ]
+    for ctx in bad:
+        for way in _ways_with(a, body, ctx):
+            with pytest.raises(TypeError) as e:
+                way()
+            assert str(e.value).startswith("context must be a JSON object: "), (ctx, str(e.value))
+
+
+def test_context_is_ignored_when_the_plan_never_reads_input():
+    import math
+
+    a = pycanonic.compile_spec(_spec({"name": "n", "kind": "k"}), SCHEMA)
+    for ctx in [{"who": math.nan}, {1: object()}, [1], "x"]:
+        for way in _ways_with(a, {"n": "a", "k": "x"}, ctx):
+            assert way() == {"name": "a", "kind": "x"}
+
+
+def test_reject_and_when_on_input_validate_the_context():
+    import math
+
+    import pytest
+
+    spec = _spec({"name": "n"})
+    spec["reject"] = [{"path": "$input.stop", "eq": True}]
+    a = pycanonic.compile_spec(spec, SCHEMA)
+    for way in _ways_with(a, {"n": "a"}, {"stop": math.nan}):
+        with pytest.raises(TypeError):
+            way()
+    for way in _ways_with(a, {"n": "a"}, {"stop": True}):
+        with pytest.raises(pycanonic.Rejected):
+            way()
+    b = pycanonic.compile_spec(_spec({"name": {"from": "n", "when": {"path": "$input.on", "eq": True}}}), SCHEMA)
+    for way in _ways_with(b, {"n": "a"}, {"on": math.nan}):
+        with pytest.raises(TypeError):
+            way()

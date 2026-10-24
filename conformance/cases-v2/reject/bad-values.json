@@ -1,0 +1,37 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "reject": [
+      {
+        "missing": 1
+      },
+      {
+        "empty": "a",
+        "path": "b"
+      },
+      {
+        "path": "$group.x",
+        "eq": 1
+      },
+      {
+        "nothing": "a"
+      }
+    ],
+    "fields": {
+      "name": "name"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "invalid spec: spec.reject[0].missing: must be a path like a.b[0][\"c d\"]; spec.reject[1].empty: unknown property; spec.reject[1]: needs exactly one of eq, in, present; spec.reject[2].path: $group is only a list or aggregate from; spec.reject[3]: must be {\"path\": <path>, \"eq\" | \"in\" | \"present\": <value>}, {\"missing\": <path>} or {\"empty\": <path>}"
+}

@@ -50,11 +50,16 @@ def test_case(path):
     fails = []
     for i, inp in enumerate(case["inputs"]):
         want = inp["expected"]
-        # Task 9 adds Rejected. Until then a case that uses it fails.
-        if isinstance(want, dict) and "$rejected" in want:
-            fails.append(f"inputs[{i}]: $rejected is not implemented yet")
-            continue
         for way, map_one in _ways(a, inp):
-            fails.append(diff(map_one(), want, f"{way}[{i}]"))
+            if isinstance(want, dict) and "$rejected" in want:
+                try:
+                    got = map_one()
+                except pycanonic.Rejected as e:
+                    if e.reason != want["$rejected"]:
+                        fails.append(f"{way}[{i}]: reason {e.reason!r}, want {want['$rejected']!r}")
+                else:
+                    fails.append(f"{way}[{i}]: mapped {got!r}, want Rejected")
+            else:
+                fails.append(diff(map_one(), want, f"{way}[{i}]"))
     fails = [f for f in fails if f]
     assert not fails, "\n".join(fails)

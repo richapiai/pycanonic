@@ -4,7 +4,8 @@
 
 use crate::canonical::{Empty, Kind, Node, load_schema};
 use crate::plan::{
-    CompileError, Field, Format, ListKind, ListOps, Meta, Named, Plan, RoutingField, Scalar, TxRef,
+    CompileError, Field, Format, ListKind, ListOps, Meta, Named, Plan, Reject, RoutingField,
+    Scalar, TxRef,
 };
 use crate::spec::{
     ArrayRule, FieldMap, Rule, ScalarRule, Source, Step, TransformRef, field_key, is_group,
@@ -91,6 +92,11 @@ impl Resolver<'_> {
                 return Err(format!(
                     "{at}: routing fields can't read the whole response ($)"
                 ));
+            }
+            // `extract` has no context.
+            let input = Step::Key("$input".into());
+            if self.language == 2 && paths.iter().any(|p| p.first() == Some(&input)) {
+                return Err(format!("{at}: routing fields can't read $input"));
             }
             // A default skips the validator and turns every response into a hit.
             if r.default.is_some() {
@@ -258,6 +264,10 @@ impl Resolver<'_> {
                     _ => None,
                 };
                 self.top.insert(key.clone(), scalar);
+            }
+            // `extract` reads a routing field whatever the condition.
+            if when.is_some() && matches!(&field, Field::Scalar(s) if s.validator.is_some()) {
+                return Err(format!("{kat}: routing fields can't have when"));
             }
             let field = match when {
                 Some((when, omit)) => Field::When {
@@ -492,6 +502,11 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
         custom_names: custom.to_vec(),
         names: r.names,
         context: r.context,
+        reject: s
+            .reject
+            .into_iter()
+            .map(|(cond, reason)| Reject { cond, reason })
+            .collect(),
     };
     if plan.needs_v2() {
         plan.format = Format(2);

@@ -1,0 +1,150 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "reject": [
+      {
+        "empty": "data.v"
+      }
+    ],
+    "fields": {
+      "name": "data.n"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "data": {
+          "n": "a",
+          "v": ""
+        }
+      },
+      "context": null,
+      "expected": {
+        "$rejected": "{\"empty\":\"data.v\"}"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "n": "a",
+          "v": []
+        }
+      },
+      "context": null,
+      "expected": {
+        "$rejected": "{\"empty\":\"data.v\"}"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "n": "a",
+          "v": {}
+        }
+      },
+      "context": null,
+      "expected": {
+        "$rejected": "{\"empty\":\"data.v\"}"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "n": "a",
+          "v": null
+        }
+      },
+      "context": null,
+      "expected": {
+        "$rejected": "{\"empty\":\"data.v\"}"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "n": "a"
+        }
+      },
+      "context": null,
+      "expected": {
+        "$rejected": "{\"empty\":\"data.v\"}"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "n": "a",
+          "v": "x"
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": "a"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "n": "a",
+          "v": [
+            0
+          ]
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": "a"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "n": "a",
+          "v": {
+            "k": null
+          }
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": "a"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "n": "a",
+          "v": 0
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": "a"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "n": "a",
+          "v": false
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": "a"
+      }
+    }
+  ]
+}

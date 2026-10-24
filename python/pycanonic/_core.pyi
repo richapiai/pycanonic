@@ -9,6 +9,7 @@ __all__ = [
     "Artifact",
     "ExtractStream",
     "FillMonitor",
+    "Rejected",
     "ShadowDiff",
     "Stats",
     "View",
@@ -35,11 +36,21 @@ class _FieldStats(TypedDict):
 
 class _StatsSnapshot(TypedDict):
     responses: int
+    # Only for a plan with `reject` conditions: the responses they stopped, which `responses` leaves out.
+    rejected: NotRequired[int]
     fields: dict[str, _FieldStats]
 
 # JSON text, or a parsed value as `json.loads` returns it (any `Mapping` root is read as a dict).
 _Json: TypeAlias = bytes | str | bytearray | memoryview
 _Source: TypeAlias = _Json | Mapping[str, Any] | list[Any] | tuple[Any, ...] | int | float | None
+
+class Rejected(Exception):
+    """A `reject` condition holds on the response, so `map` and `map_json` give no output.
+
+    `reason` is the condition as the spec writes it, as JSON text: `'{"missing":"data.name"}'`.
+    """
+
+    reason: str
 
 @final
 class Stats:
@@ -102,10 +113,20 @@ class Artifact:
     @property
     def stats(self) -> Stats: ...
     def map(self, src: _Source, context: Mapping[str, Any] | None = None) -> dict[str, Any]:
-        """`$input` paths read `context`, the request inputs. Without one they read as missing."""
+        """`$input` paths read `context`, the request inputs. Without one they read as missing.
+
+        A plan that reads `$input` checks `context` the same way on every path: it must be a
+        `Mapping` with `str` keys whose values are `dict`, `list`, `tuple`, `str`, `int`, finite
+        `float`, `bool` or `None`, nested the same way. Anything else raises
+        `TypeError("context must be a JSON object: <reason>")`. A plan that does not read `$input`
+        ignores `context` and does not check it.
+
+        Raises `Rejected` when a `reject` condition holds.
+        """
     def view(self, src: _Source) -> View:
         """Language 1 plans only. Raises `ValueError` on a plan that uses a language 2 rule."""
-    def map_json(self, raw: _Json, context: Mapping[str, Any] | None = None) -> bytes: ...
+    def map_json(self, raw: _Json, context: Mapping[str, Any] | None = None) -> bytes:
+        """`map` as JSON text. `context` is checked as `map` checks it. Raises `Rejected` as `map` does."""
     def extract(self, raw: _Json) -> dict[str, Any]: ...
     def stream(self) -> ExtractStream: ...
     def stats_snapshot(self) -> _StatsSnapshot: ...

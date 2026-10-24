@@ -448,7 +448,7 @@ fn context_and_when_write_format_2_and_load_back() {
     let parsed: J = serde_json::from_slice(body).unwrap();
     assert_eq!(
         b.map_with(Some(&&parsed), Some(&&on), &mut canonic_core::RustSink),
-        want
+        Ok(want)
     );
 }
 
@@ -501,4 +501,26 @@ proptest! {
         let got: J = serde_json::from_slice(&a.map_json(&body, None).unwrap()).unwrap();
         prop_assert_eq!(&got, &json!({"ids": expect}));
     }
+}
+
+#[test]
+fn reject_writes_format_2_and_loads_back() {
+    let mut spec = spec_with_language(json!(2));
+    spec["reject"] = json!([{"missing": "full_name"}]);
+    let text = plan_json(spec);
+    assert_eq!(text["format"], json!(2));
+    let loaded: Plan = serde_json::from_value(text.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&loaded).unwrap(), text);
+    let a = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
+    let r = a.map_bytes(b"{}", None).unwrap_err();
+    assert_eq!(r.reason, r#"{"missing":"full_name"}"#);
+    assert!(a.map_json(br#"{"full_name": "Ada"}"#, None).is_ok());
+    let s = a.stats.snapshot();
+    assert_eq!((s.responses, s.rejected), (1, 1));
+    // A plan without `reject` writes no key for it.
+    assert!(
+        plan_json(spec_with_language(json!(2)))
+            .get("reject")
+            .is_none()
+    );
 }

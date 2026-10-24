@@ -1,0 +1,26 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "email": "$input.email"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "email": {
+        "type": "string",
+        "semantic": "email",
+        "routing": true
+      },
+      "name": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "acme people v1: fields[\"email\"]: routing fields can't read $input"
+}

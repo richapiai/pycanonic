@@ -19,7 +19,7 @@ mod _core {
     use serde_json::Value as J;
 
     #[pymodule_export]
-    use crate::artifact::{Artifact, ExtractStream, Stats};
+    use crate::artifact::{Artifact, ExtractStream, Rejected, Stats};
     #[pymodule_export]
     use crate::drift::{FillMonitor, fingerprint, shape};
     #[pymodule_export]

@@ -105,6 +105,7 @@ fn fs_(fill: u64, errors: u64) -> FieldStats {
 fn snap(responses: u64, fields: &[(&str, FieldStats)]) -> StatsSnapshot {
     StatsSnapshot {
         responses,
+        rejected: 0,
         fields: fields
             .iter()
             .map(|(k, v)| (k.to_string(), v.clone()))
@@ -417,7 +418,7 @@ fn map_field_maps_one_field_by_index_path_and_counts_nothing() {
     for raw in bodies["raws"].as_array().unwrap() {
         let node = a.parse(raw.as_str().unwrap().as_bytes());
         let doc = node.as_ref();
-        let Out::Obj(whole) = a.map_with(doc.as_ref(), None, &mut RustSink) else {
+        let Ok(Out::Obj(whole)) = a.map_with(doc.as_ref(), None, &mut RustSink) else {
             panic!("map gives an object")
         };
         a.stats.reset();

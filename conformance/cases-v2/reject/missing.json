@@ -1,0 +1,76 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "reject": [
+      {
+        "missing": "data.name"
+      }
+    ],
+    "fields": {
+      "name": "data.name"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "data": {}
+      },
+      "context": null,
+      "expected": {
+        "$rejected": "{\"missing\":\"data.name\"}"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "name": null
+        }
+      },
+      "context": null,
+      "expected": {
+        "$rejected": "{\"missing\":\"data.name\"}"
+      }
+    },
+    {
+      "raw": "not json",
+      "context": null,
+      "expected": {
+        "$rejected": "{\"missing\":\"data.name\"}"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "name": "Ada"
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": "Ada"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "name": ""
+        }
+      },
+      "context": null,
+      "expected": {
+        "name": ""
+      }
+    }
+  ]
+}

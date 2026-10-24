@@ -1,0 +1,63 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "hq": {
+        "present": "$input.hq"
+      },
+      "hq.city": "city"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "hq": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "city": "Oslo"
+      },
+      "context": {
+        "hq": true
+      },
+      "expected": {
+        "hq": {
+          "city": "Oslo"
+        }
+      }
+    },
+    {
+      "body": {
+        "city": "Oslo"
+      },
+      "context": {
+        "hq": null
+      },
+      "expected": {
+        "hq": null
+      }
+    },
+    {
+      "body": {
+        "city": "Oslo"
+      },
+      "context": null,
+      "expected": {
+        "hq": null
+      }
+    }
+  ]
+}

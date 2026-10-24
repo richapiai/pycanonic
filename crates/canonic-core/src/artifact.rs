@@ -16,10 +16,12 @@ use crate::write::{JsonSink, member_keys};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// A response that a `reject` rule refuses. Task 9 adds the rules: until then no call
-/// returns it.
+/// A response that a `reject` condition refuses. `reason` is the condition's spec JSON text,
+/// for example `{"missing":"data.name"}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Rejected {}
+pub struct Rejected {
+    pub reason: String,
+}
 
 pub struct Artifact {
     pub plan: Arc<Plan>,
@@ -76,7 +78,7 @@ impl Artifact {
     /// one they read as absent.
     pub fn map_bytes(&self, body: &[u8], ctx: Option<&serde_json::Value>) -> Result<Out, Rejected> {
         let node = self.parse(body);
-        Ok(self.map_with_ctx(node.as_ref().as_ref(), ctx, &mut RustSink))
+        self.map_with_ctx(node.as_ref().as_ref(), ctx, &mut RustSink)
     }
 
     /// `map_bytes` written straight to JSON text, no intermediate Python objects: the plan runs into
@@ -92,7 +94,7 @@ impl Artifact {
             open: Vec::new(),
             keys: &self.json_keys,
         };
-        let root = self.map_with_ctx(node.as_ref().as_ref(), ctx, &mut sink);
+        let root = self.map_with_ctx(node.as_ref().as_ref(), ctx, &mut sink)?;
         Ok(sink.finish(root))
     }
 
@@ -101,7 +103,7 @@ impl Artifact {
         doc: &D,
         ctx: Option<&serde_json::Value>,
     ) -> Result<Out, Rejected> {
-        Ok(self.map_with_ctx(Some(doc), ctx, &mut RustSink))
+        self.map_with_ctx(Some(doc), ctx, &mut RustSink)
     }
 
     /// `map_bytes` with every canonical object's keys by name (`Out::Map` all the way down), as
@@ -126,7 +128,7 @@ impl Artifact {
         doc: Option<&D>,
         ctx: Option<&serde_json::Value>,
         sink: &mut S,
-    ) -> S::Out {
+    ) -> Result<S::Out, Rejected> {
         match ctx {
             None => self.map_with(doc, None, sink),
             Some(c) => {
@@ -164,14 +166,33 @@ impl Artifact {
         execute_field(&self.program, path, doc, sink, &self.custom)
     }
 
-    /// Maps `doc` into `sink`. `$input` paths read `ctx`, a document of the same type.
+    /// Maps `doc` into `sink`. `$input` paths read `ctx`, a document of the same type. A `reject`
+    /// condition that holds on `doc` stops the map before any field is read: nothing goes into
+    /// `sink`, and stats count a rejection, not a response.
     pub fn map_with<D: Doc, S: Sink>(
         &self,
         doc: Option<&D>,
         ctx: Option<&D>,
         sink: &mut S,
-    ) -> S::Out {
-        execute(&self.program, doc, ctx, sink, &self.stats, &self.custom)
+    ) -> Result<S::Out, Rejected> {
+        if let Some(i) = self.program.rejected(doc, ctx) {
+            self.stats.rejected();
+            let reason = self.plan.reject[i].reason.clone();
+            return Err(Rejected { reason });
+        }
+        Ok(execute(
+            &self.program,
+            doc,
+            ctx,
+            sink,
+            &self.stats,
+            &self.custom,
+        ))
+    }
+
+    /// Whether the plan reads `$input`. A plan that does not ignores the context.
+    pub fn reads_input(&self) -> bool {
+        self.program.reads_input()
     }
 }
 
@@ -194,6 +215,9 @@ fn named(o: Out, names: &[String]) -> Out {
 pub fn filter_for(plan: &Plan) -> Filter {
     let mut f = Filter::default();
     fields(&mut f, &plan.fields);
+    for p in plan.reject.iter().flat_map(|r| cond_paths(&r.cond)) {
+        node(&mut f, p).all = true;
+    }
     settle(&mut f);
     f
 }

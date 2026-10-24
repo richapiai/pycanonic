@@ -73,6 +73,31 @@ pub fn parse(v: &Value) -> Result<Cond, Vec<(String, String)>> {
     }
 }
 
+const REJECT_SHAPE: &str = "must be {\"path\": <path>, \"eq\" | \"in\" | \"present\": <value>}, \
+                            {\"missing\": <path>} or {\"empty\": <path>}";
+
+/// A `reject` condition: the condition forms of `parse`, or `{"missing": p}` or `{"empty": p}`.
+pub fn parse_reject(v: &Value) -> Result<Cond, Vec<(String, String)>> {
+    let one = v
+        .as_object()
+        .filter(|o| o.len() == 1)
+        .and_then(|o| o.iter().next());
+    let Some((k, p)) = one.filter(|(k, _)| *k == "missing" || *k == "empty") else {
+        return parse(v).map_err(|issues| match issues.as_slice() {
+            [(at, m)] if at.is_empty() && m == SHAPE => vec![(String::new(), REJECT_SHAPE.into())],
+            _ => issues,
+        });
+    };
+    let Some(path) = p.as_str().and_then(parse_path) else {
+        let m = "must be a path like a.b[0][\"c d\"]";
+        return Err(vec![(format!(".{k}"), m.into())]);
+    };
+    Ok(match k.as_str() {
+        "missing" => Cond::Missing(path),
+        _ => Cond::Empty(path),
+    })
+}
+
 /// The value `path` names. A path that starts with `$input` reads `ctx`. Any other path reads
 /// `element` inside an item map, else `root`.
 fn value<D: Doc>(

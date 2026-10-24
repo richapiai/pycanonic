@@ -307,6 +307,7 @@ fn merge(a: &StatsSnapshot, b: &StatsSnapshot) -> StatsSnapshot {
         .collect();
     StatsSnapshot {
         responses: a.responses + b.responses,
+        rejected: a.rejected + b.rejected,
         fields,
     }
 }

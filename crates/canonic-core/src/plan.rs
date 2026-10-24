@@ -283,6 +283,16 @@ pub struct Plan {
     /// reads the context and not the body.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub context: bool,
+    /// Language 2: the first that holds on the root stops the map.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reject: Vec<Reject>,
+}
+
+/// A `reject` condition and its spec JSON text, the reason `Rejected` gives.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Reject {
+    pub cond: Cond,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -343,7 +353,7 @@ impl Plan {
                 }
             }
         }
-        self.context || self.fields.iter().any(|n| field(&n.value))
+        self.context || !self.reject.is_empty() || self.fields.iter().any(|n| field(&n.value))
     }
 
     /// One line per canonical field, in schema order, e.g.

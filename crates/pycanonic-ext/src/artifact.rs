@@ -6,7 +6,8 @@ use crate::pysink::{PySink, value};
 use crate::transforms::{PyTransform, take_pending};
 use crate::view::{Level, View, levels};
 use canonic_core::{CompileError, Plan, Status, Transform, Value};
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::create_exception;
+use pyo3::exceptions::{PyException, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{
     PyByteArray, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView, PyString,
@@ -101,32 +102,36 @@ pub(crate) fn object_root<'py>(src: &Bound<'py, PyAny>) -> PyResult<Bound<'py, P
     }
 }
 
-/// A `context=` argument: `None`, or any `Mapping`, read as a `dict` (copied one level when it is
-/// not one). Anything else is a `TypeError`.
-fn context<'py>(ctx: Option<&Bound<'py, PyAny>>) -> PyResult<Option<Bound<'py, PyAny>>> {
-    match ctx {
-        Some(c) if !c.is_none() => {
-            if c.is_instance_of::<PyDict>() || c.cast::<PyMapping>().is_ok() {
-                object_root(c).map(Some)
-            } else {
-                Err(PyTypeError::new_err(format!(
-                    "context must be a Mapping or None, not {}",
-                    c.get_type().name()?
-                )))
-            }
-        }
-        _ => Ok(None),
+create_exception!(
+    pycanonic._core,
+    Rejected,
+    PyException,
+    "A `reject` condition holds on the response. `reason` is the condition's spec JSON text."
+);
+
+/// `pycanonic.Rejected`, with its `reason` attribute set.
+fn rejected(py: Python<'_>, r: canonic_core::Rejected) -> PyErr {
+    let e = Rejected::new_err(r.reason.clone());
+    match e.value(py).setattr("reason", r.reason) {
+        Ok(()) => e,
+        Err(failed) => failed,
     }
 }
 
-/// A context as JSON, for the bytes path.
-fn context_json(ctx: Option<&Bound<'_, PyAny>>) -> PyResult<Option<serde_json::Value>> {
-    context(ctx)?.map(|c| json(&c, 0)).transpose()
-}
-
-/// Task 9 raises `pycanonic.Rejected` here. Until then no map rejects.
-fn rejected(_: canonic_core::Rejected) -> PyErr {
-    PyValueError::new_err("rejected")
+/// A `context=` argument as JSON, the same on every path. `None` when the plan does not read
+/// `$input`: then the context is not even checked. Otherwise it must be `None` or a `Mapping` that
+/// holds JSON values only (`str` keys, finite floats), or this is a `TypeError`.
+fn context(a: &Artifact, ctx: Option<&Bound<'_, PyAny>>) -> PyResult<Option<serde_json::Value>> {
+    let Some(c) = ctx.filter(|c| !c.is_none() && a.inner.reads_input()) else {
+        return Ok(None);
+    };
+    let bad = |m: String| PyTypeError::new_err(format!("context must be a JSON object: {m}"));
+    if !c.is_instance_of::<PyDict>() && c.cast::<PyMapping>().is_err() {
+        return Err(bad(format!("{} is not a Mapping", c.get_type().name()?)));
+    }
+    json(&object_root(c)?, 0)
+        .map(Some)
+        .map_err(|e| bad(e.value(c.py()).to_string()))
 }
 
 impl Artifact {
@@ -204,20 +209,22 @@ impl Artifact {
             py,
             names: &self.names,
         };
+        let ctx = self::context(self, context)?;
         let out = if let Some(body) = body_of(src)? {
-            let ctx = context_json(context)?;
             let node = py.detach(|| self.inner.parse(&body));
             (self.inner).map_with_ctx(node.as_ref().as_ref(), ctx.as_ref(), &mut sink)
         } else {
-            let doc = |obj| PyDoc {
-                obj,
+            let body = PyDoc {
+                obj: object_root(src)?,
                 keys: &self.keys,
             };
-            let ctx = self::context(context)?.map(doc);
-            let body = doc(object_root(src)?);
-            self.inner.map_with(Some(&body), ctx.as_ref(), &mut sink)
+            self.inner
+                .map_with_ctx(Some(&body), ctx.as_ref(), &mut sink)
         };
-        take_pending().map_or(Ok(out), Err)
+        if let Some(e) = take_pending() {
+            return Err(e);
+        }
+        out.map_err(|r| rejected(py, r))
     }
 
     /// The canonical object as JSON text, without building Python objects. Runs with the GIL released.
@@ -231,10 +238,12 @@ impl Artifact {
         let body = body_of(raw)?.ok_or_else(|| {
             PyTypeError::new_err("map_json takes bytes, str, bytearray or memoryview")
         })?;
-        let ctx = context_json(context)?;
+        let ctx = self::context(self, context)?;
         let out = py.detach(|| self.inner.map_json(&body, ctx.as_ref()));
-        let out = out.map_err(rejected)?;
-        take_pending().map_or(Ok(PyBytes::new(py, &out)), Err)
+        if let Some(e) = take_pending() {
+            return Err(e);
+        }
+        Ok(PyBytes::new(py, &out.map_err(|r| rejected(py, r))?))
     }
 
     /// The routing fields read straight from JSON text, keyed by spec field. GIL released.
@@ -283,6 +292,10 @@ impl Artifact {
         }
         let out = PyDict::new(py);
         out.set_item("responses", s.responses)?;
+        // Only with `reject` conditions, so a language 1 snapshot keeps the TypeScript keys.
+        if !self.inner.plan.reject.is_empty() {
+            out.set_item("rejected", s.rejected)?;
+        }
         out.set_item("fields", fields)?;
         Ok(out)
     }

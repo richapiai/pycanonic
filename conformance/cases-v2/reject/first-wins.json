@@ -1,0 +1,61 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "reject": [
+      {
+        "missing": "a"
+      },
+      {
+        "path": "b",
+        "eq": 1
+      }
+    ],
+    "fields": {
+      "name": "name"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "b": 1
+      },
+      "context": null,
+      "expected": {
+        "$rejected": "{\"missing\":\"a\"}"
+      }
+    },
+    {
+      "body": {
+        "a": 1,
+        "b": 1
+      },
+      "context": null,
+      "expected": {
+        "$rejected": "{\"path\":\"b\",\"eq\":1}"
+      }
+    },
+    {
+      "body": {
+        "a": 1,
+        "b": 2,
+        "name": "n"
+      },
+      "context": null,
+      "expected": {
+        "name": "n"
+      }
+    }
+  ]
+}

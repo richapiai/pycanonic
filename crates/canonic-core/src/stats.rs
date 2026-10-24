@@ -14,7 +14,10 @@ pub struct FieldStats {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatsSnapshot {
+    /// Mapped responses. A rejected one is not among them.
     pub responses: u64,
+    /// Responses a `reject` condition stopped.
+    pub rejected: u64,
     /// In stat slot order, which is spec key order, named as in `Plan::stat_names`.
     pub fields: Vec<(String, FieldStats)>,
 }
@@ -22,6 +25,7 @@ pub struct StatsSnapshot {
 pub struct Stats {
     names: Vec<String>,
     responses: AtomicU64,
+    rejected: AtomicU64,
     misses: Box<[AtomicU64]>,
     errors: Box<[AtomicU64]>,
     /// Per item list slot: the elements it has walked.
@@ -67,6 +71,7 @@ impl Stats {
         Stats {
             names: plan.stat_names.clone(),
             responses: AtomicU64::new(0),
+            rejected: AtomicU64::new(0),
             misses: counters(n),
             errors: counters(n),
             elems: counters(n),
@@ -79,6 +84,7 @@ impl Stats {
         Stats {
             names: Vec::new(),
             responses: AtomicU64::new(0),
+            rejected: AtomicU64::new(0),
             misses: counters(0),
             errors: counters(0),
             elems: counters(0),
@@ -95,6 +101,10 @@ impl Stats {
 
     pub(crate) fn response(&self) {
         self.responses.fetch_add(1, Relaxed);
+    }
+
+    pub(crate) fn rejected(&self) {
+        self.rejected.fetch_add(1, Relaxed);
     }
 
     pub(crate) fn miss(&self, slot: usize) {
@@ -139,12 +149,14 @@ impl Stats {
             .collect();
         StatsSnapshot {
             responses: self.responses.load(Relaxed),
+            rejected: self.rejected.load(Relaxed),
             fields,
         }
     }
 
     pub fn reset(&self) {
         self.responses.store(0, Relaxed);
+        self.rejected.store(0, Relaxed);
         for c in self.misses.iter().chain(&*self.errors).chain(&*self.elems) {
             c.store(0, Relaxed);
         }

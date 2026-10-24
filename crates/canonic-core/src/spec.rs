@@ -127,6 +127,8 @@ pub struct Spec {
     pub status: Status,
     pub fields: FieldMap,
     pub anchors: BTreeMap<String, String>,
+    /// Language 2: each condition, with its spec JSON text, which names it in `Rejected`.
+    pub reject: Vec<(Cond, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -598,16 +600,33 @@ impl Checker {
         }
     }
     fn cond(&mut self, c: &Value, at: &str) {
-        match cond::parse(c) {
+        self.parsed(cond::parse(c), at)
+    }
+    fn parsed(&mut self, c: Result<Cond, Vec<(String, String)>>, at: &str) {
+        match c {
             Ok(Cond::Present(p, _) | Cond::Eq(p, _) | Cond::In(p, _)) => {
                 self.root(&p, &format!("{at}.path"), true)
             }
-            Ok(_) => {}
+            Ok(Cond::Missing(p)) => self.root(&p, &format!("{at}.missing"), true),
+            Ok(Cond::Empty(p)) => self.root(&p, &format!("{at}.empty"), true),
+            Ok(Cond::All(_)) => {}
             Err(issues) => {
                 for (sub, m) in issues {
                     self.fail(&format!("{at}{sub}"), &m);
                 }
             }
+        }
+    }
+    /// Language 2: top-level `reject`, a list of conditions.
+    fn reject(&mut self, r: &Value) {
+        self.lang2("spec", "reject");
+        match r.as_array().filter(|a| !a.is_empty()) {
+            Some(a) => {
+                for (i, c) in a.iter().enumerate() {
+                    self.parsed(cond::parse_reject(c), &format!("spec.reject[{i}]"));
+                }
+            }
+            None => self.fail("spec.reject", "must be a non-empty array of conditions"),
         }
     }
     /// Language 2: `when` and `omit`, which any rule object can take.
@@ -690,12 +709,15 @@ impl Checker {
             "spec",
             &[
                 "$schema", "language", "provider", "endpoint", "version", "status", "anchors",
-                "fields",
+                "fields", "reject",
             ],
         );
         self.header(s);
         if let Some(a) = s.get("anchors") {
             self.anchors(a);
+        }
+        if let Some(r) = s.get("reject") {
+            self.reject(r);
         }
         self.fields(s.get("fields").unwrap_or(&Value::Null), "spec.fields");
     }
@@ -951,6 +973,16 @@ pub fn parse_spec(spec: &Value) -> Result<Spec, Vec<Issue>> {
             .into_iter()
             .flatten()
             .map(|(k, t)| (k.clone(), t.as_str().unwrap().to_string()))
+            .collect(),
+        reject: spec
+            .get("reject")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|c| {
+                let text = serde_json::to_string(c).expect("JSON serializes");
+                (cond::parse_reject(c).unwrap(), text)
+            })
             .collect(),
     })
 }
