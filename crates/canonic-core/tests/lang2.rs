@@ -88,6 +88,65 @@ fn format_1_and_2_load_format_3_fails() {
         .to_string();
     assert_eq!(
         err,
-        "plan format 3 is not supported. This build reads format 2. Rebuild the plan."
+        "plan format 3 is not supported. This build reads format 1 or 2. Rebuild the plan."
     );
+}
+
+#[test]
+fn const_writes_format_2_and_loads_back() {
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"]["name"] = json!({"const": "Ada"});
+    let plan = plan_json(spec);
+    assert_eq!(plan["format"], 2);
+    let loaded: Plan = serde_json::from_value(plan.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&loaded).unwrap(), plan);
+    let a = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
+    assert_eq!(a.map_json(b"{}"), br#"{"name":"Ada"}"#);
+}
+
+fn compile_err(fields: J, schema: J) -> String {
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = fields;
+    compile(&spec, &schema, &[]).unwrap_err().message
+}
+
+#[test]
+fn const_compile_errors() {
+    let obj = json!({"type": "object", "properties": {
+        "meta": {"type": "object", "properties": {"v": {"type": "integer"}}},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "name": {"type": "string"}}});
+    assert_eq!(
+        compile_err(json!({"meta": {"const": {}}, "meta.v": "x"}), obj.clone()),
+        r#"acme people v1: fields["meta.v"]: inside a const field"#
+    );
+    assert_eq!(
+        compile_err(json!({"name[]": {"const": []}}), obj.clone()),
+        r#"acme people v1: fields["name[]"]: canonical field is not an array"#
+    );
+    assert_eq!(
+        compile_err(json!({"name": {"const": 1, "from": "a"}}), obj),
+        r#"invalid spec: spec.fields["name"].from: unknown property"#
+    );
+}
+
+#[test]
+fn const_inside_an_item_fills_per_element() {
+    let schema = json!({"type": "object", "properties": {"jobs": {"type": "array", "items": {
+        "type": "object", "properties": {"kind": {"type": "string"}}}}}});
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = json!({"jobs[]": {"from": "roles", "item": {"kind": {"const": "JOB"}}}});
+    let plan = compile(&spec, &schema, &[]).unwrap();
+    assert_eq!(
+        plan.source(),
+        "jobs[] <- roles[]\njobs[].kind <- const \"JOB\"\n"
+    );
+    let a = canonic_core::Artifact::new(plan, Default::default()).unwrap();
+    assert_eq!(
+        a.map_json(br#"{"roles": [1, 2]}"#),
+        br#"{"jobs":[{"kind":"JOB"},{"kind":"JOB"}]}"#
+    );
+    let kind = &a.stats.snapshot().fields[1];
+    assert_eq!(kind.0, "jobs[].kind");
+    assert_eq!((kind.1.fill, kind.1.total), (2, Some(2)));
 }

@@ -231,5 +231,5 @@ def test_load_plan_checks_the_format_stamp():
     plan["format"] = 2
     assert json.loads(_core.load_plan(json.dumps(plan), None).plan_json())["format"] == 2
     plan["format"] = 3
-    with pytest.raises(ValueError, match="plan format 3 is not supported"):
+    with pytest.raises(ValueError, match=r"plan format 3 is not supported\. This build reads format 1 or 2\. Rebuild the plan\."):
         _core.load_plan(json.dumps(plan), None)

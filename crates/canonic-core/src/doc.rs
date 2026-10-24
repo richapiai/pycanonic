@@ -125,3 +125,50 @@ impl<'a, 'b> Doc for &'a Node<'b> {
         Some(out)
     }
 }
+
+/// A JSON value from the plan (a `const`), so a sink passes it through like a document value.
+impl Doc for &serde_json::Value {
+    fn get(&self, key: &Key) -> Option<Self> {
+        self.as_object()?.get(&key.s)
+    }
+
+    fn idx(&self, i: usize) -> Option<Self> {
+        self.as_array()?.get(i)
+    }
+
+    fn leaf(&self) -> Value<'_> {
+        use serde_json::Value as J;
+        match self {
+            J::Null => Value::Null,
+            J::Bool(b) => Value::Bool(*b),
+            J::Number(n) => match (n.as_i64(), n.is_u64()) {
+                (Some(i), _) => Value::Int(i),
+                (None, true) => Value::BigInt(Cow::Owned(n.to_string())),
+                (None, false) => Value::Float(n.as_f64().unwrap_or(f64::NAN)),
+            },
+            J::String(s) => Value::Str(Cow::Borrowed(s)),
+            J::Array(_) | J::Object(_) => Value::Container,
+        }
+    }
+
+    fn is_null(&self) -> bool {
+        serde_json::Value::is_null(self)
+    }
+
+    fn len(&self) -> Option<usize> {
+        self.as_array().map(Vec::len)
+    }
+
+    fn item(&self, i: usize) -> Option<Self> {
+        self.idx(i)
+    }
+
+    fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>> {
+        let m = self.as_object()?;
+        Some(
+            m.iter()
+                .map(|(k, v)| (Cow::Borrowed(k.as_str()), v))
+                .collect(),
+        )
+    }
+}

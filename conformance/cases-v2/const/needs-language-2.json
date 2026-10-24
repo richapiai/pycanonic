@@ -1,0 +1,11 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"kind": {"const": "COMPANY"}}
+  },
+  "schema": {"type": "object", "properties": {"kind": {"type": "string"}}},
+  "error": "invalid spec: spec.fields[\"kind\"]: \"const\" needs \"language\": 2"
+}

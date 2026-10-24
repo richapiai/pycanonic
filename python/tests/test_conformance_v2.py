@@ -25,6 +25,8 @@ def test_there_are_cases():
 
 def _ways(a, inp):
     """`(way, map the input)` for each way in. A raw input is not JSON, so it has no parsed way."""
+    if ("body" in inp) == ("raw" in inp) or not isinstance(inp.get("raw", ""), str):
+        raise ValueError("an input needs exactly one of body, raw (a string)")
     if "raw" in inp:
         raw = inp["raw"].encode()
     else:

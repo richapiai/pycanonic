@@ -1,0 +1,20 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"name": "org_name", "kind": {"const": "COMPANY"}}
+  },
+  "schema": {
+    "type": "object",
+    "properties": {"name": {"type": "string"}, "kind": {"type": "string"}}
+  },
+  "inputs": [
+    {"body": {"org_name": "Widget Works", "kind": "PERSON"}, "context": null, "expected": {"name": "Widget Works", "kind": "COMPANY"}},
+    {"body": {}, "context": null, "expected": {"name": null, "kind": "COMPANY"}},
+    {"body": [1, 2], "context": null, "expected": {"name": null, "kind": "COMPANY"}},
+    {"raw": "not json {", "context": null, "expected": {"name": null, "kind": "COMPANY"}}
+  ]
+}

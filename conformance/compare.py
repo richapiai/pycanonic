@@ -1,4 +1,4 @@
-"""The corpus comparison rule for the Python runner; README.md states it, tests/conformance.rs has the Rust twin."""
+"""The corpus comparison rule for the Python runner; README.md states it, crates/canonic-core/tests/common/mod.rs has the Rust twin."""
 
 import math
 

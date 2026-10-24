@@ -55,6 +55,8 @@ pub struct ArrayRule {
 pub enum Rule {
     Scalar(ScalarRule),
     Array(ArrayRule),
+    /// Language 2: `{"const": <any JSON value>}`, written as it is.
+    Const(Value),
 }
 
 /// Canonical field path to its rule, in spec order. A key ending in `[]` holds a `Rule::Array`.
@@ -212,10 +214,6 @@ impl Checker {
         });
     }
     /// Records that `rule`, a language 2 key, sits in a language 1 spec.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the first language 2 rule calls it")
-    )]
     fn lang2(&mut self, at: &str, rule: &str) {
         if self.language == 1 {
             self.fail(at, &format!("{} needs \"language\": 2", json_string(rule)));
@@ -326,7 +324,11 @@ impl Checker {
         };
         for (k, r) in o {
             let kat = format!("{at}[{}]", json_string(k));
-            if is_canon(k) {
+            let canon = is_canon(k) || k.strip_suffix("[]").is_some_and(is_canon);
+            if let Some(o) = r.as_object().filter(|o| canon && o.contains_key("const")) {
+                self.lang2(&kat, "const");
+                self.keys(o, &kat, &["const"]);
+            } else if is_canon(k) {
                 self.scalar(r, &kat);
             } else if k.strip_suffix("[]").is_some_and(is_canon) {
                 self.array(r, &kat);
@@ -463,6 +465,9 @@ fn field_map(v: &Value) -> FieldMap {
 }
 
 fn rule(key: &str, r: &Value) -> Rule {
+    if let Some(c) = r.get("const") {
+        return Rule::Const(c.clone());
+    }
     if key.ends_with("[]") {
         return Rule::Array(ArrayRule {
             from: path(&r["from"]),

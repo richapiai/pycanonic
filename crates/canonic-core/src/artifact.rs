@@ -159,7 +159,8 @@ pub fn filter_for(plan: &Plan) -> Filter {
 fn fields(f: &mut Filter, fs: &[Named<Field>]) {
     for x in fs {
         match &x.value {
-            Field::Null => {}
+            // A const reads nothing.
+            Field::Null | Field::Const(..) => {}
             Field::Object(c) => fields(f, c),
             Field::Scalar(s) => scalar(f, s),
             Field::List { from, kind, .. } => {

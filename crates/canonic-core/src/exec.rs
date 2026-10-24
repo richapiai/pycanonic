@@ -146,6 +146,8 @@ enum Op {
         kind: Kind,
         stat: usize,
     },
+    /// Written as it is. Counts no miss, so it is always a fill.
+    Const(J),
 }
 
 enum Kind {
@@ -247,6 +249,10 @@ impl Builder<'_> {
                     Field::Null => Op::Null,
                     Field::Scalar(s) => Op::Scalar(self.leaf(s)?),
                     Field::Object(c) => Op::Object(self.fields(c)?),
+                    Field::Const(v, stat) => {
+                        self.stat(*stat)?;
+                        Op::Const(v.clone())
+                    }
                     Field::List { from, kind, stat } => Op::List {
                         from: self.at(from),
                         kind: match kind {
@@ -571,6 +577,7 @@ impl<S: Sink> Exec<'_, S> {
             Op::Object(c) => self.object(c, f),
             Op::Scalar(l) => self.scalar(l, f),
             Op::List { from, kind, stat } => self.list(*from, kind, *stat, f),
+            Op::Const(v) => self.sink.passthrough(&v),
         }
     }
 

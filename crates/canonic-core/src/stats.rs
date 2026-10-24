@@ -1,7 +1,7 @@
 //! Per-field fill and error counts across `map` calls. Like artifact.ts, misses are counted rather
 //! than fills (a filled field writes nothing) and fill is the field's total minus its misses.
 
-use crate::plan::{Field, ListKind, Named, Plan};
+use crate::plan::{Field, ListKind, Named, Plan, Scalar};
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,8 +39,8 @@ fn walk(fields: &[Named<Field>], list: Option<usize>, within: &mut [Option<usize
         match &f.value {
             Field::Null => {}
             Field::Object(c) => walk(c, list, within),
-            Field::Scalar(s) => {
-                if let Some(w) = within.get_mut(s.stat) {
+            Field::Scalar(Scalar { stat, .. }) | Field::Const(_, stat) => {
+                if let Some(w) = within.get_mut(*stat) {
                     *w = list;
                 }
             }

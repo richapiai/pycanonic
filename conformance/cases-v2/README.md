@@ -25,7 +25,8 @@ One JSON file holds one case. A mapping case has this shape:
 
 - `spec` is the mapping spec, and `schema` is its canonical schema.
 - `body` is the response body as JSON. The runners write it as bytes for the bytes path and give it as it is to the parsed path.
-- `raw` is for a body that is not valid JSON. It is a string, and it replaces `body`. The runners map it as bytes and with `map_json` only, because a parsed form does not exist.
+- `raw` is for a body that is not valid JSON. It is a string, and it replaces `body`. The runners map it as bytes and with `map_json` only, because a parsed form does not exist. An input must have exactly one of `body` and `raw`, or the runners fail it.
+- A body that is one JSON string at the top level also goes in `raw`, for example `"raw": "\"text\""`. On the parsed path, `map` reads a Python `str` as JSON text, not as a string value.
 - `context` is the object that `$input` paths read, or `null`.
 - `expected` is the output of `map`. The form `{"$rejected": "<reason>"}` means that `map` raises `Rejected` with that reason.
 

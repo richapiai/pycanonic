@@ -1,0 +1,19 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"tags[]": {"const": []}}
+  },
+  "schema": {
+    "type": "object",
+    "properties": {"tags": {"type": "array", "items": {"type": "string"}}}
+  },
+  "inputs": [
+    {"body": {"tags": ["a"]}, "context": null, "expected": {"tags": []}},
+    {"body": {}, "context": null, "expected": {"tags": []}},
+    {"raw": "", "context": null, "expected": {"tags": []}}
+  ]
+}

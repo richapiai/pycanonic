@@ -72,6 +72,8 @@ pub enum Field {
         kind: ListKind,
         stat: usize,
     },
+    /// Language 2: a value written as it is, whatever the body. Always a fill. The `usize` is the stat slot.
+    Const(Value, usize),
 }
 
 /// A routing field as `extract` reads it. `name` is the spec key, for example "company.domain".
@@ -105,7 +107,7 @@ impl<'de> Deserialize<'de> for Format {
             Ok(Format(v.as_u64().unwrap() as u32))
         } else {
             Err(serde::de::Error::custom(format!(
-                "plan format {v} is not supported. This build reads format {PLAN_FORMAT}. Rebuild the plan."
+                "plan format {v} is not supported. This build reads format 1 or {PLAN_FORMAT}. Rebuild the plan."
             )))
         }
     }
@@ -156,6 +158,7 @@ impl Plan {
         fn field(f: &Field) -> bool {
             match f {
                 Field::Null | Field::Scalar(_) => false,
+                Field::Const(..) => true,
                 Field::Object(c) => c.iter().any(|n| field(&n.value)),
                 Field::List { kind, .. } => match kind {
                     ListKind::Item(c) => c.iter().any(|n| field(&n.value)),
@@ -180,6 +183,7 @@ fn lines(out: &mut String, prefix: &str, fields: &[Named<Field>]) {
         let name = format!("{prefix}{}", f.name);
         match &f.value {
             Field::Null => _ = writeln!(out, "{name} <- null"),
+            Field::Const(v, _) => _ = writeln!(out, "{name} <- const {v}"),
             Field::Object(c) => lines(out, &format!("{name}."), c),
             Field::Scalar(s) => {
                 let src = match &s.source {

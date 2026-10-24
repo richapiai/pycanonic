@@ -156,6 +156,10 @@ impl Resolver<'_> {
                 .push(format!("{}{key}", within.unwrap_or("")));
             // The grammar puts an array rule exactly on the keys ending in [].
             let field = match rule {
+                Rule::Const(_) if key.ends_with("[]") && !matches!(target.kind, Kind::Array(_)) => {
+                    return Err(format!("{kat}: canonical field is not an array"));
+                }
+                Rule::Const(v) => Field::Const(v.clone(), stat),
                 Rule::Array(r) => self.array(r, target, stat, &kat)?,
                 Rule::Scalar(r) => Field::Scalar(self.scalar(r, target, stat, &kat)?),
             };
@@ -168,7 +172,15 @@ impl Resolver<'_> {
             }
             mapped.insert(name.to_string(), field);
         }
-        Ok(self.build(children, "", &mut mapped))
+        let built = self.build(children, "", &mut mapped);
+        // A field left over sits inside a const object, which `build` does not walk into.
+        if let Some((key, _)) = map
+            .iter()
+            .find(|(k, _)| mapped.contains_key(k.strip_suffix("[]").unwrap_or(k)))
+        {
+            return Err(format!("{at}[{}]: inside a const field", json(key)));
+        }
+        Ok(built)
     }
 
     /// Walks the canonical tree in schema order so every canonical field appears, null when unmapped.
