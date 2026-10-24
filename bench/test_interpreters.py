@@ -34,3 +34,5 @@ def test_every_library_matches_pycanonic():
         assert I.CANONIC.map_json(raw) == orjson.dumps(I.CANONIC.map(raw))
         for name, transforms, fn in I.LIBRARIES + I.REFERENCES:
             assert I.norm(fn(p)) == (want if transforms else want_plain), (name, k)
+            if name in I.BYTES_IN:
+                assert I.norm(I.BYTES_IN[name](raw)) == want, (name, k)

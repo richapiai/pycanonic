@@ -23,12 +23,15 @@ import sys
 from pathlib import Path
 from typing import Annotated, Any
 
+import _jsonnet
 import glom
 import jmespath
 import jq
+import jsone
 import jsonata
 import jsonbender as jb
 import jsonpath_ng
+import msgspec
 import orjson
 from pydantic import AliasPath, BeforeValidator, Field, StringConstraints, create_model, model_validator
 
@@ -343,6 +346,108 @@ jq_prog = jq.compile(emit(tree(
 ), lambda k: f'"{k}"'))
 
 
+# msgspec: decodes into Structs shaped like the source, reading only the fields the mapping needs, with
+# lax mode parsing the number and bool strings. It cannot move fields, so generated glue builds the
+# output from the Structs, as the hand-written row does from a dict.
+MS_TYPES = {None: str, "toNumber": int | float, "trimLower": str, "toBool": bool}
+
+
+def ms_attr(k):
+    return k if k.isidentifier() and not k.startswith("_") else "x" + k
+
+
+def ms_struct(name, node):
+    """`node` maps a source key to a type or a nested node; Struct attributes are renamed back to the keys."""
+    fields = [(ms_attr(k), ms_struct(f"{name}_{k}", v) if isinstance(v, dict) else v) for k, v in node.items()]
+    return msgspec.defstruct(name, fields, rename={ms_attr(k): k for k in node})
+
+
+ms_source: dict[str, Any] = {}
+for r in rules:
+    if "pluck" in r:
+        t = list[msgspec.defstruct("Tag", [(r["pluck"], str)])]
+    elif "item" in r:
+        t = list[ms_struct(f"Item_{r['from'][0]}", {i["from"][0]: MS_TYPES[i["t"]] for i in r["item"]})]
+    else:
+        t = MS_TYPES[r["t"]]
+    set_path(ms_source, r["from"], t)
+MsSource = ms_struct("Source", ms_source)
+ms_decoder = msgspec.json.Decoder(MsSource, strict=False)
+
+
+def ms_glue_source():
+    def acc(base, path):
+        return base + "".join("." + ms_attr(k) for k in path)
+
+    def val(e, t):
+        return f"{e}.strip().lower()" if t == "trimLower" else e
+
+    body = emit(tree(
+        lambda r: val(acc("p", r["from"]), r["t"]),
+        lambda a: f"[{emit({i['to'][0]: val(acc('e', i['from']), i['t']) for i in a['item']}, lambda k: f'\"{k}\"')} for e in p.{ms_attr(a['from'][0])}]",
+        f"[e.{pluck_rule['pluck']} for e in p.tags]",
+    ), lambda k: f'"{k}"')
+    return f"def ms_glue(p):\n    return {body}\n"
+
+
+ms_ns: dict[str, Any] = {}
+exec(ms_glue_source(), ms_ns)
+ms_glue = ms_ns["ms_glue"]
+
+
+def msgspec_map(p):
+    return ms_glue(msgspec.convert(p, MsSource, strict=False))
+
+
+def msgspec_bytes(raw):
+    return ms_glue(ms_decoder.decode(raw))
+
+
+# Jsonnet (the C++ library via the jsonnet package): one program, the body passed in as JSON text.
+# The binding has no compiled form, so each call parses the program again. std.parseInt is enough
+# because every bench number is an integer.
+def nleaf(base, path, t):
+    x = base + "".join(f'["{k}"]' for k in path)
+    return {"toNumber": f"std.parseInt({x})", "trimLower": f"std.asciiLower(std.trim({x}))", "toBool": f'({x} == "true")'}.get(t, x)
+
+
+jsonnet_prog = "local p = std.extVar('p');\n" + emit(tree(
+    lambda r: nleaf("p", r["from"], r["t"]),
+    lambda a: f"[{emit({i['to'][0]: nleaf('e', i['from'], i['t']) for i in a['item']}, lambda k: f'\"{k}\"')} for e in p[\"{a['from'][0]}\"]]",
+    '[e.label for e in p.tags]',
+), lambda k: f'"{k}"')
+
+
+def jsonnet_text(text):
+    return loads(_jsonnet.evaluate_snippet("bench", jsonnet_prog, ext_codes={"p": text}))
+
+
+def jsonnet_map(p):
+    return jsonnet_text(orjson.dumps(p).decode())
+
+
+def jsonnet_bytes(raw):
+    return jsonnet_text(raw.decode())
+
+
+# JSON-e: a template with $eval at each leaf and $map for each list. Its number() returns a float,
+# so floor() gives the int canonic returns; that holds because every bench number is an integer.
+def eleaf(path, t):
+    x = ".".join(path)
+    return {"$eval": {"toNumber": f"floor(number({x}))", "trimLower": f"lowercase(strip({x}))", "toBool": f'{x} == "true"'}.get(t, x)}
+
+
+jsone_template = tree(
+    lambda r: eleaf(r["from"], r["t"]),
+    lambda a: {"$map": {"$eval": a["from"][0]}, "each(e)": {i["to"][0]: eleaf(["e", *i["from"]], i["t"]) for i in a["item"]}},
+    {"$map": {"$eval": "tags"}, "each(e)": {"$eval": f"e.{pluck_rule['pluck']}"}},
+)
+
+
+def jsone_map(p):
+    return jsone.render(jsone_template, p)
+
+
 # Hand-written glue, generated from the rules only because 501 fields is too many to type (as the
 # JavaScript's inlineMapper): .get chains, a nested dict literal, list comprehensions, no per-field calls.
 def hand_written_source():
@@ -377,8 +482,8 @@ def jsonata_label():
     return f"{d} {version(d)}"
 
 
-# (name, applies the transforms?, map of a parsed body). Bytes in is orjson.loads then the map for
-# every row. pydantic's own model_validate_json and jq's input_text were tried and are not faster.
+# (name, applies the transforms?, map of a parsed body). Bytes in is orjson.loads then the map, except
+# for the rows in BYTES_IN. pydantic's own model_validate_json and jq's input_text are not faster.
 LIBRARIES = [
     (f"glom {version('glom')}", True, glom_map),
     (jmes_label(), JMES_COMMUNITY, jmes.search),
@@ -387,9 +492,15 @@ LIBRARIES = [
     (f"pydantic {version('pydantic')}", True, pydantic_map),
     (jsonata_label(), True, jsonata_map),
     (f"jq {version('jq')} (jq.py)", True, lambda p: jq_prog.input_value(p).first()),
+    (JSONNET := f"jsonnet {version('jsonnet')}", True, jsonnet_map),
+    (f"json-e {version('json-e')}", True, jsone_map),
 ]
-# Not a mapper, never gated: plain Python glue, for context.
-REFERENCES = [("hand-written py (pure-Python transforms)", True, hand_written)]
+MSGSPEC = f"msgspec {version('msgspec')} Structs + hand-written py"
+# Not mappers, never gated: plain Python glue, for context.
+# msgspec decodes into types and does not move fields. The glue that maps is hand-written.
+REFERENCES = [("hand-written py (pure-Python transforms)", True, hand_written), (MSGSPEC, True, msgspec_map)]
+# Rows whose library reads the bytes itself. Every other row runs orjson.loads first.
+BYTES_IN = {MSGSPEC: msgspec_bytes, JSONNET: jsonnet_bytes}
 
 
 def norm(o):
@@ -406,7 +517,8 @@ def main(gate, exempt):
     for row in LIBRARIES + REFERENCES:
         name, transforms, fn = row
         ref = CANONIC if transforms else CANONIC_PLAIN
-        bad = [k for k in range(64) if norm(fn(payloads[k])) != norm(ref.map(payloads[k]))]
+        by = BYTES_IN.get(name, lambda raw: fn(loads(raw)))
+        bad = [k for k in range(64) if not norm(fn(payloads[k])) == norm(by(raws[k])) == norm(ref.map(payloads[k]))]
         if bad:
             print(f"EXCLUDED {name}: output differs from pycanonic on payload {bad[0]}")
         else:
@@ -415,7 +527,7 @@ def main(gate, exempt):
 
     cases = [
         ("bytes in", [("pycanonic map(bytes)", lambda i: CANONIC.map(raws[i])), ("pycanonic map_json(bytes), JSON out", lambda i: CANONIC.map_json(raws[i]))]
-         + [(n, lambda i, f=f: f(loads(raws[i]))) for n, _, f in ok] + [("orjson.loads, parse only", lambda i: loads(raws[i]))]),
+         + [(n, lambda i, f=BYTES_IN[n]: f(raws[i])) if n in BYTES_IN else (n, lambda i, f=f: f(loads(raws[i]))) for n, _, f in ok] + [("orjson.loads, parse only", lambda i: loads(raws[i]))]),
         ("dict in", [("pycanonic map(dict)", lambda i: CANONIC.map(payloads[i]))] + [(n, lambda i, f=f: f(payloads[i])) for n, _, f in ok]),
     ]
     v = sys.version_info
@@ -438,7 +550,7 @@ def main(gate, exempt):
                     note += " <10x"
             print(f"{case:<10}{name:<46}{fmt(t):>12}{round(1e9 / t):>12,}{note:>14}")
     print("\n'vs pycanonic' = time / pycanonic map time in the same case (above 1x is slower).")
-    print("Not mappers, never gated: orjson.loads, hand-written py, pycanonic map_json.")
+    print("Not mappers, never gated: orjson.loads, hand-written py, msgspec Structs + hand-written py, pycanonic map_json.")
     for lib, why in exempt.items():
         print(f"Exempt from the 10x gate: {lib}: {why}")
     if gate:

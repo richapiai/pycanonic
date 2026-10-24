@@ -7,3 +7,6 @@ jsonbender==0.9.3
 pydantic==2.14.1
 jsonata-python==0.7.1
 jq==1.13.0
+msgspec==0.22.0
+jsonnet==0.22.0
+json-e==4.8.4
