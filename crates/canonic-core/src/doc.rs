@@ -13,7 +13,7 @@ use std::collections::hash_map::Entry;
 pub struct Key {
     pub s: String,
     pub tag: u64,
-    /// `json::key_hash(s)`, for the parse tree's key tables; `Key::new` sets it.
+    /// `json::key_hash(s)`, for the parse tree's key tables. `Key::new` sets it.
     pub(crate) hash: u64,
 }
 
@@ -25,24 +25,24 @@ impl Key {
 }
 
 /// Read access to a parsed document. A missing member and a `null` are both "absent" to the plan.
-// `len` is "is this an array, and how long"; an is_empty would add nothing.
+// `len` is "is this an array, and how long". An is_empty adds nothing.
 #[allow(clippy::len_without_is_empty)]
 pub trait Doc: Clone {
-    /// The member `key` of an object (not an array); the last occurrence wins, as in `JSON.parse`.
+    /// The member `key` of an object (not an array). The last occurrence wins, as in `JSON.parse`.
     fn get(&self, key: &Key) -> Option<Self>;
     /// Element `i` of an array.
     fn idx(&self, i: usize) -> Option<Self>;
-    /// The value as a scalar; `Value::Container` for an object or array.
+    /// The value as a scalar. `Value::Container` for an object or array.
     fn leaf(&self) -> Value<'_>;
     fn is_null(&self) -> bool;
     /// Element count of an array, `None` for anything else.
     fn len(&self) -> Option<usize>;
     /// Element `i` while walking a list `from`.
     fn item(&self, i: usize) -> Option<Self>;
-    /// Members of an object in document order, for passing a container through; `None` otherwise.
+    /// Members of an object in document order, for passing a container through. `None` otherwise.
     fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>>;
     /// The host's own object behind this value (a Python object in the extension), which a sink
-    /// can pass through as it is instead of rebuilding it; `None` for the parsed JSON tree.
+    /// can pass through as it is instead of rebuilding it. `None` for the parsed JSON tree.
     fn host(&self) -> Option<&dyn Any> {
         None
     }
@@ -59,7 +59,7 @@ fn number(raw: &str) -> Value<'_> {
 }
 
 impl<'a, 'b> Doc for &'a Node<'b> {
-    /// A duplicated key reads its last value, as `JSON.parse` does; see `members`.
+    /// A duplicated key reads its last value, as `JSON.parse` does. See `members`.
     fn get(&self, key: &Key) -> Option<Self> {
         match self {
             Node::Obj(m) => (m.iter())

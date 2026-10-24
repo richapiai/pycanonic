@@ -45,7 +45,7 @@ pub use value::{Value, js_number_to_string};
 pub use write::write_json;
 
 /// Internals re-exported for this crate's own tests and benches, which build as separate crates.
-/// Not part of the API: anything here may change in any release.
+/// Not part of the API: anything here can change in any release.
 #[doc(hidden)]
 pub mod __bench {
     #[cfg(target_arch = "x86_64")]

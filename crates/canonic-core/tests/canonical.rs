@@ -1,5 +1,5 @@
 // Port of the canonical-schema cases in canonic/packages/canonic/test/validate.test.ts
-// ("canonical schema errors", "validateCanonical ...", "names a record can't safely carry")
+// ("canonical schema errors", "validateCanonical ...", "names a record cannot safely carry")
 // and compile.test.ts. The fixture is vendored from canonic/packages/canonic/test/fixtures.
 
 use canonic_core::{Issue, Kind, Node, Semantic, load_schema, validate_canonical};
@@ -166,7 +166,7 @@ fn the_fixture_loads_in_property_order() {
         }
         k => panic!("{k:?}"),
     }
-    // An unknown semantic is not a load error (the routing check rejects it later); it carries no semantic.
+    // An unknown semantic is not a load error (the routing check rejects it later). It carries no semantic.
     assert!(matches!(
         child(&s.root, "full_name").kind,
         Kind::Scalar {

@@ -1,5 +1,6 @@
 //! `artifact.view(src)`: each canonical field is mapped on its first read and kept, nested objects
-//! are views, and nothing counts stats; codegen.ts's View classes. `to_dict()` maps the whole level.
+//! are views, and nothing counts stats, as in the View classes of codegen.ts. `to_dict()` maps
+//! the whole level.
 
 use crate::artifact::{Artifact, body_of, object_root};
 use crate::pydoc::PyDoc;
@@ -17,7 +18,7 @@ use std::sync::Arc;
 type MaybeNode<'a> = Option<Node<'a>>;
 
 self_cell::self_cell!(
-    /// A body and its parse tree, which borrows from it; `None` when it doesn't parse.
+    /// A body and its parse tree, which borrows from it. `None` when it does not parse.
     struct Parsed {
         owner: Vec<u8>,
         #[covariant]
@@ -27,7 +28,7 @@ self_cell::self_cell!(
 
 /// The document every view of one `artifact.view` call reads. Nested views share it: an `Arc` of
 /// the parse, or another reference to the object. Neither points back at a view, so the root's
-/// cache holding its children makes no cycle the GC can't see.
+/// cache holding its children makes no cycle the GC cannot see.
 enum Source {
     /// `bytes` or `str`, copied and parsed once with the plan's filter.
     Parsed(Arc<Parsed>),
@@ -55,7 +56,7 @@ pub struct LevelField {
     shadowed: bool,
 }
 
-/// The fields of one canonical object; `levels[0]` is the root.
+/// The fields of one canonical object. `levels[0]` is the root.
 pub struct Level {
     path: Vec<usize>,
     fields: Vec<LevelField>,
@@ -109,7 +110,7 @@ pub fn levels(py: Python<'_>, names: &[String], fields: &[Named<Field>]) -> Vec<
 }
 
 /// A view of one canonical object. Attribute access reads a field unless `View` has an attribute
-/// of that name (`to_dict`) or the name is a `__dunder__`; `view[name]` always reads the field.
+/// of that name (`to_dict`) or the name is a `__dunder__`. `view[name]` always reads the field.
 #[pyclass(frozen, module = "pycanonic._core")]
 pub struct View {
     artifact: Py<Artifact>,
@@ -175,14 +176,14 @@ impl View {
     }
 
     /// The index of field `name` at this level. Attribute names and field names are interned, so
-    /// a pointer compare almost always settles it; the text compare covers the rest.
+    /// a pointer compare almost always settles it. The text compare covers the rest.
     fn find(&self, name: &Bound<'_, PyString>) -> Option<usize> {
         let a = self.artifact.get();
         let fields = self.fields();
         if let Some(i) = fields.iter().position(|f| name.is(&a.names[f.name_idx])) {
             return Some(i);
         }
-        // A name UTF-8 can't hold (a lone surrogate) is no field.
+        // A name UTF-8 cannot hold (a lone surrogate) is no field.
         let key = name.to_str().ok()?;
         let names = &a.inner.plan.names;
         fields.iter().position(|f| names[f.name_idx] == key)
@@ -207,7 +208,7 @@ impl View {
             .into_any(),
             None => self.run(py, &f.path)?.unbind(),
         };
-        // Not get_or_init: a transform may read this view again. A racing reader's value may win.
+        // Not get_or_init: a transform can read this view again. A racing reader's value can win.
         let _ = self.cache[i].set(py, v);
         Ok(self.cache[i].get(py).expect("just set").clone_ref(py))
     }
@@ -243,7 +244,7 @@ impl View {
             .unbind())
     }
 
-    /// Field `name`, whatever attribute shares its name; `KeyError` when there is no such field.
+    /// Field `name`, whatever attribute shares its name. `KeyError` when there is no such field.
     fn __getitem__(&self, py: Python<'_>, name: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let i = name.cast::<PyString>().ok().and_then(|n| self.find(n));
         match i {

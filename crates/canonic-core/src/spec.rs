@@ -91,7 +91,7 @@ fn ident_rest(c: u8) -> bool {
 }
 
 /// Parses `["..."]` contents starting after the opening quote. Returns the key and the index past `]`.
-/// A lone surrogate escape becomes U+FFFD, since a Rust `String` can't hold it.
+/// A lone surrogate escape becomes U+FFFD, since a Rust `String` cannot hold it.
 fn quoted(p: &str, start: usize) -> Option<(String, usize)> {
     let mut units: Vec<u16> = Vec::new();
     let mut chars = p[start..].char_indices();
@@ -134,7 +134,7 @@ fn quoted(p: &str, start: usize) -> Option<(String, usize)> {
 
 /// Parses a source path: identifiers `[A-Za-z_$][A-Za-z0-9_$-]*` joined by dots, `[n]` indices and
 /// `["quoted keys"]` in JSON string syntax. A leading bare `$` is the response itself (`$` alone is the
-/// empty path); a key that is literally named `$` is written `["$"]`. Returns None for an invalid path.
+/// empty path). A key that is literally named `$` is written `["$"]`. Returns None for an invalid path.
 pub fn parse_path(p: &str) -> Option<Path> {
     let b = p.as_bytes();
     if b.is_empty() {
@@ -155,7 +155,7 @@ pub fn parse_path(p: &str) -> Option<Path> {
                 if digits == 0 || (digits > 1 && b[i + 1] == b'0') || b.get(j) != Some(&b']') {
                     return None;
                 }
-                // an index past usize::MAX saturates; it reads nothing either way.
+                // an index past usize::MAX saturates. It reads nothing either way.
                 out.push(Step::Idx(p[i + 1..j].parse().unwrap_or(usize::MAX)));
                 i = j + 1;
             }
@@ -390,7 +390,7 @@ pub fn validate_spec(spec: &Value) -> Vec<Issue> {
     c.issues
 }
 
-// The builders below run only on a spec that passed validate_spec, so the unwraps can't fail.
+// The builders below run only on a spec that passed validate_spec, so the unwraps cannot fail.
 
 fn path(v: &Value) -> Path {
     parse_path(v.as_str().unwrap()).unwrap()

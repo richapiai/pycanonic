@@ -1,5 +1,5 @@
 //! Shadow comparison of a candidate spec against the promoted one, and the auto-merge gate, as
-//! shadow.ts. Both map the same responses; every canonical field is classified on every response.
+//! shadow.ts. Both map the same responses. Every canonical field is classified on every response.
 
 use crate::doc::Doc;
 use crate::drift::{AlertKind, FieldAlert};
@@ -12,7 +12,7 @@ use std::collections::hash_map::Entry;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FieldDiff {
-    /// Responses where at least one side had a value. Two nulls say nothing and aren't counted.
+    /// Responses where at least one side had a value. Two nulls say nothing and are not counted.
     pub compared: u64,
     pub same: u64,
     /// Promoted null, candidate non-null, or a list whose elements only gained values. What a fixed rename looks like.
@@ -133,9 +133,9 @@ fn scalar_eq(a: &Out, b: &Out) -> bool {
     }
 }
 
-/// True when b has every value a has, at the same place: b may fill what a left blank, never change it.
-/// Key order doesn't count and a null key equals a missing one, so either side can be output that
-/// wasn't built by map(), such as the code a spec replaces. Arrays must have the same length.
+/// True when b has every value a has, at the same place: b can fill what a left blank, never change it.
+/// Key order does not count and a null key equals a missing one, so either side can be output that
+/// was not built by map(), such as the code a spec replaces. Arrays must have the same length.
 fn within(a: &Out, b: &Out) -> bool {
     if blank(a) || scalar_eq(a, b) {
         return true;
@@ -160,8 +160,8 @@ fn equal(a: &Out, b: &Out) -> bool {
 }
 
 /// How the candidate's value relates to the promoted one. For a list, filling fields the promoted spec
-/// left null in its elements is an improvement and the reverse a regression, the same as for a scalar;
-/// a changed value or a different length is a conflict.
+/// left null in its elements is an improvement and the reverse a regression, the same as for a scalar.
+/// A changed value or a different length is a conflict.
 fn classify(d: &mut FieldDiff, promoted: &Out, candidate: &Out) {
     let fills = within(promoted, candidate);
     let loses = within(candidate, promoted);
@@ -193,7 +193,7 @@ impl ShadowDiff {
 
     /// Records one response: the promoted and candidate map() output for the same body, as finite
     /// documents (a parsed `Node`). Either side nested deeper than 512 containers, as the parser
-    /// allows, is not recorded; see `add_bounded` for host objects.
+    /// allows, is not recorded. See `add_bounded` for host objects.
     pub fn add<D: Doc>(&mut self, promoted: &D, candidate: &D) {
         let full = |d: &D| copy(d, 0, &mut { usize::MAX });
         if let (Some(p), Some(c)) = (full(promoted), full(candidate)) {
@@ -262,11 +262,11 @@ fn index(k: &str) -> Option<u32> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GateOptions {
-    /// Share of compared responses a non-routing field may regress or conflict on.
+    /// Share of compared responses a non-routing field can regress or conflict on.
     pub max_change: f64,
     /// `(candidate, expected)`: the candidate's routing values for entities whose true values are
     /// known, next to those values, keys by name. Routing improvements only merge when every known
-    /// entity matches: a validator accepts a personal email in place of a work email, a known entity doesn't.
+    /// entity matches: a validator accepts a personal email in place of a work email, a known entity does not.
     pub known: Vec<(Out, Out)>,
     /// Alerts a FillMonitor raised on the candidate's stats during the soak. Any of them blocks the merge.
     pub fill_alerts: Vec<FieldAlert>,
@@ -326,7 +326,7 @@ fn fixed3(x: f64) -> String {
 /// entities. Every other field: regressions plus conflicts at most max_change of compared. No fill
 /// alert on the candidate. Anything else waits for a person, and reasons says why.
 pub fn merge_gate(report: &ShadowReport, opts: &GateOptions) -> GateResult {
-    // `None`: output with unresolved names, which can't vouch for anything.
+    // `None`: output with unresolved names, which cannot vouch for anything.
     let known: Vec<Option<(Leaves<'_>, Leaves<'_>)>> = opts
         .known
         .iter()
@@ -362,7 +362,7 @@ pub fn merge_gate(report: &ShadowReport, opts: &GateOptions) -> GateResult {
     for (i, k) in known.iter().enumerate() {
         let Some((c, e)) = k else {
             reasons.push(format!(
-                "known entity {i}: output has unresolved names; use Artifact::map_named"
+                "known entity {i}: output has unresolved names. Use Artifact::map_named"
             ));
             continue;
         };

@@ -13,7 +13,7 @@ pub struct PyDoc<'a, 'py> {
     pub keys: &'a [Py<PyString>],
 }
 
-/// UTF-8 text of `s`. A lone surrogate, which UTF-8 can't hold, becomes one U+FFFD as in the parser.
+/// UTF-8 text of `s`. A lone surrogate, which UTF-8 cannot hold, becomes one U+FFFD as in the parser.
 pub fn text<'s>(s: &'s Bound<'_, PyString>) -> Cow<'s, str> {
     if let Ok(t) = s.to_str() {
         return Cow::Borrowed(t);
@@ -31,7 +31,7 @@ pub fn text<'s>(s: &'s Bound<'_, PyString>) -> Cow<'s, str> {
 }
 
 /// A Python scalar as a `Value`: `bool` before `int` (a subclass), an `int` past i64 as `BigInt`.
-/// Anything that isn't `None`, `str`, `bool`, `int` or `float` is `Container`.
+/// Anything that is not `None`, `str`, `bool`, `int` or `float` is `Container`.
 pub fn leaf<'o>(o: &'o Bound<'_, PyAny>) -> Value<'o> {
     if o.is_none() {
         Value::Null
@@ -44,7 +44,7 @@ pub fn leaf<'o>(o: &'o Bound<'_, PyAny>) -> Value<'o> {
             Ok(i) => Value::Int(i),
             Err(_) => match o.str() {
                 Ok(s) => Value::BigInt(Cow::Owned(text(&s).into_owned())),
-                // CPython refuses `str(int)` past 4300 digits; JSON.parse reads that as a double.
+                // CPython refuses `str(int)` past 4300 digits. JSON.parse reads that as a double.
                 Err(_) => Value::Float(o.extract::<f64>().unwrap_or_else(|_| {
                     if o.gt(0).unwrap_or(false) {
                         f64::INFINITY
@@ -77,7 +77,7 @@ impl Doc for PyDoc<'_, '_> {
         if let Some(v) = d.get_item(k).ok().flatten() {
             return Some(self.wrap(v));
         }
-        // A spec's lone surrogate is U+FFFD in the plan; a dict key holding one matches it the same way.
+        // A spec's lone surrogate is U+FFFD in the plan. A dict key holding one matches it the same way.
         // ASCII first: a word-at-a-time check, where `contains(char)` is a memcmp per candidate.
         if key.s.is_ascii() || !key.s.contains(char::REPLACEMENT_CHARACTER) {
             return None;
@@ -118,7 +118,7 @@ impl Doc for PyDoc<'_, '_> {
 
     fn members(&self) -> Option<Vec<(Cow<'_, str>, Self)>> {
         let d = self.obj.cast::<PyDict>().ok()?;
-        // Keys as `json.dumps` writes them; a key it can't encode (a tuple) falls back to `str(k)`.
+        // Keys as `json.dumps` writes them. A key it cannot encode (a tuple) falls back to `str(k)`.
         let key = |k: &Bound<'_, PyAny>| {
             if let Ok(s) = k.cast::<PyString>() {
                 return text(s).into_owned();

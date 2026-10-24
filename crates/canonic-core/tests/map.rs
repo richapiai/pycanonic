@@ -243,7 +243,7 @@ fn a_custom_transform_that_panics_counts_as_an_error_and_yields_null() {
         &canonical(),
         custom("boom", |_| panic!("boom")),
     );
-    // The default hook prints the panic to stderr; that noise is expected.
+    // The default hook prints the panic to stderr. That noise is expected.
     let out = map(&a, &json!({ "n": "Ada" }));
     assert_eq!(out["first_name"], J::Null);
     assert_eq!(
@@ -658,7 +658,7 @@ fn passing_through_an_object_with_many_keys_is_linear() {
     let obj = out["full_name"].as_object().unwrap();
     assert_eq!(obj.len(), n);
     assert_eq!(obj["k0"], json!(-1));
-    // Quadratic would take minutes; wall clock is only checked when asked (CI's timing job).
+    // A quadratic run takes minutes. Wall clock is only checked when asked (CI's timing job).
     if std::env::var_os("PYCANONIC_TIMING_TESTS").is_some_and(|v| v == "1") {
         assert!(elapsed.as_secs() < 10, "took {elapsed:?}");
     }

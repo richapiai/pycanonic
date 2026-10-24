@@ -32,7 +32,7 @@ mod _core {
         canonic_core::version()
     }
 
-    /// Deep enough for any spec or schema; a cyclic object fails instead of overflowing the stack.
+    /// Deep enough for any spec or schema. A cyclic object fails instead of overflowing the stack.
     const MAX_DEPTH: usize = 256;
 
     /// A Python value as JSON, `dict` key order kept.
@@ -131,7 +131,7 @@ mod _core {
         Ok(issues(canonic_core::validate_canonical(&document(schema)?)))
     }
 
-    /// A default transform by name; a `list` or `tuple` value is the several-path `from` input.
+    /// A default transform by name. A `list` or `tuple` value is the several-path `from` input.
     #[pyfunction]
     #[pyo3(signature = (name, value, arg=None))]
     fn default_transform<'py>(

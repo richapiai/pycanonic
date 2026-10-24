@@ -1,5 +1,5 @@
-//! Default transforms and routing validators. Every one returns `Null` on input it can't handle
-//! and never panics; the executor counts a `Null` from non-null input as a field error.
+//! Default transforms and routing validators. Every one returns `Null` on input it cannot handle
+//! and never panics. The executor counts a `Null` from non-null input as a field error.
 //! Port of canonic/packages/canonic/src/transforms.ts.
 
 use crate::canonical::Semantic;
@@ -116,10 +116,10 @@ pub fn builtin(name: &str, arg: Option<&serde_json::Value>) -> Result<Builtin, A
 }
 
 impl Transform for Builtin {
-    /// The argument is bound in the variant; `_arg` is for custom transforms only.
+    /// The argument is bound in the variant. `_arg` is for custom transforms only.
     fn apply<'a>(&self, v: Value<'a>, _arg: Option<&serde_json::Value>) -> Value<'a> {
         let out = match self {
-            // An Int is already a whole number; keep it exact instead of rounding through f64.
+            // An Int is already a whole number. Keep it exact instead of rounding through f64.
             Builtin::Cast(CastTo::Number | CastTo::Integer) if matches!(v, Value::Int(_)) => {
                 Some(v)
             }
@@ -165,7 +165,7 @@ impl Transform for Builtin {
 
 impl Builtin {
     /// Applies the transform to a JS array, as `from` with several paths produces. Only `join`
-    /// reads one; every other default transform returns `Null` on an array.
+    /// reads one. Every other default transform returns `Null` on an array.
     pub fn apply_list<'a>(&self, items: &[Value<'a>]) -> Value<'a> {
         let Builtin::Join(sep) = self else {
             return Value::Null;
@@ -240,7 +240,7 @@ fn is_js_space(c: char) -> bool {
 }
 
 fn js_trim(s: &str) -> &str {
-    // ASCII edges by byte; the char walk only when an edge is non-ASCII (maybe Unicode space).
+    // ASCII edges by byte, and the char walk only when an edge is non-ASCII (it can be Unicode space).
     let ascii_space = |c: &u8| matches!(c, b'\t'..=b'\r' | b' ');
     let b = s.as_bytes();
     let start = b.iter().position(|c| !ascii_space(c)).unwrap_or(b.len());
@@ -267,7 +267,7 @@ fn lower(s: Cow<'_, str>) -> Cow<'_, str> {
     }
 }
 
-/// The number a `Value` holds, as JavaScript would see it.
+/// The number a `Value` holds, as JavaScript sees it.
 fn as_f64(v: &Value) -> Option<f64> {
     match v {
         Value::Int(i) => Some(*i as f64),
@@ -287,7 +287,7 @@ fn number<'a>(f: f64) -> Value<'a> {
     }
 }
 
-/// JavaScript `Number(s)` for decimal strings; `""`, blanks and 0x/0b/0o literals are rejected.
+/// JavaScript `Number(s)` for decimal strings. `""`, blanks and 0x/0b/0o literals are rejected.
 fn js_number(s: &str) -> Option<f64> {
     js_number_unbounded(s).filter(|n| n.is_finite())
 }
@@ -394,7 +394,7 @@ fn split_name(s: &str, part: NamePart) -> Option<&str> {
     }
 }
 
-/// The `n` ASCII digits at `at` as a number; `None` if any is missing or not a digit.
+/// The `n` ASCII digits at `at` as a number. `None` if any is missing or not a digit.
 fn digits_at(s: &[u8], at: usize, n: usize) -> Option<u32> {
     let d = s.get(at..at + n)?;
     d.iter().try_fold(0u32, |v, c| {
@@ -419,7 +419,7 @@ fn days_in_month(y: u32, m: u32) -> u32 {
     }
 }
 
-/// Accepts YYYY, YYYY-MM and YYYY-MM-DD after a trim; anything after a T or space at 10 is dropped.
+/// Accepts YYYY, YYYY-MM and YYYY-MM-DD after a trim. Anything after a T or space at 10 is dropped.
 fn date_from_string(v: &str) -> Option<&str> {
     let s = js_trim(v);
     let b = s.as_bytes();
@@ -438,7 +438,7 @@ fn date_from_string(v: &str) -> Option<&str> {
 }
 
 /// Epoch seconds below 1e11, else milliseconds, as the UTC day. Providers send 0 or negatives for
-/// "unknown"; past year 9999 the number was microseconds or an id.
+/// "unknown". Past year 9999 the number was microseconds or an id.
 fn date_from_epoch(v: f64) -> Option<String> {
     const YEAR_10000_MS: f64 = 253_402_300_800_000.0;
     if v.fract() != 0.0 || v <= 0.0 {
@@ -449,7 +449,7 @@ fn date_from_epoch(v: f64) -> Option<String> {
         return None;
     }
     let (y, m, d) = civil_from_days((ms / 86_400_000.0).floor() as i64);
-    // 1970 to 9999, so four digits; written by hand, `format!` is most of this function's time.
+    // 1970 to 9999, so four digits. Written by hand because `format!` took most of this function's time.
     let digit = |n: i64, p: i64| char::from(b'0' + (n / p % 10) as u8);
     let mut out = String::with_capacity(10);
     out.extend([1000, 100, 10, 1].map(|p| digit(y, p)));
@@ -473,7 +473,7 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (yoe + era * 400 + i64::from(m <= 2), m, d)
 }
 
-/// A phone as text. A number has to be whole and positive, else its digits would pass.
+/// A phone as text. A number must be whole and positive. Otherwise its digits pass as a phone.
 fn phone_text<'v>(v: &'v Value) -> Option<Cow<'v, str>> {
     match v {
         Value::Str(s) => Some(Cow::Borrowed(js_trim(s))),

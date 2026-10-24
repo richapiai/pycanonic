@@ -1,5 +1,5 @@
 //! The compiled plan: what codegen.ts knows about field order, stat naming and null/default/error
-//! semantics, as data. The executor runs it; `source()` prints it for humans.
+//! semantics, as data. The executor runs it. `source()` prints it for humans.
 
 use crate::canonical::Semantic;
 use crate::spec::{Path, Source, Status, Step};
@@ -46,16 +46,16 @@ pub struct Scalar {
     pub source: Source,
     pub tx: Vec<TxRef>,
     pub validator: Option<Semantic>,
-    /// A string, number or boolean; the grammar rejects `default: null`.
+    /// A string, number or boolean. The grammar rejects `default: null`.
     pub default: Option<Value>,
     pub stat: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ListKind {
-    /// Each element mapped to an object; field stats are out of the elements seen.
+    /// Each element mapped to an object. Field stats are out of the elements seen.
     Item(Vec<Named<Field>>),
-    /// Each element read at the path, then transformed. Element misses aren't counted, errors are.
+    /// Each element read at the path, then transformed. Element misses are not counted, errors are.
     Pluck(Path, Vec<TxRef>),
     /// Each element as it is, then transformed.
     Plain(Vec<TxRef>),
@@ -63,7 +63,7 @@ pub enum ListKind {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Field {
-    /// A canonical field the spec doesn't map.
+    /// A canonical field the spec does not map.
     Null,
     Scalar(Scalar),
     Object(Vec<Named<Field>>),
@@ -74,7 +74,7 @@ pub enum Field {
     },
 }
 
-/// A routing field as `extract` reads it. `name` is the spec key, e.g. "company.domain".
+/// A routing field as `extract` reads it. `name` is the spec key, for example "company.domain".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoutingField {
     pub name: String,
@@ -104,7 +104,7 @@ impl<'de> Deserialize<'de> for Format {
             Ok(Format)
         } else {
             Err(serde::de::Error::custom(format!(
-                "plan format {v} is not supported, this build reads format {PLAN_FORMAT}: rebuild the plan"
+                "plan format {v} is not supported. This build reads format {PLAN_FORMAT}. Rebuild the plan."
             )))
         }
     }
@@ -124,9 +124,9 @@ pub struct Plan {
     pub anchors: Vec<usize>,
     /// Stat slot names in spec order, as codegen.ts names them: "company.domain", "jobs[]", "jobs[].title".
     pub stat_names: Vec<String>,
-    /// The custom transform names given to `compile`; `TxRef::Custom::index` points here.
+    /// The custom transform names given to `compile`. `TxRef::Custom::index` points here.
     pub custom_names: Vec<String>,
-    /// Interned canonical field names; `Named::name_idx` points here.
+    /// Interned canonical field names. `Named::name_idx` points here.
     pub names: Vec<String>,
 }
 
@@ -143,7 +143,7 @@ impl std::fmt::Display for CompileError {
 
 impl std::error::Error for CompileError {}
 
-/// A present field is `Some`, even when it is `null`; only an absent field is `None`.
+/// A present field is `Some`, even when it is `null`. Only an absent field is `None`.
 fn present<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
     Value::deserialize(d).map(Some)
 }
@@ -200,7 +200,7 @@ fn list(ps: &[Path]) -> String {
     ps.iter().map(path).collect::<Vec<_>>().join(", ")
 }
 
-/// A path in spec syntax: identifiers joined by dots, `[n]`, `["quoted"]`; `$` when empty.
+/// A path in spec syntax: identifiers joined by dots, `[n]`, `["quoted"]`, or `$` when empty.
 fn path(p: &Path) -> String {
     if p.is_empty() {
         return "$".into();

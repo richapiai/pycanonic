@@ -39,7 +39,7 @@ fn formats_edge_cases_like_javascript() {
 
 #[test]
 fn round_trips_finite_floats() {
-    // Deterministic xorshift over raw bit patterns; covers every exponent range.
+    // Deterministic xorshift over raw bit patterns. Covers every exponent range.
     let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
     for _ in 0..200_000 {
         s ^= s << 13;

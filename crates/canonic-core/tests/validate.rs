@@ -1,5 +1,5 @@
-// Port of canonic/packages/canonic/test/validate.test.ts (the validateSpec half; the compileSpec
-// half belongs to the compiler). Fixtures are vendored from canonic/packages/canonic/test/fixtures.
+// Port of canonic/packages/canonic/test/validate.test.ts (the validateSpec half. The compiler
+// tests cover the compileSpec half). Fixtures are vendored from canonic/packages/canonic/test/fixtures.
 
 use canonic_core::spec::{ArrayRule, Path, Rule, Source, Step, TransformRef, parse_path};
 use canonic_core::{Issue, Spec, Status, parse_spec, validate_spec};

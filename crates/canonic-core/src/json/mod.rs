@@ -5,11 +5,11 @@
 //! speed and left as [`Node::Skipped`], never materialized.
 //!
 //! Lenient where JSON.parse is strict, because `map` must never throw:
-//! - content after the root value is ignored;
-//! - skipped subtrees are only bracket-matched, not validated;
-//! - strings are decoded by [`unescape`], which never fails.
+//! - Content after the root value is ignored.
+//! - Skipped subtrees are only bracket-matched, not validated.
+//! - Strings are decoded by [`unescape`], which never fails.
 //!
-//! A skipped container is matched by [`simd::skip`], 64 bytes at a time; what the filter builds is
+//! A skipped container is matched by [`simd::skip`], 64 bytes at a time. What the filter builds is
 //! read byte by byte, strings with `memchr`.
 
 pub(crate) mod simd;
@@ -34,8 +34,8 @@ pub enum Node<'a> {
     Num(&'a str),
     Str(Cow<'a, str>),
     Arr(Vec<Node<'a>>),
-    /// Members in document order, duplicates included. A member the filter doesn't list is left
-    /// out; a listed one whose value it pruned is kept as `Skipped`.
+    /// Members in document order, duplicates included. A member the filter does not list is left
+    /// out. A listed one whose value it pruned is kept as `Skipped`.
     Obj(Vec<(Cow<'a, str>, Node<'a>)>),
     /// An `Obj` the filter pruned that kept more than [`INDEXED`] members, with a hash table over
     /// its keys so a path step is not a scan. Read it as `Obj`.
@@ -44,7 +44,7 @@ pub enum Node<'a> {
     Skipped,
 }
 
-/// A pruned object keeps a key table past this many members; below it a scan is as fast.
+/// A pruned object keeps a key table past this many members. Below it a scan is as fast.
 pub const INDEXED: usize = 8;
 
 /// The members of a `Node::Indexed` and an open-addressing table over them.
@@ -58,7 +58,8 @@ pub struct Indexed<'a> {
     /// Where the next read is expected: the member after the last one read. Reads of one object
     /// tend to follow its member order, as the plan lists keys in the order providers send them.
     hint: AtomicU32,
-    /// `(hash as u32, position + 1)` per slot, 0 empty; a power of two at least twice the members.
+    /// `(hash as u32, position + 1)` per slot, 0 empty. Its length is a power of two,
+    /// at least twice the members.
     /// Built on the first read the hint misses.
     table: OnceLock<KeyTable>,
 }
@@ -126,7 +127,7 @@ impl<'a> Indexed<'a> {
 }
 
 /// The slot holding the key with hash `h` that `is_key(position)` accepts, or the empty slot
-/// where it would go. `table` is a power of two and never full.
+/// where it goes. `table` is a power of two and never full.
 fn probe(table: &[(u32, u32)], h: u64, is_key: impl Fn(usize) -> bool) -> usize {
     let mask = table.len() - 1;
     let mut slot = (h >> 32) as usize & mask;
@@ -160,12 +161,12 @@ pub fn key_hash(b: &[u8]) -> u64 {
 /// whole. Scalars are always read. Keys are the decoded UTF-8 bytes.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Filter {
-    /// Private so it can't change under `index`; set it with [`Filter::with_keys`].
+    /// Private so it cannot change under `index`. Set it with [`Filter::with_keys`].
     pub(crate) keys: Vec<(Box<[u8]>, Filter)>,
     pub idxs: Vec<(usize, Filter)>,
     pub elems: Option<Box<Filter>>,
     pub all: bool,
-    /// A hash table over `keys`, built on the first parse that needs it; not compared.
+    /// A hash table over `keys`, built on the first parse that needs it. Not compared.
     pub(crate) index: KeyIndex,
 }
 
@@ -203,7 +204,7 @@ impl KeyIndex {
 }
 
 impl Clone for KeyIndex {
-    /// A fresh cache: the clone's keys may be changed before it is used.
+    /// A fresh cache: the clone's keys can change before it is used.
     fn clone(&self) -> KeyIndex {
         KeyIndex::new()
     }
@@ -255,7 +256,7 @@ fn parse_in<'a>(buf: &'a [u8], filter: &Filter, simd: bool) -> Result<Node<'a>, 
     };
     let mut p = Parser { buf, pos, simd };
     p.ws();
-    // Trailing content is ignored on purpose (JSON.parse would reject it; see module doc).
+    // Trailing content is ignored on purpose (JSON.parse rejects it, see the module doc).
     p.value(filter, 0)
 }
 
@@ -269,7 +270,7 @@ fn check_size(len: usize) -> Result<(), ParseError> {
 struct Parser<'a> {
     buf: &'a [u8],
     pos: usize,
-    /// Skip containers with [`simd::skip`]; the byte scan otherwise.
+    /// Skip containers with [`simd::skip`], else with the byte scan alone.
     simd: bool,
 }
 
@@ -321,7 +322,7 @@ impl<'a> Parser<'a> {
         let (mut last, mut unique) = (None::<usize>, true);
         let mut members: Vec<(Cow<'a, str>, Node<'a>)> =
             Vec::with_capacity(if f.all { 0 } else { f.keys.len() });
-        // Every occurrence of a wanted key is built; `Doc::get` reads the last, as `JSON.parse` does.
+        // Every occurrence of a wanted key is built. `Doc::get` reads the last, as `JSON.parse` does.
         self.ws();
         if self.buf.get(self.pos) == Some(&b'}') {
             self.pos += 1;
@@ -340,7 +341,7 @@ impl<'a> Parser<'a> {
                 Some(&ALL)
             } else {
                 wanted(f, raw, plain, &mut next).map(|(p, c)| {
-                    // Distinct keys match distinct filter entries; a repeat or a step back clears it.
+                    // Distinct keys match distinct filter entries. A repeat or a step back clears it.
                     unique &= last.is_none_or(|l| p > l);
                     last = Some(p);
                     c
@@ -456,7 +457,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    /// Reads a string; `pos` is on the opening quote and ends after the closing one.
+    /// Reads a string. `pos` is on the opening quote and ends after the closing one.
     fn string(&mut self) -> Result<Cow<'a, str>, ParseError> {
         let (raw, plain) = self.raw_string()?;
         Ok(decode(raw, plain))
@@ -522,14 +523,14 @@ impl<'a> Parser<'a> {
 const LO: u64 = 0x0101_0101_0101_0101;
 const HI: u64 = 0x8080_8080_8080_8080;
 
-/// The high bit of each zero byte of `x`. Exact up to the lowest zero byte; a byte above it may
+/// The high bit of each zero byte of `x`. Exact up to the lowest zero byte. A byte above it can
 /// be flagged falsely, which `trailing_zeros` never reads.
 fn zero_byte(x: u64) -> u64 {
     x.wrapping_sub(LO) & !x & HI
 }
 
 /// `a == b` for short byte strings, the keys the parser and `Doc::get` compare all the time, by
-/// overlapping word loads instead of a `memcmp` call; longer ones go to `==`.
+/// overlapping word loads instead of a `memcmp` call. Longer ones go to `==`.
 #[inline]
 pub(crate) fn same_key(a: &[u8], b: &[u8]) -> bool {
     let n = a.len();
@@ -547,7 +548,7 @@ pub(crate) fn same_key(a: &[u8], b: &[u8]) -> bool {
     }
 }
 
-/// A string's text from its raw bytes; `plain` (see `Parser::raw_string`) bytes are it already.
+/// A string's text from its raw bytes. `plain` (see `Parser::raw_string`) bytes are it already.
 fn decode(raw: &[u8], plain: bool) -> Cow<'_, str> {
     match plain {
         // `raw_string` saw every plain byte below 0x80.
@@ -694,7 +695,7 @@ mod tests {
     #[test]
     fn a_backslash_outside_a_string_falls_back_to_the_byte_scan() {
         // In a skipped subtree `\"` opens a string for the parser but is an escaped quote to
-        // stage 1; the SIMD skip must give up there.
+        // stage 1. The SIMD skip must give up there.
         let doc = br#"{"x":[\"],"a":1}"#;
         assert_eq!(parse(doc, &pruned()), Err(ParseError::Syntax(doc.len())));
         same(doc);

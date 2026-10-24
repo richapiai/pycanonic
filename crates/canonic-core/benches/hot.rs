@@ -43,7 +43,7 @@ fn main() {
     divan::main();
 }
 
-/// `f` over every body in turn; divan reports the time per 64, read it as per body / 64.
+/// `f` over every body in turn. Divan reports the time per 64, read it as per body / 64.
 fn cycle<T>(b: Bencher, f: impl Fn(&[u8]) -> T + Sync) {
     b.bench(|| {
         for body in BODIES.iter() {

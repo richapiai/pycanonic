@@ -20,7 +20,7 @@ struct Resolver<'c> {
     custom: &'c [String],
     stat_names: Vec<String>,
     names: Vec<String>,
-    /// Top-level spec key to its scalar, `None` for an array rule; anchors look fields up here.
+    /// Top-level spec key to its scalar, `None` for an array rule. Anchors look fields up here.
     top: HashMap<String, Option<Scalar>>,
 }
 
@@ -77,7 +77,7 @@ impl Resolver<'_> {
                     "{at}: routing fields can't read the whole response ($)"
                 ));
             }
-            // A default would skip the validator and turn every response into a hit.
+            // A default skips the validator and turns every response into a hit.
             if r.default.is_some() {
                 return Err(format!("{at}: routing fields can't have a default"));
             }
@@ -232,7 +232,7 @@ fn routing(fields: &[Named<Field>], stat_names: &[String], out: &mut Vec<Routing
     }
 }
 
-/// An anchor names the raw key token of a routing field read from one path, e.g. `"workEmail":`.
+/// An anchor names the raw key token of a routing field read from one path, for example `"workEmail":`.
 fn check_anchor(field: Option<&Option<Scalar>>, key: &str, token: &str) -> Result<(), String> {
     let at = format!("anchors[{}]", json(key));
     let Some(field) = field else {
@@ -264,7 +264,7 @@ fn check_anchor(field: Option<&Option<Scalar>>, key: &str, token: &str) -> Resul
 }
 
 /// Validates the spec, loads the canonical schema and resolves one against the other.
-/// `custom` names the deployment's own transforms; `TxRef::Custom::index` points into it.
+/// `custom` names the deployment's own transforms. `TxRef::Custom::index` points into it.
 pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, CompileError> {
     let fail = |message| CompileError { message };
     let s = parse_spec(spec).map_err(|issues| {

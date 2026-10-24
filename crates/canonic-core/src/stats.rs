@@ -15,7 +15,7 @@ pub struct FieldStats {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatsSnapshot {
     pub responses: u64,
-    /// In stat slot order, which is spec key order; names as `Plan::stat_names`.
+    /// In stat slot order, which is spec key order, named as in `Plan::stat_names`.
     pub fields: Vec<(String, FieldStats)>,
 }
 
@@ -83,7 +83,7 @@ impl Stats {
         }
     }
 
-    // Out-of-range slots are ignored rather than panicking; Artifact::new range-checks the plan.
+    // Out-of-range slots are ignored rather than panicking. Artifact::new range-checks the plan.
     fn bump(c: &[AtomicU64], slot: usize, by: u64) {
         if let Some(c) = c.get(slot) {
             c.fetch_add(by, Relaxed);
@@ -112,7 +112,7 @@ impl Stats {
             .iter()
             .enumerate()
             .map(|(i, name)| {
-                // Misses first: a total only grows before its misses do, so fill can't go negative
+                // Misses first: a total only grows before its misses do, so fill cannot go negative
                 // under concurrent map calls (saturating covers a concurrent reset).
                 let misses = self.misses[i].load(Relaxed);
                 let errors = self.errors[i].load(Relaxed);

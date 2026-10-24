@@ -1,12 +1,12 @@
 //! Canonical registry loader: a JSON Schema per endpoint in, a field tree out.
-//! Leaves may carry `semantic`, `aliases` and `routing: true` next to their JSON Schema keywords.
+//! Leaves can carry `semantic`, `aliases` and `routing: true` next to their JSON Schema keywords.
 //! Port of canonic/packages/canonic/src/canonical.ts.
 
 use crate::spec::Issue;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// The value's kind; exactly the semantics that have a routing validator.
+/// The value's kind: exactly the semantics that have a routing validator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Semantic {
@@ -33,7 +33,7 @@ impl Semantic {
         }
     }
 
-    /// Unknown tags are not a load error in canonic; they carry no semantic, and the routing check rejects them later.
+    /// Unknown tags are not a load error in canonic. They carry no semantic, and the routing check rejects them later.
     fn parse(tag: &str) -> Option<Self> {
         Some(match tag {
             "email" => Self::Email,
@@ -71,7 +71,7 @@ pub struct Schema {
     pub root: Vec<(String, Node)>,
 }
 
-// toJSON and every own name of Object.prototype: a record or a view can't safely carry them.
+// toJSON and every own name of Object.prototype: a record or a view cannot safely carry them.
 const RESERVED: [&str; 13] = [
     "toJSON",
     "constructor",
@@ -189,7 +189,7 @@ pub fn load_schema(schema: &Value) -> Result<Schema, Issue> {
     }
 }
 
-/// What compiling would reject in a canonical schema, without needing a spec. Empty when it loads.
+/// What compiling rejects in a canonical schema, without needing a spec. Empty when it loads.
 pub fn validate_canonical(schema: &Value) -> Vec<Issue> {
     load_schema(schema).err().into_iter().collect()
 }

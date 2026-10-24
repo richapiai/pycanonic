@@ -10,7 +10,7 @@ pub fn write_json(plan: &Plan, out: &Out, buf: &mut Vec<u8>) {
     write_out(&plan.names, out, buf);
 }
 
-/// `write_json` with the plan's names; an `Out` with no `Out::Obj` needs none.
+/// `write_json` with the plan's names. An `Out` with no `Out::Obj` needs none.
 pub(crate) fn write_out(names: &[String], out: &Out, buf: &mut Vec<u8>) {
     match out {
         Out::Null => buf.extend_from_slice(b"null"),

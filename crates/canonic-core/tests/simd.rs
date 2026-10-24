@@ -72,8 +72,8 @@ fn inside(buf: &[u8], at: usize) -> bool {
     in_str
 }
 
-/// `skip` one byte at a time from a bracket outside a string: brackets counted outside strings;
-/// `None` at a backslash outside a string within the 64-byte block where `skip` would see it, or
+/// `skip` one byte at a time from a bracket outside a string, brackets counted outside strings.
+/// `None` at a backslash outside a string within the 64-byte block where `skip` sees it, or
 /// when nothing closes.
 fn reference_skip(buf: &[u8], start: usize) -> Option<usize> {
     let (mut in_str, mut esc, mut depth) = (false, false, 0usize);

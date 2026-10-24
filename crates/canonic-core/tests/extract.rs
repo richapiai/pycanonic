@@ -159,7 +159,7 @@ fn reads_the_anchored_field_and_ignores_key_shaped_text_inside_strings() {
 
 #[test]
 fn a_token_after_an_escaped_quote_is_not_the_anchor() {
-    // The first key is `"mobile`; its text holds `"mobile":` behind a backslash.
+    // The first key is `"mobile`. Its text holds `"mobile":` behind a backslash.
     let raw = br#"{"\"mobile":"+44 20 7946 0018","mobile":"4155550100"}"#;
     assert_eq!(ex(&ACME, raw)["phone"], json!("4155550100"));
     // An even run is an escaped backslash: the quote after it is real.
@@ -473,7 +473,7 @@ fn every_bench_body_extracts_the_typescript_routing_outputs() {
     }
 }
 
-/// Review Focus 4: one byte at a time, with routing values split across a `\u` escape.
+/// One byte at a time, so routing values split across a `\u` escape.
 #[test]
 fn every_bench_body_streamed_one_byte_at_a_time_equals_extract() {
     for (i, raw) in raws().into_iter().enumerate() {
@@ -527,7 +527,7 @@ fn timing() -> bool {
     std::env::var_os("PYCANONIC_TIMING_TESTS").is_some_and(|v| v == "1")
 }
 
-/// The fastest of `n` runs of `f`, so one slow run (a context switch) can't decide a ratio.
+/// The fastest of `n` runs of `f`, so one slow run (a context switch) cannot decide a ratio.
 fn fastest(n: usize, mut f: impl FnMut()) -> Duration {
     (0..n)
         .map(|_| {
@@ -556,7 +556,7 @@ fn padded(scale: usize) -> Vec<u8> {
 
 #[test]
 fn one_byte_pushes_stay_linear() {
-    // Four times the input must cost about four times as much; a rescan per push would cost 16.
+    // Four times the input must cost about four times as much. A rescan per push costs 16.
     let (small, big) = (padded(4), padded(16));
     assert_eq!(bytewise(&BENCH, &big), ex(&BENCH, &big));
     if !timing() {
@@ -607,7 +607,7 @@ enum G {
     Obj(Vec<(String, G)>),
     Arr(Vec<G>),
     Str(String),
-    /// Raw JSON text: numbers, literals and strings with escapes a Rust String can't hold.
+    /// Raw JSON text: numbers, literals and strings with escapes a Rust String cannot hold.
     Raw(String),
 }
 

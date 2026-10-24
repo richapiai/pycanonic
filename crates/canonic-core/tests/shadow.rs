@@ -110,7 +110,7 @@ fn routing(a: &Artifact) -> Vec<String> {
     a.plan.routing.iter().map(|r| r.name.clone()).collect()
 }
 
-/// 1,000 responses; one in 200 has a patent count, so that field is rarely filled.
+/// 1,000 responses. One in 200 has a patent count, so that field is rarely filled.
 fn bodies(shape: impl Fn(usize) -> J) -> Vec<J> {
     (0..1000)
         .map(|i| {
@@ -175,7 +175,7 @@ fn classifies_each_field_and_skips_responses_where_both_sides_are_null() {
 #[test]
 fn inside_arrays_key_order_doesnt_count_and_a_null_key_equals_a_missing_one() {
     let mut d = ShadowDiff::new(vec![]);
-    // The left side is what hand-written code returned; the right is map() output for the same body.
+    // The left side is what hand-written code returned. The right is map() output for the same body.
     add(
         &mut d,
         &json!({ "jobs": [{ "title": "CTO", "org": { "name": "Acme" } }] }),
@@ -267,7 +267,7 @@ fn gate_options_default_as_in_shadow_ts() {
 
 #[test]
 fn a_routing_field_rename_auto_merges_once_known_entities_confirm_it() {
-    // The provider renamed workEmail to email. Promoted now maps null; the candidate reads the new key.
+    // The provider renamed workEmail to email. Promoted now maps null. The candidate reads the new key.
     let responses = bodies(|i| json!({ "email": format!("u{i}@acme.com") }));
     let promoted = promoted();
     let candidate = compile_spec(with(base(), "email", json!("email")), 2);
@@ -333,7 +333,7 @@ fn a_candidate_that_drops_a_rarely_filled_field_doesnt_auto_merge() {
     let mut rest = base();
     rest.remove("patent_count");
     let report = soak(&promoted(), &compile_spec(rest, 2), &bodies(|_| json!({})));
-    // Five responses had a value; the candidate lost all five. Among 1,000 responses that's 0.5%.
+    // Five responses had a value. The candidate lost all five. Among 1,000 responses that is 0.5%.
     let p = field(&report, "patent_count");
     assert_eq!((p.compared, p.regressions), (5, 5));
     assert_eq!(
@@ -516,8 +516,8 @@ fn output_with_unresolved_names_is_turned_away_never_a_panic() {
         result(
             false,
             &[
-                "known entity 1: output has unresolved names; use Artifact::map_named",
-                "known entity 2: output has unresolved names; use Artifact::map_named",
+                "known entity 1: output has unresolved names. Use Artifact::map_named",
+                "known entity 2: output has unresolved names. Use Artifact::map_named",
             ]
         )
     );

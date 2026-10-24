@@ -1,5 +1,5 @@
 // The 501-field payload of bench/interpreters.py (tests/fixtures/wide_bodies.json, written by
-// scripts/export_wide.py), per stage. Each op cycles through all 64 bodies; read times per 64.
+// scripts/export_wide.py), per stage. Each op cycles through all 64 bodies. Read times per 64.
 // `cargo bench -p canonic-core --bench wide`.
 
 use canonic_core::{Artifact, compile, filter_for, parse};

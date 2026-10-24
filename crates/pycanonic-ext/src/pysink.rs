@@ -14,7 +14,7 @@ pub fn value<'py>(py: Python<'py>, v: &Value<'_>) -> Bound<'py, PyAny> {
         Value::Int(i) => i
             .into_pyobject(py)
             .map_or_else(|e| match e {}, Bound::into_any),
-        // CPython refuses `int(text)` past 4300 digits; JSON.parse reads that as a double, so do we.
+        // CPython refuses `int(text)` past 4300 digits. JSON.parse reads that as a double, so do we.
         Value::BigInt(s) => py
             .get_type::<PyInt>()
             .call1((s.as_ref(),))
@@ -56,7 +56,7 @@ impl<'py> canonic_core::Sink for PySink<'_, 'py> {
     fn passthrough<D: Doc>(&mut self, d: &D) -> Self::Out {
         if let Some(o) = d.host().and_then(|h| h.downcast_ref::<Py<PyAny>>()) {
             let o = o.bind(self.py);
-            // A str with a lone surrogate goes out with U+FFFD, as from bytes; anything else as is.
+            // A str with a lone surrogate goes out with U+FFFD, as from bytes. Anything else as is.
             if let Ok(s) = o.cast::<PyString>()
                 && let Cow::Owned(t) = text(s)
             {

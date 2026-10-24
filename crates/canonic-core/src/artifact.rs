@@ -60,12 +60,12 @@ impl Artifact {
         })
     }
 
-    /// Distinct path keys the plan reads; `Key::tag` indexes this.
+    /// Distinct path keys the plan reads. `Key::tag` indexes this.
     pub fn keys(&self) -> &[String] {
         self.program.keys()
     }
 
-    /// Parses `body` with the plan's filter and maps it. A body that doesn't parse reads as absent:
+    /// Parses `body` with the plan's filter and maps it. A body that does not parse reads as absent:
     /// every field null, counted as misses.
     pub fn map_bytes(&self, body: &[u8]) -> Out {
         let node = self.parse(body);
@@ -102,23 +102,23 @@ impl Artifact {
 
     /// The routing fields read straight from `raw`, aligned with `plan.routing`: `None` when not
     /// found, `Some(Value::Null)` when found and rejected by the field's transforms or validator.
-    /// Anchored fields are found by their key token; the rest by one scan. Counts no stats.
+    /// Anchored fields are found by their key token, the rest by one scan. Counts no stats.
     pub fn extract(&self, raw: &[u8]) -> Vec<Option<Value<'static>>> {
         self.extractor.extract(raw)
     }
 
-    /// `extract` over chunks as they arrive; always scans, anchors are for `extract` only.
+    /// `extract` over chunks as they arrive. It always scans: anchors are for `extract` only.
     pub fn stream(&self) -> ExtractStream {
         ExtractStream::new(self.extractor.clone())
     }
 
-    /// `body` parsed with the plan's filter, `None` when it doesn't parse (which reads as absent).
+    /// `body` parsed with the plan's filter, `None` when it does not parse (which reads as absent).
     pub fn parse<'a>(&self, body: &'a [u8]) -> Option<Node<'a>> {
         parse(body, &self.filter).ok()
     }
 
     /// One field as `map_with` maps it, by index path (see `exec::execute_field`). Counts no stats,
-    /// as a JavaScript View getter doesn't. `None` when `path` names no field.
+    /// as a JavaScript View getter does not. `None` when `path` names no field.
     pub fn map_field<D: Doc, S: Sink>(
         &self,
         path: &[usize],
@@ -235,7 +235,7 @@ fn merge(a: &mut Filter, b: &Filter) {
     }
 }
 
-/// The parser lets an `idxs` entry win over `elems`; fold `elems` into each so neither read is lost.
+/// The parser lets an `idxs` entry win over `elems`. Fold `elems` into each so neither read is lost.
 fn settle(f: &mut Filter) {
     if let Some(e) = &f.elems {
         for (_, c) in &mut f.idxs {

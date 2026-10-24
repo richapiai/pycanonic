@@ -44,7 +44,7 @@ pub fn js_number_to_string(f: f64) -> String {
     }
     let sign = if f < 0.0 { "-" } else { "" };
     let abs = f.abs();
-    // `{:e}` yields the shortest round-trip digits, e.g. "1.5e-7" or "1e21",
+    // `{:e}` yields the shortest round-trip digits, for example "1.5e-7" or "1e21",
     // but rounds exact ties up. ECMA-262 wants the candidate closest to `f`,
     // ties to even, which is what exact-precision `{:.*e}` produces.
     let shortest = format!("{abs:e}");

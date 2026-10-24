@@ -23,7 +23,7 @@ pub struct Artifact {
     pub(crate) keys: Vec<Py<PyString>>,
     /// Interned canonical field names, indexed like `Plan::names`.
     pub(crate) names: Vec<Py<PyString>>,
-    /// The canonical object levels a `View` walks; see `view::levels`.
+    /// The canonical object levels a `View` walks. See `view::levels`.
     pub(crate) levels: Vec<Level>,
     /// Interned routing field names, in `plan.routing` order: the keys of `extract`'s dict.
     pub(crate) routing: Vec<Py<PyString>>,
@@ -50,8 +50,8 @@ pub fn value_error(e: CompileError) -> PyErr {
     PyValueError::new_err(e.message)
 }
 
-/// The JSON text of a `bytes`, `str`, `bytearray` or `memoryview` input; `None` for any other
-/// object. A `bytearray` or `memoryview` is copied: another thread may change it while the GIL is
+/// The JSON text of a `bytes`, `str`, `bytearray` or `memoryview` input. `None` for any other
+/// object. A `bytearray` or `memoryview` is copied: another thread can change it while the GIL is
 /// released.
 pub(crate) fn body_of<'s>(src: &'s Bound<'_, PyAny>) -> PyResult<Option<Cow<'s, [u8]>>> {
     // A parsed dict is the common non-text input: one type compare instead of four checks.
@@ -160,7 +160,7 @@ impl Artifact {
     }
 
     /// JSON text (`bytes`, `str`, `bytearray`, `memoryview`) is parsed with the GIL released, then
-    /// mapped straight into Python objects; a `dict`, `list`, `tuple` or `Mapping` is read as is.
+    /// mapped straight into Python objects. A `dict`, `list`, `tuple` or `Mapping` is read as is.
     fn map<'py>(&self, py: Python<'py>, src: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let out = if let Some(body) = body_of(src)? {
             let node = py.detach(|| self.inner.parse(&body));
@@ -183,7 +183,7 @@ impl Artifact {
         take_pending().map_or(Ok(out), Err)
     }
 
-    /// The canonical object as JSON text, without building Python objects; runs with the GIL released.
+    /// The canonical object as JSON text, without building Python objects. Runs with the GIL released.
     fn map_json<'py>(
         &self,
         py: Python<'py>,
@@ -196,7 +196,7 @@ impl Artifact {
         take_pending().map_or(Ok(PyBytes::new(py, &out)), Err)
     }
 
-    /// The routing fields read straight from JSON text, keyed by spec field; GIL released.
+    /// The routing fields read straight from JSON text, keyed by spec field. GIL released.
     fn extract<'py>(
         &self,
         py: Python<'py>,
@@ -214,7 +214,7 @@ impl Artifact {
         View::new(py, slf, src)
     }
 
-    /// A fresh incremental reader of the routing fields; one per response.
+    /// A fresh incremental reader of the routing fields. One per response.
     fn stream(slf: Py<Self>) -> ExtractStream {
         let inner = slf.get().inner.stream();
         ExtractStream {
@@ -273,7 +273,7 @@ impl Stats {
     }
 }
 
-/// Routing values as `{spec_field: value}`, in `plan.routing` order (`names`, interned); not found
+/// Routing values as `{spec_field: value}`, in `plan.routing` order (`names`, interned). Not found
 /// and rejected are `None`.
 fn routing_dict<'py>(
     py: Python<'py>,
@@ -301,7 +301,7 @@ fn finished() -> PyErr {
 
 #[pymethods]
 impl ExtractStream {
-    /// Feeds `bytes`, `str`, `bytearray` or `memoryview`; `True` once every routing field is
+    /// Feeds `bytes`, `str`, `bytearray` or `memoryview`. `True` once every routing field is
     /// available. GIL released.
     fn push(&self, py: Python<'_>, chunk: &Bound<'_, PyAny>) -> PyResult<bool> {
         let body = body_of(chunk)?.ok_or_else(|| {
@@ -315,7 +315,7 @@ impl ExtractStream {
         take_pending().map_or(Ok(done), Err)
     }
 
-    /// Ends the input and returns the routing values; a second call raises `ValueError`.
+    /// Ends the input and returns the routing values. A second call raises `ValueError`.
     fn result<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let s = self
             .inner

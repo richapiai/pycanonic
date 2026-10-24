@@ -2,15 +2,15 @@
 //! JavaScript codegen.ts emits. Generic over the document (`Doc`) and the output (`Sink`).
 //!
 //! Rules, from codegen.ts `fieldExpr` and `array`:
-//! - a missing or null source is null and a miss, never an error;
-//! - a present value whose transforms (then the routing validator) give null is an error and a miss;
-//!   either way `default` then applies, and still counts as a miss;
-//! - `coalesce` takes the first present value and does not retry after a rejection;
-//! - `from` with several paths hands the transforms a list (null only if every path is absent);
-//!   without transforms the field is that list;
-//! - a list `from` that is present but not an array is null, an error and a miss on the list slot;
-//! - `item` maps each element; a plucked or plain element that a transform rejects is null in place
-//!   and one error on the list slot, an absent element is just null.
+//! - A missing or null source is null and a miss, never an error.
+//! - A present value whose transforms (then the routing validator) give null is an error and a miss.
+//!   Either way `default` then applies, and the field still counts as a miss.
+//! - `coalesce` takes the first present value and does not retry after a rejection.
+//! - `from` with several paths hands the transforms a list (null only if every path is absent).
+//!   Without transforms the field is that list.
+//! - A list `from` that is present but not an array is null, an error and a miss on the list slot.
+//! - `item` maps each element. A plucked or plain element that a transform rejects is null in place
+//!   and one error on the list slot. An absent element is null.
 
 use crate::canonical::Semantic;
 use crate::doc::{Doc, Key};
@@ -139,7 +139,7 @@ enum Op {
     Null,
     Scalar(Leaf),
     Object(Vec<(usize, Op)>),
-    /// An item list maps each element with `Item`; otherwise each element is read at `Elems.0`
+    /// An item list maps each element with `Item`. Otherwise each element is read at `Elems.0`
     /// (empty for a plain list) and transformed.
     List {
         from: At,
@@ -278,7 +278,7 @@ impl Program {
         };
         let root = b.fields(&plan.fields)?;
         let scope = std::mem::take(&mut b.scope).finish();
-        // Routing fields are only checked here (`extract` reads them); their paths join no scope.
+        // Routing fields are only checked here (`extract` reads them). Their paths join no scope.
         for r in &plan.routing {
             b.leaf(&r.scalar)?;
         }
@@ -289,7 +289,7 @@ impl Program {
         })
     }
 
-    /// Distinct path keys; a `Key`'s `tag` is its index here.
+    /// Distinct path keys. A `Key`'s `tag` is its index here.
     pub fn keys(&self) -> &[String] {
         &self.keys
     }
@@ -312,7 +312,7 @@ struct Frame<'s, D> {
     doc: Option<D>,
     scope: &'s Scope,
     /// Per `Scope::slot`: `None` not resolved yet, `Some(v)` resolved. Empty for a one-field read
-    /// (`execute_field`), where it would not pay.
+    /// (`execute_field`), where it does not pay.
     cache: Vec<Option<Option<D>>>,
 }
 
@@ -325,7 +325,7 @@ impl<'s, D: Doc> Frame<'s, D> {
         Frame { doc, scope, cache }
     }
 
-    /// The value at prefix node `n`, null or not; resolved once when cached.
+    /// The value at prefix node `n`, null or not. Resolved once when cached.
     fn prefix(&mut self, n: At) -> Option<D> {
         if n == 0 {
             return self.doc.clone();
@@ -378,7 +378,7 @@ fn json_value(v: &serde_json::Value) -> Value<'_> {
 }
 
 /// Most nodes `json` copies. A host object that shares its children (`{"a": x, "b": x}` down a
-/// chain) has exponentially many paths though it is small; this bounds the walk.
+/// chain) has exponentially many paths though it is small. This bounds the walk.
 pub(crate) const MAX_NODES: usize = 1_000_000;
 
 /// A document value as JSON, for a custom transform's container input. `None` past `MAX_DEPTH`
@@ -413,7 +413,7 @@ fn apply<'v>(custom: &[Arc<dyn Transform>], t: &TxRef, v: Value<'v>) -> Value<'v
     }
 }
 
-/// `pipe` over a document value; a custom transform first in line gets a container as JSON.
+/// `pipe` over a document value. A custom transform first in line gets a container as JSON.
 fn pipe_doc<'d, D: Doc>(custom: &[Arc<dyn Transform>], tx: &[TxRef], d: &'d D) -> Value<'d> {
     match (d.leaf(), tx.split_first()) {
         (Value::Container, Some((first @ TxRef::Custom { .. }, rest))) => {
@@ -428,7 +428,7 @@ fn pipe_doc<'d, D: Doc>(custom: &[Arc<dyn Transform>], tx: &[TxRef], d: &'d D) -
     }
 }
 
-/// A custom transform over a container input (`None`: too deep, null); callers handle a default
+/// A custom transform over a container input (`None`: too deep, null). Callers handle a default
 /// transform first.
 fn container(custom: &[Arc<dyn Transform>], t: &TxRef, v: Option<J>) -> Value<'static> {
     let (TxRef::Custom { index, arg, .. }, Some(v)) = (t, v) else {
@@ -460,7 +460,7 @@ fn check(validator: Option<Semantic>, v: Value<'_>) -> Value<'_> {
 }
 
 /// A present value through a scalar field's transforms, then its routing validator. `Null` is a
-/// rejection; `Container` means the value goes out as it is. `map` and `extract` share it.
+/// rejection. `Container` means the value goes out as it is. `map` and `extract` share it.
 pub(crate) fn transform<'d, D: Doc>(
     custom: &[Arc<dyn Transform>],
     tx: &[TxRef],
@@ -499,7 +499,7 @@ pub(crate) fn transform_many<'d, D: Doc>(
 }
 
 /// Runs `program` over `doc` (`None` reads as absent everywhere) and counts one response in `stats`.
-/// `custom` is aligned with `Plan::custom_names`; a transform that panics gives null, an error.
+/// `custom` is aligned with `Plan::custom_names`. A transform that panics gives null, an error.
 pub fn execute<D: Doc, S: Sink>(
     program: &Program,
     doc: Option<&D>,
@@ -517,8 +517,8 @@ pub fn execute<D: Doc, S: Sink>(
     .object(&program.root, &mut f)
 }
 
-/// One field of `program` over `doc`, as `execute` would map it, counting no stats. `path` is the
-/// chain of field indices from the root (`[i, j]`: member `j` of the object field `i`); `[]` is the
+/// One field of `program` over `doc`, as `execute` maps it, counting no stats. `path` is the
+/// chain of field indices from the root (`[i, j]`: member `j` of the object field `i`). `[]` is the
 /// whole root object. `None` when `path` names no field.
 pub fn execute_field<D: Doc, S: Sink>(
     program: &Program,
@@ -630,7 +630,7 @@ impl<S: Sink> Exec<'_, S> {
         f: &mut Frame<'_, D>,
         ps: &[At],
     ) -> Option<Option<S::Out>> {
-        // one Vec per read, as codegen.ts allocates one array; only multi-path `from` pays.
+        // one Vec per read, as codegen.ts allocates one array. Only multi-path `from` pays.
         let docs: Vec<Option<D>> = ps.iter().map(|p| f.read(*p)).collect();
         if docs.iter().all(Option::is_none) {
             return None;

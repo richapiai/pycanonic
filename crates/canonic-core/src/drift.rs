@@ -31,7 +31,7 @@ struct Walk {
 }
 
 impl Walk {
-    /// Whether to walk into a container at `depth`; counts it.
+    /// Whether to walk into a container at `depth`, counting the container.
     fn enter(&mut self, depth: usize) -> bool {
         if self.limits && (depth >= MAX_DEPTH || self.nodes == 0 || self.bytes == 0) {
             self.over = true;
@@ -111,14 +111,14 @@ fn walk<D: Doc>(doc: &D, limits: bool) -> Option<Vec<String>> {
 /// Sorted key paths of a parsed response. A null value counts as absent, and an array is one path
 /// ending in `[]` whatever its length, with the keys of its object elements merged under it. Keys
 /// are written as `JSON.stringify` writes them, and sorted by UTF-16 code units as JavaScript sorts.
-/// Unbounded: for a finite document such as a parsed `Node`; see `shape_bounded` for host objects.
+/// Unbounded: for a finite document such as a parsed `Node`. See `shape_bounded` for host objects.
 pub fn shape<D: Doc>(doc: &D) -> Vec<String> {
     walk(doc, false).expect("an unbounded walk never stops early")
 }
 
 /// `shape`, or `None` past `MAX_DEPTH` levels, `MAX_NODES` containers or 64 MiB of distinct paths:
-/// for a host object that may contain itself or share its children, where a cut shape would
-/// give a wrong fingerprint.
+/// for a host object that can contain itself or share its children, where a cut shape gives
+/// a wrong fingerprint.
 pub fn shape_bounded<D: Doc>(doc: &D) -> Option<Vec<String>> {
     walk(doc, true)
 }
@@ -142,9 +142,9 @@ pub fn hash_shape(paths: &[String]) -> String {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FillMonitorOptions {
-    /// Responses a window needs before it's judged; smaller windows are merged with the next.
+    /// Responses a window needs before it is judged. Smaller windows are merged with the next.
     pub min_responses: u64,
-    /// Judged windows the baseline averages over; 0 keeps them all (JavaScript's `slice(-0)`).
+    /// Judged windows the baseline averages over. 0 keeps them all (JavaScript's `slice(-0)`).
     pub history: usize,
     /// How far past the baseline a rate must move, in standard errors.
     pub sigmas: f64,
@@ -220,7 +220,7 @@ impl FillMonitor {
         let mut alerts = Vec::new();
         for (field, s) in &w.fields {
             // A field inside an item is a rate over elements, and needs as many of those as a window needs responses.
-            // a window short on elements is skipped, not carried over; merge per field if sparse arrays need judging
+            // a window short on elements is skipped, not carried over. Merge per field if sparse arrays need judging
             if s.total.is_some_and(|t| t < self.opts.min_responses) {
                 continue;
             }
@@ -278,7 +278,7 @@ fn judge(o: &FillMonitorOptions, field: &str, w: Window, past: &[Window]) -> Vec
 }
 
 /// Standard error of a rate over n responses, from the baseline with add-one smoothing so 0% and
-/// 100% still vary. A plucked array counts an error per element, so its rate can pass 1; it is capped there.
+/// 100% still vary. A plucked array counts an error per element, so its rate can pass 1. It is capped there.
 fn std_err(past: &[Window], key: fn(&Window) -> f64, n: f64) -> f64 {
     let total: f64 = past.iter().map(|p| p.responses).sum();
     let p = f64::min(
@@ -288,7 +288,7 @@ fn std_err(past: &[Window], key: fn(&Window) -> f64, n: f64) -> f64 {
     (p * (1.0 - p) / n).sqrt()
 }
 
-/// `b`'s fields with `a`'s counts added; a field only in `a` is dropped, as drift.ts merges.
+/// `b`'s fields with `a`'s counts added. A field only in `a` is dropped, as drift.ts merges.
 fn merge(a: &StatsSnapshot, b: &StatsSnapshot) -> StatsSnapshot {
     let old: HashMap<&str, &FieldStats> = a.fields.iter().map(|(f, s)| (f.as_str(), s)).collect();
     let fields = b

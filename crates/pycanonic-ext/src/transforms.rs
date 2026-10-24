@@ -1,7 +1,7 @@
 //! Python callables as custom transforms, called with the GIL: `f(value)`, or `f(value, arg)` when
-//! the spec gives an argument. A result that isn't `str`, `int`, `float`, `bool` or `None`, or an
+//! the spec gives an argument. A result that is not `str`, `int`, `float`, `bool` or `None`, or an
 //! `Exception`, is null, which the executor counts. Any other `BaseException` (KeyboardInterrupt,
-//! SystemExit) is held for the thread and raised from `map` once it returns; see `take_pending`.
+//! SystemExit) is held for the thread and raised from `map` once it returns. See `take_pending`.
 
 use crate::pydoc::leaf;
 use crate::pysink::value;

@@ -34,7 +34,7 @@ mod compare {
         }
     }
 
-    /// By value; when either side is at least 2^53 in magnitude, integer or not, within one
+    /// By value. When either side is at least 2^53 in magnitude, integer or not, within one
     /// double step of `a` (TypeScript writes a rounded big integer, pycanonic keeps it exact).
     fn num_eq(a: &serde_json::Number, b: &serde_json::Number) -> bool {
         let (x, y) = (a.as_f64().unwrap(), b.as_f64().unwrap());
@@ -140,7 +140,7 @@ fn stats(a: &Artifact) -> J {
     json!({ "responses": s.responses, "fields": fields })
 }
 
-/// Every divergence of one case, empty when it conforms; `Err` for a case that is malformed.
+/// Every divergence of one case, empty when it conforms. `Err` for a case that is malformed.
 fn run(case: &J) -> Result<Vec<String>, String> {
     let compiled = compile(&case["spec"], &case["canonical"], &[]);
     if let Some(want) = case["error"].as_str() {

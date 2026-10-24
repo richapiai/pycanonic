@@ -117,7 +117,7 @@ fn alert(a: &Bound<'_, PyAny>) -> PyResult<FieldAlert> {
     })
 }
 
-/// The auto-merge rule over a `ShadowDiff.snapshot()` report; `{"merge": bool, "reasons": [...]}`.
+/// The auto-merge rule over a `ShadowDiff.snapshot()` report, as `{"merge": bool, "reasons": [...]}`.
 #[pyfunction]
 #[pyo3(signature = (report, *, max_change=0.01, known=None, fill_alerts=None))]
 pub fn merge_gate<'py>(

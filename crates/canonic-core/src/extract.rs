@@ -9,7 +9,7 @@
 //! `extract` tries anchors first (a `memmem` search for the key token, skipping a hit preceded by
 //! an odd run of backslashes), then scans for whatever they missed. `stream` always scans. A skipped
 //! container is matched by `json::simd::skip` from its opening bracket, so nothing past the last
-//! wanted value is read; a stage-1 index of the whole input would read the whole body.
+//! wanted value is read. A stage-1 index of the whole input reads the whole body.
 //!
 //! Captured values are decoded like the parser does (`unescape`, the `Node::Num` rule) and go
 //! through the field's transforms and validator with the executor's own functions, so `extract`
@@ -26,7 +26,7 @@ use memchr::{memchr, memchr2};
 use std::borrow::Cow;
 use std::sync::Arc;
 
-/// A trie node. Children are by key (decoded bytes) and by array index; ids are path slots.
+/// A trie node. Children are by key (decoded bytes) and by array index. Ids are path slots.
 #[derive(Default)]
 struct TNode {
     keys: Vec<(Box<[u8]>, usize)>,
@@ -36,7 +36,7 @@ struct TNode {
     /// Paths at or below here.
     paths: Vec<usize>,
     depth: usize,
-    /// When a captured value also has wanted paths below it, they're read by scanning the captured
+    /// When a captured value also has wanted paths below it, they are read by scanning the captured
     /// text, so duplicate keys resolve first-wins there too.
     sub: Option<Sub>,
 }
@@ -180,7 +180,7 @@ impl Extractor {
         let fields = self.routing.iter().zip(&self.slots);
         fields
             .map(|(s, slots)| {
-                // A custom transform first in line gets a container whole; nothing else reads one.
+                // A custom transform first in line gets a container whole. Nothing else reads one.
                 let full = matches!(s.tx.first(), Some(TxRef::Custom { .. }));
                 let found = |&i: &usize| {
                     let n = text(i).and_then(|v| node(v, full));
@@ -207,8 +207,8 @@ impl Extractor {
     }
 }
 
-/// The captured text of one value, decoded as the parser would; `None` for a scalar that isn't
-/// JSON (`12x`). A container is parsed only when `full`; otherwise it is just a container.
+/// The captured text of one value, decoded as the parser decodes it. `None` for a scalar that is not
+/// JSON (`12x`). A container is parsed only when `full`. Otherwise it stays a container.
 fn node(v: &[u8], full: bool) -> Option<Node<'_>> {
     Some(match v {
         [b'"', body @ .., b'"'] => Node::Str(unescape(body)),
@@ -246,8 +246,8 @@ impl ExtractStream {
         }
     }
 
-    /// Feeds the next chunk. True once every routing field has a value or is known absent;
-    /// chunks pushed after that are ignored.
+    /// Feeds the next chunk. True once every routing field has a value or is known absent.
+    /// Chunks pushed after that are ignored.
     pub fn push(&mut self, chunk: &[u8]) -> bool {
         if self.s.st == St::Done {
             return true;
@@ -258,7 +258,7 @@ impl ExtractStream {
         self.s.st == St::Done
     }
 
-    /// Ends the input; unresolved fields are `None`.
+    /// Ends the input. Unresolved fields are `None`.
     pub fn result(mut self) -> Vec<Option<Value<'static>>> {
         self.run().end();
         let (s, buf, kept) = (&self.s, &self.buf, &self.kept);
@@ -399,7 +399,7 @@ fn is_delim(c: u8) -> bool {
     matches!(c, b',' | b'}' | b']') || is_ws(c)
 }
 
-/// Offset just past the closing quote of a string whose body starts at `i`; `Err` with where to
+/// Offset just past the closing quote of a string whose body starts at `i`. `Err` with where to
 /// resume when the input ends first (never inside an escape, so the next chunk pairs it right).
 fn string_end(b: &[u8], mut i: usize) -> Result<usize, usize> {
     loop {
@@ -417,7 +417,7 @@ fn string_end(b: &[u8], mut i: usize) -> Result<usize, usize> {
     }
 }
 
-/// True when `b[i]` is preceded by an odd run of backslashes, i.e. escaped.
+/// True when `b[i]` is preceded by an odd run of backslashes, that is, escaped.
 fn odd_backslashes(b: &[u8], i: usize) -> bool {
     b[..i].iter().rev().take_while(|&&c| c == b'\\').count() % 2 == 1
 }
@@ -449,7 +449,7 @@ impl Run<'_> {
         }
     }
 
-    /// Ends the input; anything unresolved is missing.
+    /// Ends the input. Anything unresolved is missing.
     fn end(&mut self) {
         if self.s.st != St::Done {
             self.s.fin = true;
@@ -458,7 +458,7 @@ impl Run<'_> {
         }
     }
 
-    /// Steps over a byte order mark before the root value. False while the input so far could
+    /// Steps over a byte order mark before the root value. False while the input so far can
     /// still be the start of one.
     fn bom(&mut self) -> bool {
         let s = &mut *self.s;
@@ -598,7 +598,7 @@ impl Run<'_> {
     /// Scans to the container's end (true) or the end of the input (false), resumably.
     fn skip_bytes(&mut self) -> bool {
         let (b, s) = (self.b, &mut *self.s);
-        // Fresh from the opening bracket, the SIMD skip takes it whole; where it gives up (no close
+        // Fresh from the opening bracket, the SIMD skip takes it whole. Where it gives up (no close
         // in the input so far, or a backslash outside a string) the byte loop below decides.
         if std::mem::take(&mut s.v_fresh)
             && let Some(end) = simd::skip(b, s.cap_start)
@@ -800,7 +800,7 @@ impl Run<'_> {
         self.s.mode = Mode::None;
     }
 
-    /// Where the anchor token occurs at or after `from`, not escaped; `None` if nowhere.
+    /// Where the anchor token occurs at or after `from`, not escaped. `None` if nowhere.
     fn find(&self, finder: &Finder, from: usize) -> Option<usize> {
         let mut at = from;
         while let Some(k) = finder.find(self.b.get(at..)?) {
@@ -813,9 +813,9 @@ impl Run<'_> {
         None
     }
 
-    /// Reads one anchored value; returns where the next anchor's search starts. Each search
+    /// Reads one anchored value. Returns where the next anchor's search starts. Each search
     /// starts where the previous one matched, so a provider that keeps its key order costs one
-    /// pass; a miss retries from the start.
+    /// pass. A miss retries from the start.
     fn anchor(&mut self, id: usize, finder: &Finder, from: usize) -> usize {
         let hit = self.find(finder, from);
         let hit = hit.or_else(|| (from > 0).then(|| self.find(finder, 0)).flatten());

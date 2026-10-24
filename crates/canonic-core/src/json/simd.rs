@@ -1,6 +1,6 @@
 //! The simdjson block classification, used two ways. [`skip`] runs it on demand from one bracket
 //! to its match: that is how the parser and the extract scanner skip a container. [`structurals`]
-//! runs it over the whole input as a stage-1 index. The parser no longer reads that index; it stays
+//! runs it over the whole input as a stage-1 index. The parser does not read that index. It is kept
 //! for its bench and its tests, which check the shared classifiers.
 //!
 //! Each 64-byte block is classified into five bitmasks (quotes, backslashes, `{ [`, `} ]`, `: ,`) by a
@@ -10,13 +10,13 @@
 //!
 //! A backslash escapes the next byte wherever it is, as in simdjson. The parser only lets a
 //! backslash escape inside a string, so the two disagree after a backslash outside a string. Valid
-//! JSON never has one. `structurals` reports it in the index; `skip` gives up on it, and the caller
+//! JSON never has one. `structurals` reports it in the index. `skip` gives up on it, and the caller
 //! scans bytes for that container instead.
 //!
 //! The crate's only `unsafe` lives here: the SIMD loads and [`ascii_str`].
 
 /// `b` as `&str` without a UTF-8 pass, for bytes the caller has already seen to be ASCII (number
-/// text, plain strings); the parser borrows these on its hot path.
+/// text, plain strings). The parser borrows these on its hot path.
 pub(crate) fn ascii_str(b: &[u8]) -> &str {
     debug_assert!(b.is_ascii());
     // SAFETY: every caller has checked each byte of `b` is below 0x80, and ASCII is valid UTF-8.
@@ -24,7 +24,7 @@ pub(crate) fn ascii_str(b: &[u8]) -> &str {
 }
 
 /// Sorted positions of every unescaped `"` (opening and closing), and of `{ } [ ] : , \` outside
-/// strings. Positions are `u32`: the parser caps input at 2^31 bytes ([`super::MAX_BYTES`]); past
+/// strings. Positions are `u32`: the parser caps input at 2^31 bytes ([`super::MAX_BYTES`]). Past
 /// `u32::MAX` bytes they wrap and mean nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Structurals {
@@ -98,7 +98,7 @@ fn classify_portable(b: &[u8; 64]) -> Masks {
 }
 
 /// Offset just past the container whose opening bracket is at `start`, brackets counted outside
-/// strings, not matched or validated. `None` when the container doesn't close, or when a backslash
+/// strings, not matched or validated. `None` when the container does not close, or when a backslash
 /// outside a string comes up in a block before it does: there stage 1 and the parser disagree, so
 /// the caller scans bytes instead.
 #[cfg(target_arch = "aarch64")]
@@ -260,7 +260,7 @@ mod neon {
     #[target_feature(enable = "neon")]
     fn bits(v: [uint8x16_t; 4]) -> u64 {
         const W: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
-        // SAFETY: `W` is 16 readable bytes; `vld1q_u8` needs no alignment.
+        // SAFETY: `W` is 16 readable bytes. `vld1q_u8` needs no alignment.
         let w = unsafe { vld1q_u8(W.as_ptr()) };
         let a = vpaddq_u8(vandq_u8(v[0], w), vandq_u8(v[1], w));
         let b = vpaddq_u8(vandq_u8(v[2], w), vandq_u8(v[3], w));
@@ -302,7 +302,7 @@ mod neon {
     /// The CPU must support NEON, which every aarch64 CPU does.
     #[target_feature(enable = "neon")]
     pub(super) unsafe fn classify(b: &[u8; 64]) -> Masks {
-        // SAFETY: the four 16-byte loads at offsets 0, 16, 32, 48 stay inside the 64-byte array;
+        // SAFETY: the four 16-byte loads at offsets 0, 16, 32, 48 stay inside the 64-byte array.
         // `vld1q_u8` needs no alignment.
         let v = unsafe {
             let p = b.as_ptr();
@@ -372,7 +372,7 @@ mod x86 {
     /// The CPU must support SSE2, which every x86_64 CPU does.
     #[target_feature(enable = "sse2")]
     pub(super) unsafe fn classify_sse2(b: &[u8; 64]) -> Masks {
-        // SAFETY: the four 16-byte loads at offsets 0, 16, 32, 48 stay inside the 64-byte array;
+        // SAFETY: the four 16-byte loads at offsets 0, 16, 32, 48 stay inside the 64-byte array.
         // `_mm_loadu_si128` needs no alignment.
         let v = unsafe {
             let p = b.as_ptr().cast::<__m128i>();
@@ -426,7 +426,7 @@ mod x86 {
     /// The CPU must support AVX2.
     #[target_feature(enable = "avx2")]
     unsafe fn classify_avx2(b: &[u8; 64]) -> Masks {
-        // SAFETY: the two 32-byte loads at offsets 0 and 32 stay inside the 64-byte array;
+        // SAFETY: the two 32-byte loads at offsets 0 and 32 stay inside the 64-byte array.
         // `_mm256_loadu_si256` needs no alignment.
         let (lo, hi) = unsafe {
             let p = b.as_ptr().cast::<__m256i>();

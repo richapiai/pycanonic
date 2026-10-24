@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 
 /// Sorted key paths of a parsed response, or of JSON text given as `bytes`. Only a `dict` and a
-/// `list`/`tuple` have members; any other value (a `str`, a `set`) is a scalar, as TypeScript sees
+/// `list`/`tuple` have members. Any other value (a `str`, a `set`) is a scalar, as TypeScript sees
 /// it. A Python object deeper than 512 levels, with more than 1,000,000 containers or 64 MiB of
 /// distinct paths (a cyclic one, or one that shares its children) raises `ValueError`.
 #[pyfunction]
@@ -25,7 +25,7 @@ pub fn shape(value: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
         .ok_or_else(|| PyValueError::new_err("shape: object too large or cyclic"))
 }
 
-/// FNV-1a over `shape(value)`, as 8 hex digits; equal to canonic's for the same document.
+/// FNV-1a over `shape(value)`, as 8 hex digits. Equal to canonic's for the same document.
 /// Raises `ValueError` where `shape` does.
 #[pyfunction]
 pub fn fingerprint(value: &Bound<'_, PyAny>) -> PyResult<String> {
@@ -51,7 +51,8 @@ impl FillMonitor {
         ))
     }
 
-    /// `window` as `stats_snapshot()` returns it, any mapping; alerts as dicts of `FieldAlert`'s fields.
+    /// `window` as `stats_snapshot()` returns it, any mapping. Returns alerts as dicts of
+    /// `FieldAlert`'s fields.
     fn check<'py>(
         &mut self,
         py: Python<'py>,

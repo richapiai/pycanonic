@@ -1,5 +1,5 @@
 //! Port of canonic/packages/canonic/test/transforms.test.ts plus the tables in docs/transforms.md.
-//! JS arrays are `Value::Container` for single-value transforms; `join` over an array uses `apply_list`.
+//! JS arrays are `Value::Container` for single-value transforms. `join` over an array uses `apply_list`.
 
 use canonic_core::{
     ArgError, Builtin, CastTo, NamePart, Semantic, Transform, Value, builtin,
@@ -41,7 +41,7 @@ fn cases() {
         ("cast", arg("number"), s("1,234"), Null),
         ("cast", arg("number"), s("0x10"), Null),
         ("cast", arg("integer"), s("0b11"), Null),
-        // TypeScript checks for the prefix before trimming, so its Number(" 0x10") is 16; a provider's
+        // TypeScript checks for the prefix before trimming, so its Number(" 0x10") is 16. A provider's
         // "0x10" is an id either way, and this port rejects it after the trim too.
         ("cast", arg("number"), s(" 0x10"), Null),
         ("cast", arg("number"), s("0o7"), Null),
@@ -272,7 +272,7 @@ fn cases() {
 
 #[test]
 fn integral_casts_keep_float_bits_when_not_i64() {
-    // -0 stays a number; 2^63 does not fit i64 and stays a float.
+    // -0 stays a number. 2^63 does not fit i64 and stays a float.
     assert_eq!(
         run("cast", arg("number"), Value::Float(9.3e18)),
         Value::Float(9.3e18)
@@ -347,7 +347,7 @@ fn join_lists() {
     assert_eq!(j(None, vec![Value::Container, Value::Container]), n);
     assert_eq!(j(None, vec![]), n);
     assert_eq!(j(arg(", "), vec![s("a"), s("b")]), s("a, b"));
-    // Only join reads a list; every other transform sees an array as a container.
+    // Only join reads a list. Every other transform sees an array as a container.
     assert_eq!(tx("lower", None).apply_list(&[s("A")]), n);
 }
 

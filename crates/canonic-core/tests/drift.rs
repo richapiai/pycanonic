@@ -312,7 +312,7 @@ fn a_key_renamed_inside_list_elements_trips_a_fill_alert_on_the_item_field() {
     for _ in 0..3 {
         assert_eq!(period_of("position"), []);
     }
-    // The array itself is as full as ever; only its elements lost the key.
+    // The array itself is as full as ever. Only its elements lost the key.
     assert_eq!(
         period_of("position"),
         [alert("jobs[].title", AlertKind::Fill, 0.0, 1.0, 2000)]
