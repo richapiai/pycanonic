@@ -1,0 +1,27 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "tags[]": {
+        "from": "tags",
+        "limit": 0
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"tags[]\"]: limit must be a positive integer"
+}

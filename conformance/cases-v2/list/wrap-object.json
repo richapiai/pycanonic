@@ -1,0 +1,64 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "offices[]": {
+        "from": "office",
+        "wrap": true,
+        "item": {
+          "city": "city"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "offices": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "office": {
+          "city": "x"
+        }
+      },
+      "context": null,
+      "expected": {
+        "offices": [
+          {
+            "city": "x"
+          }
+        ]
+      }
+    },
+    {
+      "body": {
+        "office": {}
+      },
+      "context": null,
+      "expected": {
+        "offices": [
+          {
+            "city": null
+          }
+        ]
+      }
+    }
+  ]
+}

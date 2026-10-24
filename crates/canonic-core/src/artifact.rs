@@ -1,6 +1,7 @@
 //! A compiled plan ready to map: the program, its stats, the linked custom transforms and the parse
 //! filter. Port of the `map` and `stats` half of canonic/packages/canonic/src/artifact.ts.
 
+use crate::cond::Cond;
 use crate::doc::Doc;
 use crate::exec::{Program, execute, execute_field};
 use crate::extract::{ExtractStream, Extractor};
@@ -172,15 +173,50 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
                 fields(f, members)
             }
             Field::Scalar(s) => scalar(f, s),
-            Field::List { from, kind, .. } => {
-                let e = node(f, from).elems.get_or_insert_default();
+            Field::List {
+                from, kind, ops, ..
+            } => {
+                let mut e = Filter::default();
                 match kind {
-                    ListKind::Item(c) => fields(e, c),
-                    ListKind::Pluck(p, tx) => node(e, p).all |= tx.is_empty() || custom(tx),
+                    ListKind::Item(c) => fields(&mut e, c),
+                    ListKind::Pluck(p, tx) => node(&mut e, p).all |= tx.is_empty() || custom(tx),
                     ListKind::Plain(tx) => e.all |= tx.is_empty() || custom(tx),
                 }
+                // Conditions, `unique` and `sort_by` can compare whole values.
+                let filter = ops.filter.iter().flat_map(cond_paths);
+                let keys = ops.unique.iter().chain(ops.sort.iter().map(|(p, _)| p));
+                for p in filter.chain(keys) {
+                    node(&mut e, p).all = true;
+                }
+                // Each flatten path holds the elements of the level below it.
+                for p in ops.flatten.iter().rev() {
+                    let mut up = Filter::default();
+                    node(&mut up, p).elems = Some(Box::new(e));
+                    e = up;
+                }
+                let src = node(f, from);
+                // A wrapped source can be the one element itself.
+                if ops.wrap {
+                    merge(src, &e);
+                }
+                merge(src.elems.get_or_insert_default(), &e);
             }
         }
+    }
+}
+
+/// The element paths a condition reads. `$input` paths read the context, not the body.
+fn cond_paths(c: &Cond) -> Vec<&Path> {
+    match c {
+        Cond::All(cs) => cs.iter().flat_map(cond_paths).collect(),
+        Cond::Present(p, _)
+        | Cond::Eq(p, _)
+        | Cond::In(p, _)
+        | Cond::Missing(p)
+        | Cond::Empty(p) => match p.first() {
+            Some(Step::Key(k)) if k == "$input" => vec![],
+            _ => vec![p],
+        },
     }
 }
 

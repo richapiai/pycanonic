@@ -2,6 +2,7 @@
 // language 2 rule still writes format 1.
 
 use canonic_core::{PLAN_FORMAT, Plan, compile, parse_spec, validate_spec};
+use proptest::prelude::*;
 use serde_json::{Value as J, json};
 
 fn schema() -> J {
@@ -357,4 +358,63 @@ fn a_failed_present_counts_a_miss_for_each_leaf_and_still_routes() {
         a.extract(body),
         [Some(canonic_core::Value::Str("a@b.co".into()))]
     );
+}
+
+fn ids_artifact(rule: J) -> canonic_core::Artifact {
+    let mut spec = spec_with_language(json!(2));
+    spec["fields"] = json!({"ids[]": rule});
+    let schema = json!({"type": "object", "properties": {
+        "ids": {"type": "array", "items": {"type": "integer"}}}});
+    canonic_core::Artifact::new(compile(&spec, &schema, &[]).unwrap(), Default::default()).unwrap()
+}
+
+#[test]
+fn list_ops_write_format_2_and_load_back() {
+    let a = ids_artifact(json!({"from": "xs[].ys[]", "wrap": true, "pluck": "id",
+        "filter": [{"path": "k", "in": [1, "a"]}, {"path": "id", "present": true}],
+        "unique": "id", "sort_by": "id", "order": "desc", "limit": 2}));
+    let text = serde_json::to_value(&*a.plan).unwrap();
+    assert_eq!(text["format"], 2);
+    let loaded: Plan = serde_json::from_value(text.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&loaded).unwrap(), text);
+    let b = canonic_core::Artifact::new(loaded, Default::default()).unwrap();
+    let body = br#"{"xs": {"ys": [{"id": 1, "k": 1}, {"id": 3, "k": "a"}, {"id": 2, "k": 1},
+        {"id": 3, "k": 1}, {"id": 9}]}}"#;
+    assert_eq!(b.map_json(body), br#"{"ids":[3,2]}"#);
+    assert!(a.plan.source().contains("ids[] <- xs[].ys[].id | wrap"));
+}
+
+/// A small value for `k`: an int, a string, a bool or null.
+fn small() -> impl Strategy<Value = J> {
+    prop_oneof![
+        (0i64..3).prop_map(J::from),
+        prop::sample::select(vec!["a", "b"]).prop_map(J::from),
+        Just(J::Bool(true)),
+        Just(J::Null),
+    ]
+}
+
+proptest! {
+    #[test]
+    fn prop_filter_keeps_order(
+        ks in prop::collection::vec(prop::option::of(small()), 0..12),
+        want in small(),
+    ) {
+        let xs: Vec<J> = (ks.iter().enumerate())
+            .map(|(id, k)| match k {
+                Some(k) => json!({"id": id, "k": k}),
+                None => json!({"id": id}),
+            })
+            .collect();
+        // [x["id"] for x in xs if x.get("k") == want]
+        let expect: Vec<J> = (xs.iter())
+            .filter(|x| *x.get("k").unwrap_or(&J::Null) == want)
+            .map(|x| x["id"].clone())
+            .collect();
+        let a = ids_artifact(json!({"from": "xs", "pluck": "id",
+            "filter": {"path": "k", "eq": want}}));
+        let body = serde_json::to_vec(&json!({"xs": xs})).unwrap();
+        let got: J = serde_json::from_slice(&a.map_json(&body)).unwrap();
+        prop_assert_eq!(&got, &json!({"ids": expect}));
+    }
 }

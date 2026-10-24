@@ -1,0 +1,57 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "a[]": {
+        "from": "industry",
+        "wrap": true
+      },
+      "b[]": {
+        "from": "industry",
+        "wrap": true,
+        "missing": "[]"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "b": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "a": null,
+        "b": []
+      }
+    },
+    {
+      "body": {
+        "industry": null
+      },
+      "context": null,
+      "expected": {
+        "a": null,
+        "b": []
+      }
+    }
+  ]
+}

@@ -1,8 +1,9 @@
-// `holds` over a parsed document: `present`, `$input` paths and element-relative paths.
+// `holds` over a parsed document: every condition form, `$input` paths and element-relative paths.
 
 use canonic_core::cond::{Cond, holds};
 use canonic_core::doc::{KeyPath, KeyStep};
 use canonic_core::{Filter, Key, parse};
+use serde_json::json;
 
 fn path(keys: &[&str]) -> KeyPath {
     (keys.iter().enumerate())
@@ -42,4 +43,56 @@ fn present_reads_the_element_then_the_root_and_input_reads_ctx() {
     let all_of = Cond::All(vec![present(&["a"], true), present(&["x"], true)]);
     assert!(!holds(&all_of, root, None, None));
     assert!(holds(&Cond::All(vec![]), root, None, None));
+}
+
+#[test]
+fn eq_and_in_compare_json_values() {
+    let all = Filter::all();
+    let root = parse(
+        br#"{"s": "x", "i": 1, "f": 1.5, "b": true, "n": null, "o": {"k": [1, 2]}, "e": ""}"#,
+        &all,
+    )
+    .unwrap();
+    let root = Some(&&root);
+    let eq = |keys: &[&str], v: serde_json::Value| Cond::Eq(path(keys), v);
+    assert!(holds(&eq(&["s"], json!("x")), root, None, None));
+    assert!(!holds(&eq(&["s"], json!("y")), root, None, None));
+    assert!(holds(&eq(&["i"], json!(1)), root, None, None));
+    assert!(holds(&eq(&["i"], json!(1.0)), root, None, None));
+    assert!(!holds(&eq(&["i"], json!("1")), root, None, None));
+    assert!(!holds(&eq(&["b"], json!(1)), root, None, None));
+    assert!(holds(&eq(&["f"], json!(1.5)), root, None, None));
+    assert!(holds(&eq(&["b"], json!(true)), root, None, None));
+    // Missing and null both equal null.
+    assert!(holds(&eq(&["n"], json!(null)), root, None, None));
+    assert!(holds(&eq(&["x"], json!(null)), root, None, None));
+    assert!(!holds(&eq(&["x"], json!("x")), root, None, None));
+    assert!(holds(&eq(&["o"], json!({"k": [1, 2]})), root, None, None));
+    assert!(!holds(&eq(&["o"], json!({"k": [2, 1]})), root, None, None));
+    let any =
+        |keys: &[&str], v: serde_json::Value| Cond::In(path(keys), v.as_array().unwrap().clone());
+    assert!(holds(&any(&["s"], json!(["y", "x"])), root, None, None));
+    assert!(!holds(&any(&["s"], json!([])), root, None, None));
+    assert!(holds(&any(&["x"], json!([1, null])), root, None, None));
+}
+
+#[test]
+fn missing_and_empty() {
+    let all = Filter::all();
+    let root = parse(
+        br#"{"s": "x", "e": "", "n": null, "a": [], "o": {}, "z": 0, "f": false, "l": [null]}"#,
+        &all,
+    )
+    .unwrap();
+    let root = Some(&&root);
+    let missing = |k: &str| holds(&Cond::Missing(path(&[k])), root, None, None);
+    let empty = |k: &str| holds(&Cond::Empty(path(&[k])), root, None, None);
+    assert!(missing("x") && missing("n"));
+    assert!(!missing("e") && !missing("a") && !missing("z"));
+    for k in ["x", "n", "e", "a", "o"] {
+        assert!(empty(k), "{k} is empty");
+    }
+    for k in ["s", "z", "f", "l"] {
+        assert!(!empty(k), "{k} is not empty");
+    }
 }

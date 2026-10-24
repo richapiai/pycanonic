@@ -18,9 +18,12 @@
 //!   inside it is a miss. With `if_empty` or an object `x-empty` of null or `{}`, an
 //!   object that writes nothing but null is rewound to that. An `x-empty` placeholder (`[]` or `{}`
 //!   for an unmapped field or a missing list) is not a fill for this check.
+//! - Language 2: a list with `wrap`, flatten, `filter`, `unique`, `sort_by` or `limit`
+//!   collects its elements first (`collect`). Its `empty` applies to what is left. Other lists
+//!   stream the source array.
 
 use crate::canonical::{Empty, Semantic};
-use crate::cond::{Cond, holds};
+use crate::cond::{Cond, Rank, holds, key_text};
 use crate::doc::{Doc, Key, KeyPath as Path, KeyStep as Step, read};
 use crate::plan::{CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, Sink, copy};
@@ -146,7 +149,7 @@ enum Op {
         from: At,
         kind: Kind,
         stat: usize,
-        ops: ListOps,
+        ops: Box<ListOps<Path>>,
     },
     /// Written as it is. Counts no miss, so it is always a fill. The stat slot is `None` for an
     /// unmapped field's `x-empty`, a placeholder that does not make its object filled.
@@ -227,6 +230,31 @@ impl Builder<'_> {
                 }
             })
             .collect()
+    }
+
+    fn cond(&mut self, c: &Cond) -> Cond<Path> {
+        match c {
+            Cond::Present(p, b) => Cond::Present(self.path(p), *b),
+            Cond::Eq(p, v) => Cond::Eq(self.path(p), v.clone()),
+            Cond::In(p, vs) => Cond::In(self.path(p), vs.clone()),
+            Cond::Missing(p) => Cond::Missing(self.path(p)),
+            Cond::Empty(p) => Cond::Empty(self.path(p)),
+            Cond::All(cs) => Cond::All(cs.iter().map(|c| self.cond(c)).collect()),
+        }
+    }
+
+    /// The options with interned paths. They read elements, so they join no scope.
+    fn ops(&mut self, o: &ListOps) -> ListOps<Path> {
+        ListOps {
+            missing: o.missing,
+            empty: o.empty,
+            wrap: o.wrap,
+            flatten: o.flatten.iter().map(|p| self.path(p)).collect(),
+            filter: o.filter.as_ref().map(|c| self.cond(c)),
+            unique: o.unique.as_ref().map(|p| self.path(p)),
+            sort: o.sort.as_ref().map(|(p, desc)| (self.path(p), *desc)),
+            limit: o.limit,
+        }
     }
 
     /// `p` as a node of the current scope.
@@ -317,7 +345,7 @@ impl Builder<'_> {
                     ListKind::Plain(tx) => Kind::Elems(Vec::new(), self.tx(tx)?),
                 },
                 stat: self.stat(*stat)?,
-                ops: *ops,
+                ops: Box::new(self.ops(ops)),
             },
         })
     }
@@ -424,9 +452,51 @@ fn json_value(v: &serde_json::Value) -> Value<'_> {
 /// chain) has exponentially many paths though it is small. This bounds the walk.
 pub(crate) const MAX_NODES: usize = 1_000_000;
 
+/// The elements of a list source (`None`: missing) after `ops`, in this order: wrap, flatten,
+/// filter, unique, sort, limit. `None` when the source is missing or not an array (and not
+/// wrapped). Inside a filter, paths read the element, as in an item map.
+pub(crate) fn collect<D: Doc>(from: Option<D>, ops: &ListOps<Path>) -> Option<Vec<D>> {
+    let x = from?;
+    let mut xs: Vec<D> = match x.len() {
+        Some(n) => (0..n).filter_map(|i| x.item(i)).collect(),
+        None if ops.wrap => vec![x],
+        None => return None,
+    };
+    // A missing, null or non-array value on a flatten path adds nothing.
+    for p in &ops.flatten {
+        xs = (xs.iter())
+            .filter_map(|e| read(Some(e), p))
+            .flat_map(|a| (0..a.len().unwrap_or(0)).filter_map(move |i| a.item(i)))
+            .collect();
+    }
+    if let Some(c) = &ops.filter {
+        xs.retain(|e| holds(c, Some(e), None, None));
+    }
+    // A null or missing key never matches another, so every such element stays.
+    if let Some(p) = &ops.unique {
+        let mut seen = std::collections::HashSet::new();
+        xs.retain(|e| {
+            read(Some(e), p)
+                .and_then(|v| key_text(&v))
+                .is_none_or(|k| seen.insert(k))
+        });
+    }
+    if let Some((p, desc)) = &ops.sort {
+        let mut keyed: Vec<(Rank, D)> = (xs.into_iter())
+            .map(|e| (Rank::of(read(Some(&e), p).as_ref()), e))
+            .collect();
+        keyed.sort_by(|a, b| a.0.cmp(&b.0, *desc));
+        xs = keyed.into_iter().map(|(_, e)| e).collect();
+    }
+    if let Some(n) = ops.limit {
+        xs.truncate(n);
+    }
+    Some(xs)
+}
+
 /// A document value as JSON, for a custom transform's container input. `None` past `MAX_DEPTH`
 /// nested containers (a host object that contains itself) or past `budget` values (see `MAX_NODES`).
-fn json<D: Doc>(d: &D, enclosing: usize, budget: &mut usize) -> Option<J> {
+pub(crate) fn json<D: Doc>(d: &D, enclosing: usize, budget: &mut usize) -> Option<J> {
     copy(d, enclosing, budget).map(to_json)
 }
 
@@ -623,15 +693,10 @@ impl<S: Sink> Exec<'_, S> {
                 }
                 // Known before anything is written: the key is left out.
                 Op::List {
-                    from,
-                    stat,
-                    ops:
-                        ListOps {
-                            missing: Empty::Missing,
-                            ..
-                        },
-                    ..
-                } if f.read(*from).is_none() => self.stats.miss(*stat),
+                    from, stat, ops, ..
+                } if ops.missing == Empty::Missing && f.read(*from).is_none() => {
+                    self.stats.miss(*stat)
+                }
                 op => {
                     self.sink.next(Some(*name), members.is_empty());
                     members.push((*name, self.op(op, f)));
@@ -651,7 +716,7 @@ impl<S: Sink> Exec<'_, S> {
                 kind,
                 stat,
                 ops,
-            } => self.list(*from, kind, *stat, *ops, f),
+            } => self.list(*from, kind, *stat, ops, f),
             Op::Const(v, stat) => {
                 self.filled += (stat.is_some() && !v.is_null()) as usize;
                 self.sink.passthrough(&v)
@@ -776,18 +841,41 @@ impl<S: Sink> Exec<'_, S> {
         from: At,
         kind: &Kind,
         stat: usize,
-        ops: ListOps,
+        ops: &ListOps<Path>,
         f: &mut Frame<'_, D>,
     ) -> S::Out {
         let Some(x) = f.read(from) else {
             self.stats.miss(stat);
             return self.empty(ops.missing, false);
         };
-        let Some(n) = x.len() else {
-            self.stats.error(stat);
-            self.stats.miss(stat);
-            return self.sink.scalar(Value::Null);
-        };
+        // Lists without A4 or A6 options stream the source array, as in language 1.
+        if !ops.collects() {
+            return match x.len() {
+                Some(n) => self.elements(n, |i| x.item(i), kind, stat, ops),
+                None => self.not_a_list(stat),
+            };
+        }
+        match collect(Some(x), ops) {
+            Some(xs) => self.elements(xs.len(), |i| xs.get(i).cloned(), kind, stat, ops),
+            None => self.not_a_list(stat),
+        }
+    }
+
+    fn not_a_list(&mut self, stat: usize) -> S::Out {
+        self.stats.error(stat);
+        self.stats.miss(stat);
+        self.sink.scalar(Value::Null)
+    }
+
+    /// A list of the `n` elements `get` gives.
+    fn elements<D: Doc>(
+        &mut self,
+        n: usize,
+        get: impl Fn(usize) -> Option<D>,
+        kind: &Kind,
+        stat: usize,
+        ops: &ListOps<Path>,
+    ) -> S::Out {
         if n == 0 {
             return self.empty(ops.empty, true);
         }
@@ -801,9 +889,9 @@ impl<S: Sink> Exec<'_, S> {
                 self.sink.next(None, i == 0);
                 match kind {
                     Kind::Item(fields, scope) => {
-                        self.object(fields, &mut Frame::new(x.item(i), scope, true))
+                        self.object(fields, &mut Frame::new(get(i), scope, true))
                     }
-                    Kind::Elems(path, tx) => self.element(read(x.item(i).as_ref(), path), tx, stat),
+                    Kind::Elems(path, tx) => self.element(read(get(i).as_ref(), path), tx, stat),
                 }
             })
             .collect();

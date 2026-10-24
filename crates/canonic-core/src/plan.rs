@@ -2,6 +2,7 @@
 //! semantics, as data. The executor runs it. `source()` prints it for humans.
 
 use crate::canonical::{Empty, Semantic};
+use crate::cond::Cond;
 use crate::spec::{Path, Source, Status, Step};
 use crate::transforms::{Builtin, CastTo, NamePart};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -61,20 +62,44 @@ pub enum ListKind {
     Plain(Vec<TxRef>),
 }
 
-/// Language 2 array rule options. The default is language 1 behavior.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct ListOps {
+/// Language 2 array rule options. The default is language 1 behavior. The plan holds spec paths,
+/// the executor its interned paths (`ListOps<KeyPath>`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ListOps<P = Path> {
     /// The output for a missing or null source: `Null` or `List`.
     pub missing: Empty,
-    /// The output for an empty source array: `List` or `Null`.
+    /// The output for an empty source array, also after filtering: `List` or `Null`.
     pub empty: Empty,
+    /// A source that is a scalar or an object is a one-element array.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wrap: bool,
+    /// A6, applied in field order. `flatten`: each element is replaced by the elements of the array
+    /// at each path in turn (`from: "jobs[].skills[]"` holds `[skills]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flatten: Vec<P>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Cond<P>>,
+    /// Keeps the first element of each key at the path. The empty path is the whole element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unique: Option<P>,
+    /// The path to sort by and whether the order is descending. Stable, null last.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<(P, bool)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
 }
 
-impl Default for ListOps {
-    fn default() -> ListOps {
+impl<P> Default for ListOps<P> {
+    fn default() -> ListOps<P> {
         ListOps {
             missing: Empty::Null,
             empty: Empty::List,
+            wrap: false,
+            flatten: Vec::new(),
+            filter: None,
+            unique: None,
+            sort: None,
+            limit: None,
         }
     }
 }
@@ -82,6 +107,18 @@ impl Default for ListOps {
 impl ListOps {
     fn is_default(&self) -> bool {
         *self == ListOps::default()
+    }
+}
+
+impl<P> ListOps<P> {
+    /// True when the elements must be collected (`exec::collect`) instead of streamed.
+    pub fn collects(&self) -> bool {
+        self.wrap
+            || !self.flatten.is_empty()
+            || self.filter.is_some()
+            || self.unique.is_some()
+            || self.sort.is_some()
+            || self.limit.is_some()
     }
 }
 
@@ -345,8 +382,30 @@ fn line(out: &mut String, name: &str, field: &Field) {
         Field::List {
             from, kind, ops, ..
         } => {
-            let from = path(from);
+            let mut from = path(from);
+            for p in &ops.flatten {
+                from += "[]";
+                if !p.is_empty() {
+                    from += &format!(".{}", path(p)).replace(".[", "[");
+                }
+            }
             let mut opts = String::new();
+            if ops.wrap {
+                opts += " | wrap";
+            }
+            if let Some(c) = &ops.filter {
+                opts += &format!(" | filter {}", cond(c));
+            }
+            if let Some(p) = &ops.unique {
+                opts += &format!(" | unique {}", path(p));
+            }
+            if let Some((p, desc)) = &ops.sort {
+                let order = if *desc { "desc" } else { "asc" };
+                opts += &format!(" | sort_by {} {order}", path(p));
+            }
+            if let Some(n) = ops.limit {
+                opts += &format!(" | limit {n}");
+            }
             if ops.missing == Empty::List {
                 opts += " | missing []";
             }
@@ -363,6 +422,20 @@ fn line(out: &mut String, name: &str, field: &Field) {
                 }
                 ListKind::Plain(tx) => _ = writeln!(out, "{name}[] <- {from}[]{}{opts}", pipe(tx)),
             }
+        }
+    }
+}
+
+fn cond(c: &Cond) -> String {
+    match c {
+        Cond::Present(p, b) => format!("{} present {b}", path(p)),
+        Cond::Eq(p, v) => format!("{} eq {v}", path(p)),
+        Cond::In(p, vs) => format!("{} in {}", path(p), Value::from(vs.clone())),
+        Cond::Missing(p) => format!("missing {}", path(p)),
+        Cond::Empty(p) => format!("empty {}", path(p)),
+        Cond::All(cs) => {
+            let all: Vec<String> = cs.iter().map(cond).collect();
+            format!("all({})", all.join(", "))
         }
     }
 }

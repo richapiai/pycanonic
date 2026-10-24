@@ -1,0 +1,58 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "a[]": {
+        "from": "tags",
+        "filter": {
+          "path": "$",
+          "eq": "z"
+        },
+        "empty": "null"
+      },
+      "b[]": {
+        "from": "tags",
+        "filter": {
+          "path": "$",
+          "eq": "z"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "b": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "tags": [
+          "x",
+          "y"
+        ]
+      },
+      "context": null,
+      "expected": {
+        "a": null,
+        "b": []
+      }
+    }
+  ]
+}

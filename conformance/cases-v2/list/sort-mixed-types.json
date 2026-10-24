@@ -1,0 +1,116 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "vals[]": {
+        "from": "vals",
+        "sort_by": "$"
+      },
+      "down[]": {
+        "from": "vals",
+        "sort_by": "$",
+        "order": "desc"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "vals": {
+        "type": "array",
+        "items": {
+          "type": [
+            "integer",
+            "number",
+            "string",
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "down": {
+        "type": "array",
+        "items": {
+          "type": [
+            "integer",
+            "number",
+            "string",
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "vals": [
+          3,
+          "b",
+          null,
+          true,
+          1,
+          "a"
+        ]
+      },
+      "context": null,
+      "expected": {
+        "vals": [
+          1,
+          3,
+          "a",
+          "b",
+          true,
+          null
+        ],
+        "down": [
+          true,
+          "b",
+          "a",
+          3,
+          1,
+          null
+        ]
+      }
+    },
+    {
+      "body": {
+        "vals": [
+          false,
+          "B",
+          "a",
+          2.5,
+          -1,
+          true,
+          "é"
+        ]
+      },
+      "context": null,
+      "expected": {
+        "vals": [
+          -1,
+          2.5,
+          "B",
+          "a",
+          "é",
+          false,
+          true
+        ],
+        "down": [
+          true,
+          false,
+          "é",
+          "a",
+          "B",
+          2.5,
+          -1
+        ]
+      }
+    }
+  ]
+}

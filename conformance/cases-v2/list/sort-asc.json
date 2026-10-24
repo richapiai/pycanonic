@@ -1,0 +1,92 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "people[]": {
+        "from": "people",
+        "sort_by": "age",
+        "item": {
+          "name": "name"
+        }
+      },
+      "asc[]": {
+        "from": "people",
+        "sort_by": "age",
+        "order": "asc",
+        "pluck": "name"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "people": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "asc": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "people": [
+          {
+            "name": "a",
+            "age": 30
+          },
+          {
+            "name": "b"
+          },
+          {
+            "name": "c",
+            "age": 20.5
+          },
+          {
+            "name": "d",
+            "age": 40
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "people": [
+          {
+            "name": "c"
+          },
+          {
+            "name": "a"
+          },
+          {
+            "name": "d"
+          },
+          {
+            "name": "b"
+          }
+        ],
+        "asc": [
+          "c",
+          "a",
+          "d",
+          "b"
+        ]
+      }
+    }
+  ]
+}

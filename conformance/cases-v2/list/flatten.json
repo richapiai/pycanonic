@@ -1,0 +1,78 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "skills[]": {
+        "from": "jobs[].skills[]"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "jobs": [
+          {
+            "skills": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "title": "x"
+          },
+          {
+            "skills": null
+          },
+          {
+            "skills": [
+              "c"
+            ]
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "skills": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    },
+    {
+      "body": {
+        "jobs": [
+          {
+            "title": "x"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "skills": []
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "skills": null
+      }
+    }
+  ]
+}

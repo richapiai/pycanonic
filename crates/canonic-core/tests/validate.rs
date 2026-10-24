@@ -435,11 +435,17 @@ fn parse_spec_returns_the_typed_spec() {
         transform,
         missing: None,
         empty: None,
+        wrap: false,
+        flatten,
+        filter: None,
+        unique: None,
+        sort: None,
+        limit: None,
     }) = &s.fields[3].1
     else {
         panic!()
     };
-    assert!(from.is_empty() && transform.is_empty());
+    assert!(from.is_empty() && flatten.is_empty() && transform.is_empty());
     assert_eq!(item[0].0, "title");
     let Rule::Array(tags) = &s.fields[4].1 else {
         panic!()

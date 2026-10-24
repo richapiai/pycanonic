@@ -3,6 +3,7 @@
 //! does (tests/validate.rs). spec.schema.json stays language 1.
 
 use crate::canonical::Empty;
+use crate::cond::{self, Cond};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -55,6 +56,14 @@ pub struct ArrayRule {
     pub missing: Option<Empty>,
     /// Language 2: the output for an empty source array, `Null` or `List`.
     pub empty: Option<Empty>,
+    /// Language 2. `from` is the path before the first `[]`, `flatten` the paths between
+    /// the next ones. `unique` is the empty path for `true`, `sort` holds `desc`.
+    pub wrap: bool,
+    pub flatten: Vec<Path>,
+    pub filter: Option<Cond>,
+    pub unique: Option<Path>,
+    pub sort: Option<(Path, bool)>,
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -97,6 +106,22 @@ impl fmt::Display for Issue {
         write!(f, "{}: {}", self.at, self.message)
     }
 }
+
+/// The keys of an array rule. The ones from `missing` on are language 2.
+const ARRAY_KEYS: [&str; 12] = [
+    "from",
+    "item",
+    "pluck",
+    "transform",
+    "missing",
+    "empty",
+    "wrap",
+    "filter",
+    "unique",
+    "sort_by",
+    "order",
+    "limit",
+];
 
 const STATUSES: [&str; 4] = ["draft", "shadow", "promoted", "deprecated"];
 
@@ -153,15 +178,30 @@ fn quoted(p: &str, start: usize) -> Option<(String, usize)> {
 /// `["quoted keys"]` in JSON string syntax. A leading bare `$` is the response itself (`$` alone is the
 /// empty path). A key that is literally named `$` is written `["$"]`. Returns None for an invalid path.
 pub fn parse_path(p: &str) -> Option<Path> {
+    let mut segments = steps(p, false)?;
+    segments.pop()
+}
+
+/// A language 2 array `from`: a path that can hold `[]` (flatten). The segments around each `[]`,
+/// so `jobs[].skills[]` gives `[jobs, skills, $]`. A path without `[]` is one segment.
+pub fn parse_from(p: &str) -> Option<Vec<Path>> {
+    steps(p, true)
+}
+
+fn steps(p: &str, flat: bool) -> Option<Vec<Path>> {
     let b = p.as_bytes();
     if b.is_empty() {
         return None;
     }
+    let mut segments = Vec::new();
     let mut out = Vec::new();
     let mut i = 0;
     while i < b.len() {
         let first = i == 0;
-        if b[i] == b'[' {
+        if flat && b[i..].starts_with(b"[]") {
+            segments.push(std::mem::take(&mut out));
+            i += 2;
+        } else if b[i] == b'[' {
             if b.get(i + 1) == Some(&b'"') {
                 let (key, end) = quoted(p, i + 2)?;
                 out.push(Step::Key(key));
@@ -193,7 +233,8 @@ pub fn parse_path(p: &str) -> Option<Path> {
             i = j;
         }
     }
-    Some(out)
+    segments.push(out);
+    Some(segments)
 }
 
 fn is_name(s: &str) -> bool {
@@ -334,20 +375,18 @@ impl Checker {
         let Some(r) = r.as_object() else {
             return self.fail(at, "array fields need a rule object with from");
         };
-        self.keys(
-            r,
-            at,
-            &["from", "item", "pluck", "transform", "missing", "empty"],
-        );
-        for k in ["missing", "empty"] {
-            if let Some(v) = r.get(k) {
+        self.keys(r, at, &ARRAY_KEYS);
+        for k in &ARRAY_KEYS[4..] {
+            if r.contains_key(*k) {
                 self.lang2(at, k);
-                if list_empty(v).is_none() {
-                    self.fail(&format!("{at}.{k}"), "must be \"null\" or \"[]\"");
-                }
             }
         }
-        self.path(r.get("from"), &format!("{at}.from"));
+        for k in ["missing", "empty"] {
+            if r.get(k).is_some_and(|v| list_empty(v).is_none()) {
+                self.fail(&format!("{at}.{k}"), "must be \"null\" or \"[]\"");
+            }
+        }
+        self.list_ops(r, at);
         let (item, pluck) = (r.get("item"), r.get("pluck"));
         if item.is_some() && pluck.is_some() {
             self.fail(at, "item and pluck can't be combined");
@@ -363,6 +402,57 @@ impl Checker {
         }
         if let Some(t) = r.get("transform") {
             self.transform(t, &format!("{at}.transform"));
+        }
+    }
+    /// The language 2 options of an array rule, and its `from`.
+    fn list_ops(&mut self, r: &Map<String, Value>, at: &str) {
+        let from = r.get("from").and_then(Value::as_str);
+        match from.and_then(parse_from) {
+            Some(s) if s.len() > 1 && self.language == 2 => {
+                if !s.last().unwrap().is_empty() {
+                    self.fail(&format!("{at}.from"), "a path with [] must end in []");
+                }
+            }
+            _ => self.path(r.get("from"), &format!("{at}.from")),
+        }
+        if r.get("wrap").is_some_and(|v| !v.is_boolean()) {
+            self.fail(&format!("{at}.wrap"), "must be true or false");
+        }
+        match r.get("filter") {
+            Some(Value::Array(a)) => {
+                for (i, c) in a.iter().enumerate() {
+                    self.cond(c, &format!("{at}.filter[{i}]"));
+                }
+            }
+            Some(c) => self.cond(c, &format!("{at}.filter")),
+            None => {}
+        }
+        match r.get("unique") {
+            None | Some(Value::Bool(true)) => {}
+            Some(Value::String(p)) if parse_path(p).is_some() => {}
+            Some(_) => self.fail(&format!("{at}.unique"), "must be true or a path"),
+        }
+        if r.contains_key("sort_by") {
+            self.path(r.get("sort_by"), &format!("{at}.sort_by"));
+        }
+        match r.get("order") {
+            Some(o) if o != "asc" && o != "desc" => {
+                self.fail(&format!("{at}.order"), "must be \"asc\" or \"desc\"")
+            }
+            Some(_) if !r.contains_key("sort_by") => {
+                self.fail(&format!("{at}.order"), "needs sort_by")
+            }
+            _ => {}
+        }
+        if r.get("limit")
+            .is_some_and(|l| l.as_u64().is_none_or(|n| n == 0))
+        {
+            self.fail(at, "limit must be a positive integer");
+        }
+    }
+    fn cond(&mut self, c: &Value, at: &str) {
+        for (sub, m) in cond::parse(c).err().unwrap_or_default() {
+            self.fail(&format!("{at}{sub}"), &m);
         }
     }
     fn optional(&mut self, o: &Map<String, Value>, at: &str) {
@@ -570,8 +660,27 @@ fn rule(key: &str, r: &Value) -> Rule {
         };
     }
     if key.ends_with("[]") {
+        let mut from = parse_from(r["from"].as_str().unwrap()).unwrap();
+        if from.len() > 1 {
+            from.pop(); // the empty path after the last `[]`
+        }
+        let first = from.remove(0);
         return Rule::Array(ArrayRule {
-            from: path(&r["from"]),
+            from: first,
+            flatten: from,
+            wrap: r.get("wrap") == Some(&Value::Bool(true)),
+            filter: r.get("filter").map(|f| match f {
+                Value::Array(a) => Cond::All(a.iter().map(|c| cond::parse(c).unwrap()).collect()),
+                c => cond::parse(c).unwrap(),
+            }),
+            unique: r.get("unique").map(|u| match u {
+                Value::String(p) => parse_path(p).unwrap(),
+                _ => Vec::new(),
+            }),
+            sort: r
+                .get("sort_by")
+                .map(|p| (path(p), r.get("order").is_some_and(|o| o == "desc"))),
+            limit: r.get("limit").and_then(Value::as_u64).map(|n| n as usize),
             item: r.get("item").map(field_map),
             pluck: r.get("pluck").map(path),
             transform: transform(r.get("transform")),

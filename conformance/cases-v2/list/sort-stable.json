@@ -1,0 +1,88 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "up[]": {
+        "from": "people",
+        "sort_by": "k",
+        "pluck": "name"
+      },
+      "down[]": {
+        "from": "people",
+        "sort_by": "k",
+        "order": "desc",
+        "pluck": "name"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "up": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "down": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "people": [
+          {
+            "name": "a",
+            "k": 1
+          },
+          {
+            "name": "b",
+            "k": 0
+          },
+          {
+            "name": "c",
+            "k": 1
+          },
+          {
+            "name": "d"
+          },
+          {
+            "name": "e",
+            "k": 0
+          },
+          {
+            "name": "f"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "up": [
+          "b",
+          "e",
+          "a",
+          "c",
+          "d",
+          "f"
+        ],
+        "down": [
+          "a",
+          "c",
+          "b",
+          "e",
+          "d",
+          "f"
+        ]
+      }
+    }
+  ]
+}

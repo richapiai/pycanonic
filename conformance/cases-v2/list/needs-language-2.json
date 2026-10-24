@@ -1,0 +1,26 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "tags[]": {
+        "from": "tags",
+        "wrap": true
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"tags[]\"]: \"wrap\" needs \"language\": 2"
+}

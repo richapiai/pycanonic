@@ -146,6 +146,12 @@ impl Resolver<'_> {
         let ops = ListOps {
             missing: r.missing.or(node.empty).unwrap_or(Empty::Null),
             empty: r.empty.unwrap_or(Empty::List),
+            wrap: r.wrap,
+            flatten: r.flatten.clone(),
+            filter: r.filter.clone(),
+            unique: r.unique.clone(),
+            sort: r.sort.clone(),
+            limit: r.limit,
         };
         Ok(Field::List {
             from: r.from.clone(),

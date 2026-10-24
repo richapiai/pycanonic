@@ -1,0 +1,77 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "names[]": {
+        "from": "people",
+        "pluck": "name",
+        "filter": [
+          {
+            "path": "role",
+            "eq": "x"
+          },
+          {
+            "path": "email",
+            "present": true
+          }
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "names": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "people": [
+          {
+            "name": "a",
+            "status": "active",
+            "role": "x",
+            "email": "a@x"
+          },
+          {
+            "name": "b",
+            "status": "gone",
+            "role": "y"
+          },
+          {
+            "name": "c",
+            "status": "active",
+            "role": "z",
+            "email": null
+          },
+          {
+            "name": "d",
+            "role": "x",
+            "email": "d@x"
+          },
+          {
+            "name": "e",
+            "role": "x"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "names": [
+          "a",
+          "d"
+        ]
+      }
+    }
+  ]
+}
