@@ -27,6 +27,11 @@ mod _core {
     #[pymodule_export]
     use crate::view::View;
 
+    #[pymodule_init]
+    fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        crate::artifact::add_reason(m.py())
+    }
+
     #[pyfunction]
     fn version() -> &'static str {
         canonic_core::version()

@@ -202,6 +202,22 @@ impl Resolver<'_> {
                 rule => (rule, None),
             };
             let path = field_key(key).expect("the grammar checked the key").0;
+            // `extract` reads a routing field below an object whatever its `when`.
+            if when.is_some() && matches!(rule, Rule::Object { .. }) {
+                let routed = map.iter().any(|(k, _)| {
+                    let p = field_key(k).map(|(p, _)| p).unwrap_or_default();
+                    let node = (p.len() > path.len() && p.starts_with(&path))
+                        .then(|| lookup(children, &p))
+                        .flatten();
+                    matches!(
+                        node.map(|n| &n.kind),
+                        Some(Kind::Scalar { routing: true, .. })
+                    )
+                });
+                if routed {
+                    return Err(format!("{kat}: routing fields can't have when"));
+                }
+            }
             let target = lookup(children, &path).ok_or_else(|| {
                 let name = key.strip_suffix("[]").unwrap_or(key);
                 format!("{kat}: canonical schema has no field {}", json(name))

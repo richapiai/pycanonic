@@ -188,3 +188,17 @@ def test_reject_and_when_on_input_validate_the_context():
     for way in _ways_with(b, {"n": "a"}, {"on": math.nan}):
         with pytest.raises(TypeError):
             way()
+
+
+def test_rejected_reason_comes_from_args():
+    import pickle
+
+    import pytest
+
+    assert pycanonic.Rejected("x").reason == "x"
+    a = _reject_artifact()
+    with pytest.raises(pycanonic.Rejected) as e:
+        a.map(b'{"data": {}}')
+    back = pickle.loads(pickle.dumps(e.value))
+    assert type(back) is pycanonic.Rejected
+    assert back.reason == e.value.reason == '{"missing":"data.name"}'

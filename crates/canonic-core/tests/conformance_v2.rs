@@ -50,10 +50,14 @@ fn run(case: &J) -> Result<Vec<String>, String> {
         let want = &input["expected"];
         let ctx = Some(&input["context"]).filter(|c| !c.is_null());
         if let Some(reason) = want.get("$rejected") {
-            let got = [
+            let mut got = vec![
                 ("map_bytes", a.map_bytes(&body, ctx).err()),
                 ("map_json", a.map_json(&body, ctx).err()),
             ];
+            // A raw input has no parsed form.
+            if let Some(b) = input.get("body") {
+                got.push(("map_doc", a.map_doc(&b, ctx).err()));
+            }
             for (way, r) in got {
                 if r.as_ref().map(|r| r.reason.as_str()) != reason.as_str() {
                     fails.push(format!("{way}[{i}]: got {r:?}, want Rejected({reason})"));

@@ -1,0 +1,38 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "contact": {
+        "when": {
+          "path": "$input.full",
+          "eq": true
+        }
+      },
+      "contact.email": "email",
+      "contact.name": "name"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "contact": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "semantic": "email",
+            "routing": true
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "error": "acme people v1: fields[\"contact\"]: routing fields can't have when"
+}

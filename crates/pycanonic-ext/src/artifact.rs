@@ -109,13 +109,16 @@ create_exception!(
     "A `reject` condition holds on the response. `reason` is the condition's spec JSON text."
 );
 
-/// `pycanonic.Rejected`, with its `reason` attribute set.
-fn rejected(py: Python<'_>, r: canonic_core::Rejected) -> PyErr {
-    let e = Rejected::new_err(r.reason.clone());
-    match e.value(py).setattr("reason", r.reason) {
-        Ok(()) => e,
-        Err(failed) => failed,
-    }
+/// Adds `Rejected.reason`, a property that reads `args[0]`, so it survives direct construction
+/// and pickling. The `abi3` build cannot subclass an exception as a `pyclass`.
+pub(crate) fn add_reason(py: Python<'_>) -> PyResult<()> {
+    let get = c"property(lambda self: self.args[0] if self.args else None)";
+    py.get_type::<Rejected>()
+        .setattr("reason", py.eval(get, None, None)?)
+}
+
+fn rejected(r: canonic_core::Rejected) -> PyErr {
+    Rejected::new_err(r.reason)
 }
 
 /// A `context=` argument as JSON, the same on every path. `None` when the plan does not read
@@ -224,7 +227,7 @@ impl Artifact {
         if let Some(e) = take_pending() {
             return Err(e);
         }
-        out.map_err(|r| rejected(py, r))
+        out.map_err(rejected)
     }
 
     /// The canonical object as JSON text, without building Python objects. Runs with the GIL released.
@@ -243,7 +246,7 @@ impl Artifact {
         if let Some(e) = take_pending() {
             return Err(e);
         }
-        Ok(PyBytes::new(py, &out.map_err(|r| rejected(py, r))?))
+        Ok(PyBytes::new(py, &out.map_err(rejected)?))
     }
 
     /// The routing fields read straight from JSON text, keyed by spec field. GIL released.
