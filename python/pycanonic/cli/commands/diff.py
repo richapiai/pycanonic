@@ -10,6 +10,7 @@ from typing import Any
 
 from ... import fingerprint
 from ..._api import compile_spec
+from ..._core import Rejected
 from ..infer.infer import infer_draft
 from ..infer.sources import collect, elements, fill
 from ..io import Transforms, UsageError, is_obj, js_json, json_files, pad, parse_json, parser, read_json, read_text
@@ -61,10 +62,14 @@ def path_drift(old: list[Any], now: list[Any]) -> list[str]:
 
 
 def fill_rates(spec: Spec, schema: Any, samples: list[Any], transforms: Transforms) -> dict[str, float]:
-    """Fill rate of every spec field over the samples. A field inside an item map ("jobs[].title") is a rate over elements."""
+    """Fill rate of every spec field over the samples. A field inside an item map ("jobs[].title") is a rate over elements.
+    Samples a reject condition stops do not count."""
     a = compile_spec(spec, schema, transforms=transforms)
     for x in samples:
-        a.map(x)
+        try:
+            a.map(x)
+        except Rejected:
+            pass
     snap = a.stats.snapshot()
     return {f: s["fill"] / (s.get("total", snap["responses"]) or 1) for f, s in snap["fields"].items()}
 

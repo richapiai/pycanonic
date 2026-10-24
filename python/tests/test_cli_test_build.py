@@ -168,3 +168,63 @@ def test_build_fails_with_the_field_path_on_a_bad_spec_and_exits_2(capsys: pytes
     assert run(capsys, "build")[0] == 2
     assert run(capsys)[0] == 2
     assert run(capsys, "--help")[0] == 0
+
+
+GROUP_CANONICAL = {
+    "type": "object",
+    "properties": {
+        "teams": {"type": "array", "items": {"type": "object", "properties": {"team": {"type": "string"}, "count": {"type": "number"}}}},
+        "page": {"type": "number"},
+    },
+}
+GROUP_SPEC = {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "teams",
+    "version": 1,
+    "status": "promoted",
+    "reject": [{"missing": "staff"}],
+    "fields": {
+        "teams[]": {"from": "staff", "group_by": "team", "item": {"team": "team", "count": {"aggregate": "count", "from": "$group"}}},
+        "page": "$input.page",
+    },
+}
+
+
+def test_build_and_test_language_2(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    schema, spec = write(tmp_path / "teams-canonical.json", GROUP_CANONICAL), write(tmp_path / "teams.json", GROUP_SPEC)
+    code, out, _ = run(capsys, "build", "--schema", schema, spec)
+    assert code == 0
+    plan = pycanonic.load(tmp_path / "teams.plan.json")
+    body = {"staff": [{"team": "core"}, {"team": "core"}, {"team": "web"}]}
+    teams = [{"team": "core", "count": 2}, {"team": "web", "count": 1}]
+    assert plan.map(body, context={"page": 2}) == {"teams": teams, "page": 2}
+    reason = '{"missing":"staff"}'
+    good = write(
+        tmp_path / "good.json",
+        {
+            "cases": [
+                {"payload": body, "context": {"page": 2}, "expected": {"teams": teams, "page": 2}},
+                {"payload": body, "expected": {"page": None}},
+                {"payload": {}, "expected": {"$rejected": reason}},
+            ]
+        },
+    )
+    assert run(capsys, "test", "--schema", schema, spec, good) == (0, "3 cases, 0 failed\n", "")
+    bad = write(
+        tmp_path / "bad.json",
+        {
+            "cases": [
+                {"payload": {}, "expected": {"page": None}},
+                {"payload": body, "expected": {"$rejected": reason}},
+                {"payload": {}, "expected": {"$rejected": '{"missing":"other"}'}},
+            ]
+        },
+    )
+    code, out, err = run(capsys, "test", "--schema", schema, spec, bad)
+    assert (code, out) == (1, "3 cases, 3 failed\n")
+    assert err.splitlines() == [
+        f"bad.json#0 rejected {reason}",
+        f"bad.json#1 expected rejected {reason}, got an output",
+        f"bad.json#2 expected rejected {{\"missing\":\"other\"}}, got rejected {reason}",
+    ]

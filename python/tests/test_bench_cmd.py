@@ -92,3 +92,29 @@ def test_bench_loads_private_transforms_from_a_module(capsys: pytest.CaptureFixt
     assert main(args) == 2
     assert 'unknown transform "shout"' in capsys.readouterr().err
     assert main([*args[:1], "--transforms", str(CLI / "private.py"), *args[1:]]) == 0
+
+
+def test_bench_runs_a_language_2_spec_without_the_view_row_or_rejected_samples(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    schema = {"type": "object", "properties": {"email": {"type": "string", "semantic": "email", "routing": True}, "tags": {"type": "array", "items": {"type": "string"}}}}
+    spec = {
+        "language": 2,
+        "provider": "acme",
+        "endpoint": "people",
+        "version": 1,
+        "status": "promoted",
+        "reject": [{"missing": "e_mail"}],
+        "fields": {"email": {"from": "e_mail", "transform": "lower"}, "tags[]": {"from": "t", "wrap": True}},
+    }
+    (tmp_path / "s").mkdir()
+    for i, body in enumerate([{"e_mail": "A@acme.com", "t": "x"}, {"e_mail": "b@acme.com"}, {"t": "gone"}]):
+        (tmp_path / f"s/{i}.json").write_text(json.dumps(body))
+    (tmp_path / "schema.json").write_text(json.dumps(schema))
+    (tmp_path / "spec.json").write_text(json.dumps(spec))
+    code = main(["bench", "--schema", str(tmp_path / "schema.json"), str(tmp_path / "spec.json"), str(tmp_path / "s")])
+    out, err = capsys.readouterr()
+    assert (code, err) == (0, "")
+    head, _, *rows = out.splitlines()
+    assert re.fullmatch(r"acme people v1: 2 samples \(1 rejected, left out\), \d+\.\d KB average, 1 routing fields", head)
+    assert [r[:-10].rstrip() for r in rows] == [r for r in ROWS if r != "view + routing reads"]

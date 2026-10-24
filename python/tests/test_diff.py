@@ -114,3 +114,19 @@ def test_diff_sees_a_key_renamed_inside_list_items_and_proposes_the_lists_rule_a
 
 def test_a_missing_directory_exits_2(capsys: pytest.CaptureFixture[str]) -> None:
     assert run(capsys, SAMPLES, "no-such-dir")[0] == 2
+
+
+def test_a_language_2_spec_leaves_rejected_samples_out_of_fill_rates(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    import shutil
+
+    for name, src in (("old", SAMPLES), ("new", RENAMED)):
+        shutil.copytree(src, tmp_path / name)
+        (tmp_path / name / "zz-stopped.json").write_text('{"stopped": true}')
+    spec = {**SPEC, "language": 2, "reject": [{"path": "stopped", "eq": True}]}
+    (tmp_path / "spec.json").write_text(json.dumps(spec))
+    code, out, err = run(capsys, "--schema", SCHEMA, "--spec", str(tmp_path / "spec.json"), str(tmp_path / "old"), str(tmp_path / "new"))
+    assert code == 1
+    assert "field phone: filled 100% -> 0%" in err
+    nxt = json.loads(out)
+    assert (nxt["language"], nxt["reject"], nxt["version"]) == (2, spec["reject"], 2)
+    assert nxt["fields"]["phone"] == {"from": "contact.phoneNumber", "transform": "normalize_phone"}

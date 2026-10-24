@@ -50,7 +50,8 @@ class Rejected(Exception):
     `reason` is the condition as the spec writes it, as JSON text: `'{"missing":"data.name"}'`.
     """
 
-    reason: str
+    reason: str | None
+    """`None` only for a `Rejected` built with no arguments."""
 
 @final
 class Stats:

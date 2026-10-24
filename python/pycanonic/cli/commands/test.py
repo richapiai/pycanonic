@@ -8,12 +8,15 @@ import sys
 from typing import Any
 
 from ..._api import compile_spec
+from ..._core import Artifact, Rejected
 from ..io import Transforms, UsageError, json_files, parser, read_json
 
 USAGE = """canonic test --schema <canonical.json> [--transforms <module.py>] <spec.json> <fixtures>...
 
   Maps each fixture's payload through the spec and checks the fields its "expected" names.
   A fixture file is {"payload": ..., "expected": ...} or {"cases": [{"payload", "expected"}, ...]}.
+  A case may add "context": {...}, the request inputs that $input paths read. "expected":
+  {"$rejected": "<reason>"} means the spec must reject the payload with that reason.
   Fields left out of "expected" aren't checked, inside list items too. Exits 1 if any case fails."""
 
 
@@ -31,6 +34,21 @@ def mismatches(expected: Any, actual: Any, at: str = "") -> list[str]:
     if expected == actual and isinstance(expected, bool) == isinstance(actual, bool):
         return []
     return [f"{at}: expected {_js(expected)}, got {_js(actual)}"]
+
+
+def check(artifact: Artifact, case: Any) -> list[str]:
+    """Mismatches of one fixture case, a rejection included."""
+    want = case["expected"]
+    rejected = want.get("$rejected") if isinstance(want, dict) else None
+    try:
+        got = artifact.map(case["payload"], context=case.get("context"))
+    except Rejected as e:
+        if rejected is None:
+            return [f"rejected {e.reason}"]
+        return [] if e.reason == rejected else [f"expected rejected {rejected}, got rejected {e.reason}"]
+    if rejected is not None:
+        return [f"expected rejected {rejected}, got an output"]
+    return mismatches(want, got)
 
 
 def _cases(file: str) -> list[Any]:
@@ -55,7 +73,7 @@ def run(args: list[str], transforms: Transforms) -> int:
     for file in json_files(fixtures):
         for i, c in enumerate(_cases(file)):
             total += 1
-            bad = mismatches(c["expected"], artifact.map(c["payload"]))
+            bad = check(artifact, c)
             if bad:
                 failed += 1
                 for m in bad:

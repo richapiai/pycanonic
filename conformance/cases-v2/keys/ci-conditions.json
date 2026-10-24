@@ -1,0 +1,104 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "keys": "case_insensitive",
+    "reject": [
+      {
+        "missing": "data.id"
+      },
+      {
+        "path": "data.state",
+        "eq": "gone"
+      }
+    ],
+    "fields": {
+      "name": "data.name",
+      "hq": {
+        "present": "data.hq"
+      },
+      "hq.city": "data.hq.city",
+      "paged": {
+        "const": true,
+        "when": {
+          "path": "$input.page",
+          "eq": 1
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "hq": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        }
+      },
+      "paged": {
+        "type": "boolean"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "Data": {
+          "ID": 7,
+          "Name": "Ann",
+          "HQ": {
+            "City": "Oslo"
+          }
+        }
+      },
+      "context": {
+        "Page": 1
+      },
+      "expected": {
+        "name": "Ann",
+        "hq": {
+          "city": "Oslo"
+        },
+        "paged": null
+      }
+    },
+    {
+      "body": {
+        "DATA": {
+          "Id": 7,
+          "STATE": "gone"
+        }
+      },
+      "context": {
+        "page": 1
+      },
+      "expected": {
+        "$rejected": "{\"path\":\"data.state\",\"eq\":\"gone\"}"
+      }
+    },
+    {
+      "body": {
+        "data": {
+          "id": 7
+        }
+      },
+      "context": {
+        "page": 1
+      },
+      "expected": {
+        "name": null,
+        "hq": null,
+        "paged": true
+      }
+    }
+  ]
+}
