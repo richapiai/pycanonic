@@ -10,12 +10,17 @@ from .world import entities
 
 
 def test_world_has_the_traps() -> None:
-    """The fresh pairs show what the training pairs may not: rare enum values, a currency other
-    than USD, a repeat employer after another job."""
+    """The fresh pairs show what the training pairs do not: rare enum values, values that only
+    looked constant, a value that was never sent, a section that was never empty, and a repeat
+    employer after another job."""
     train, fresh = entities(1, 15), entities(2, 60)
     rare = lambda es, k: {e[k] for e in es}
     assert rare(fresh, "seniority") - rare(train, "seniority")
-    assert rare(fresh, "currency") - {"USD"}
+    assert rare(fresh, "status") - rare(train, "status")
+    assert (rare(train, "region"), rare(train, "plan")) == ({"na"}, {"free"})
+    assert len(rare(fresh, "region")) > 1 and len(rare(fresh, "plan")) > 1
+    assert rare(train, "nickname") == {None} != rare(fresh, "nickname")
+    assert all(e["company"] for e in train) and not all(e["company"] for e in fresh)
     ids = [[j["company_id"] for j in e["jobs"]] for e in fresh]
     assert any(any(a == c != b for a, b, c in zip(x, x[1:], x[2:])) for x in ids)
     assert len(PROVIDERS) >= 12

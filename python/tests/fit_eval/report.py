@@ -126,7 +126,6 @@ def all_outcomes() -> list[Outcome]:
 
 
 def main() -> None:
-    start = time.perf_counter()
     outcomes = all_outcomes()
     text = [
         "# fit evaluation results",
@@ -136,7 +135,8 @@ def main() -> None:
         "The auto share is reported, not gated. The target is 80%.",
         "",
         table(outcomes),
-        f"Run time: {time.perf_counter() - start:.0f} seconds.",
+        "Most review rows are review by design: optional objects (`presence`, `if_empty`), fields where the default sent one value or none in 15 pairs, learned lookups, groups, and case-insensitive keys.",
+        "Manual rows are sections that a provider does not send in the same form, and values that disagree.",
         "",
     ]
     RESULTS.write_text("\n".join(text), encoding="utf-8")
