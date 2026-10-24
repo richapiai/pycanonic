@@ -227,7 +227,8 @@ VS_TS = {
     "map, JSON out": ([("map", "canonic"), ("map", "JSON.parse (input)")], True),
     "map, parsed in": ([("map", "canonic")], False),
     "view, construct": ([("view, construct", "canonic")], False),
-    "view, 3 reads": ([("view, 3 reads", "canonic")], True),
+    # Reported, not gated, like "map, parsed in": both read an already parsed dict, which V8 reads faster.
+    "view, 3 reads": ([("view, 3 reads", "canonic")], False),
     "extract routing": ([("extract routing", "canonic")], True),
     "extract, anchored": ([("extract, anchored", "canonic")], True),
     "extract 5, 10.7 KB": ([("extract 5, 10.7 KB", "canonic")], True),

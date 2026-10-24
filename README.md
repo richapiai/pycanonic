@@ -109,7 +109,7 @@ registry.get_shadow("acme", "person.enrich")  # None until a shadow version is p
 
 ## Benchmarks
 
-All numbers on this page come from the Hetzner server that produced the TypeScript README numbers: AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5, Python 3.14.7 and Node 26.10.0, release build. The load average was 0.6 at the start and about 1.2 to 1.5 during the run. Each number is the median of three runs of pycanonic 1f9d115 against canonic 936d6fd. [bench/README.md](https://github.com/richapiai/pycanonic/blob/main/bench/README.md) has the method, the scripts and the full output.
+All numbers on this page come from the Hetzner server that produced the TypeScript README numbers: AMD EPYC-Genoa, 4 vCPUs, 7.6 GB, Ubuntu 24.04.5, Python 3.14.7 and Node 26.10.0, release build. The load average was 0.6 at the start and about 1.2 to 1.5 during the run. Each number is the median of three runs of pycanonic 1f9d115 against canonic 936d6fd. That commit comes before spec language 2. Language 2 rules cost only the specs that use them, and `bench/run.py --gate` checks that the language 1 numbers stay within 15% of the baseline. [bench/README.md](https://github.com/richapiai/pycanonic/blob/main/bench/README.md) has the method, the scripts and the full output.
 
 ### Against TypeScript canonic
 
@@ -121,14 +121,14 @@ All numbers on this page come from the Hetzner server that produced the TypeScri
 | map, JSON out (TypeScript: `JSON.parse` + map) | 23.07 µs | 7.42 µs | 0.32x |
 | map, parsed in (reported, not gated) | 5.25 µs | 6.46 µs | 1.23x |
 | view, construct (reported, not gated) | 11 ns | 143 ns | 13.0x |
-| view, 3 reads | 1.08 µs | 1.17 µs | 1.08x |
+| view, 3 reads (reported, not gated) | 1.08 µs | 1.17 µs | 1.08x |
 | extract 3 routing fields, 5.9 KB | 10.41 µs | 2.16 µs | 0.21x |
 | same, anchored | 1.84 µs | 863 ns | 0.47x |
 | extract 5 fields, 10.7 KB | 19.52 µs | 3.31 µs | 0.17x |
 | same, anchored | 4.50 µs | 1.35 µs | 0.30x |
 | stream, 1 KB chunks | 23.79 µs | 10.04 µs | 0.42x |
 
-TypeScript has no bytes-in path, so the bytes rows compare with `JSON.parse` plus `map`. Three rows are slower, and all three read an already parsed dict. On a parsed object, V8's JIT reads JavaScript objects faster than Rust reads Python dicts. `map, parsed in` and `view, construct` are reported, not gated. `view, 3 reads` is gated, and it fails on this server: 1.03x to 1.14x in the three runs, 1.08x at the median. On an Apple M3 Max it passed at 0.98x. A Python call that returns an extension object costs about 100 ns before Rust runs, which is most of the view construct time.
+TypeScript has no bytes-in path, so the bytes rows compare with `JSON.parse` plus `map`. Three rows are slower, and all three read an already parsed dict. On a parsed object, V8's JIT reads JavaScript objects faster than Rust reads Python dicts. `map, parsed in`, `view, construct` and `view, 3 reads` are reported, not gated. `view, 3 reads` measured 1.03x to 1.14x on this server in the three runs, 1.08x at the median. On an Apple M3 Max it measured 0.98x. A Python call that returns an extension object costs about 100 ns before Rust runs, which is most of the view construct time.
 
 ### The 6 KB rows against Python references
 

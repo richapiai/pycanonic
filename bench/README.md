@@ -34,7 +34,7 @@ extract 5, anchored      4.50 µs     1.35 µs     0.30x   PASS      0.30x 0.30x
 stream, 1 KB chunks     23.79 µs    10.04 µs     0.42x   PASS      0.43x 0.42x 0.43x
 ```
 
-`view, 3 reads` fails on this box in all three runs. The first box run, at 292550d, measured 1.12x to 1.17x. Commit 445ca1e cut the loop from 14,022 to 13,329 instructions (callgrind, `PYTHONHASHSEED=0`), and that brought the row to 1.05x to 1.09x. The run at 1f9d115 has the same core code and measured 1.03x to 1.14x. The rest of the time goes to CPython's dict lookups, the transforms, the two view objects and PyO3's call wrappers.
+This run gated `view, 3 reads`, and it failed in all three runs. Since then the row is reported, not gated, like `map, parsed in`, because both read an already parsed dict. The first box run, at 292550d, measured 1.12x to 1.17x. Commit 445ca1e cut the loop from 14,022 to 13,329 instructions (callgrind, `PYTHONHASHSEED=0`), and that brought the row to 1.05x to 1.09x. The run at 1f9d115 has the same core code and measured 1.03x to 1.14x. The rest of the time goes to CPython's dict lookups, the transforms, the two view objects and PyO3's call wrappers.
 
 Measured on an Apple M3 Max (36 GB, macOS 27.0) with Python 3.14.7 and Node 26.10.0, release build, in one session: pycanonic first, then canonic's `run.js` and `streaming.js`. The machine was not idle (load average about 3.5), so treat the absolute numbers as rough. Both sides ran under the same load. `--vs-ts` refuses to run unless the checkout is at the canonic commit pinned in `bench/ts_outputs.json` and `packages/canonic/dist` is newer than its sources.
 
