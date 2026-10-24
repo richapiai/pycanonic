@@ -1,0 +1,24 @@
+{
+  "uid": "1002",
+  "person": {
+    "first": "Bo",
+    "last": "Marsh"
+  },
+  "contact": {
+    "email": "bo@mail1.example.test",
+    "phone_count": 1
+  },
+  "since": "2021-02-11T11:01:00Z",
+  "state": "inactive",
+  "labels": [
+    "t1a",
+    "t1b"
+  ],
+  "positions": [
+    {
+      "org": "Kettle",
+      "title": "role10",
+      "level": 0
+    }
+  ]
+}

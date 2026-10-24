@@ -1,0 +1,35 @@
+{
+  "id": 1004,
+  "name": "Di Oak",
+  "email": "di@mail3.example.test",
+  "joined": "2023-04-13",
+  "status": "active",
+  "hq": null,
+  "tags": [],
+  "jobs": [
+    {
+      "org": "Nimbus",
+      "roles": [
+        {
+          "title": "role30"
+        }
+      ]
+    },
+    {
+      "org": "Orbit",
+      "roles": [
+        {
+          "title": "role31"
+        }
+      ]
+    },
+    {
+      "org": "Nimbus",
+      "roles": [
+        {
+          "title": "role32"
+        }
+      ]
+    }
+  ]
+}

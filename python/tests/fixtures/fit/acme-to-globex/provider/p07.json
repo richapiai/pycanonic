@@ -1,0 +1,25 @@
+{
+  "uid": "1007",
+  "person": {
+    "first": "Gus",
+    "last": "Reed"
+  },
+  "contact": {
+    "email": "gus@mail6.example.test",
+    "phone_count": 6
+  },
+  "since": "2022-07-16T16:00:00Z",
+  "state": "active",
+  "positions": [
+    {
+      "org": "Lumen",
+      "title": "role60",
+      "level": 0
+    },
+    {
+      "org": "Nimbus",
+      "title": "role61",
+      "level": 1
+    }
+  ]
+}

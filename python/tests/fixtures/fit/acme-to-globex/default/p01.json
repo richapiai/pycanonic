@@ -1,0 +1,32 @@
+{
+  "id": 1001,
+  "name": "Ada Lane",
+  "email": "ada@mail0.example.test",
+  "joined": "2020-01-10",
+  "status": "active",
+  "hq": {
+    "city": "Lyon"
+  },
+  "tags": [],
+  "jobs": [
+    {
+      "org": "Orbit",
+      "roles": [
+        {
+          "title": "role00"
+        },
+        {
+          "title": "role01"
+        }
+      ]
+    },
+    {
+      "org": "Nimbus",
+      "roles": [
+        {
+          "title": "role02"
+        }
+      ]
+    }
+  ]
+}

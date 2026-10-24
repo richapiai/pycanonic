@@ -1,0 +1,26 @@
+{
+  "id": 1003,
+  "name": "Cy North",
+  "email": "cy@mail2.example.test",
+  "joined": "2022-03-12",
+  "status": "retired",
+  "hq": {
+    "city": "Graz"
+  },
+  "tags": [
+    "t2a"
+  ],
+  "jobs": [
+    {
+      "org": "Lumen",
+      "roles": [
+        {
+          "title": "role20"
+        },
+        {
+          "title": "role21"
+        }
+      ]
+    }
+  ]
+}

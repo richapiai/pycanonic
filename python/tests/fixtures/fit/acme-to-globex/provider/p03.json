@@ -1,0 +1,32 @@
+{
+  "uid": "1003",
+  "person": {
+    "first": "Cy",
+    "last": "North"
+  },
+  "contact": {
+    "email": "cy@mail2.example.test",
+    "phone_count": 2
+  },
+  "since": "2022-03-12T12:02:00Z",
+  "state": "inactive",
+  "office": {
+    "town": "Graz",
+    "floor": 4
+  },
+  "labels": [
+    "t2a"
+  ],
+  "positions": [
+    {
+      "org": "Lumen",
+      "title": "role20",
+      "level": 0
+    },
+    {
+      "org": "Lumen",
+      "title": "role21",
+      "level": 1
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "uid": "1006",
+  "person": {
+    "first": "Flo",
+    "last": "Quill"
+  },
+  "contact": {
+    "email": "flo@mail5.example.test",
+    "phone_count": 5
+  },
+  "since": "2021-06-15T15:05:00Z",
+  "state": "inactive",
+  "office": {
+    "town": "Ghent",
+    "floor": 7
+  },
+  "labels": [
+    "t5a",
+    "t5b"
+  ],
+  "positions": [
+    {
+      "org": "Orbit",
+      "title": "role50",
+      "level": 0
+    }
+  ]
+}

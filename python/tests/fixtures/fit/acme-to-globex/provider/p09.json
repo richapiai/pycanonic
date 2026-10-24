@@ -1,0 +1,28 @@
+{
+  "uid": "1009",
+  "person": {
+    "first": "Ivy",
+    "last": "Thorn"
+  },
+  "contact": {
+    "email": "ivy@mail8.example.test",
+    "phone_count": 8
+  },
+  "since": "2020-09-18T18:02:00Z",
+  "state": "inactive",
+  "labels": [
+    "t8a"
+  ],
+  "positions": [
+    {
+      "org": "Kettle",
+      "title": "role80",
+      "level": 0
+    },
+    {
+      "org": "Lumen",
+      "title": "role81",
+      "level": 1
+    }
+  ]
+}

@@ -1,0 +1,313 @@
+"""`canonic fit`: fits every canonical node in schema order, decides the tiers, proves the spec by
+compiling it and mapping every pair, and writes the spec, the report and the transform stubs."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import keyword
+import re
+import sys
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from ... import _api
+from ..infer.ask import MAX_SOURCES, Ask, answer, ask_with, question, rule_for
+from ..infer.score import Leaf
+from ..infer.sources import collect
+from ..io import Transforms, read_json
+from . import decide
+from .arrays import MISSING, fit_array, get
+from .chains import apply_rule
+from .compare import same
+from .derive import _child, derive_schema
+from .index import Occurrence, scalars
+from .leaves import LeafFit, _related, _segs, fit_leaf
+from .pairs import Pair, load_pairs
+from .report import FitResult, Row, to_md, write_json, write_md
+from .structure import _rejects, fit_const, fit_object_presence, fit_when, propose_reject
+
+FLOOR = 0.8
+
+
+@dataclass
+class FitOptions:
+    provider: str
+    endpoint: str
+    min_auto: float = 0.95
+    min_pairs: int = 5
+    keep: dict[str, Any] = field(default_factory=dict)  # top-level field key to the approved rule
+    ask: Ask | None = None
+    transforms: Transforms = field(default_factory=dict)  # for kept rules that name private transforms
+
+
+def _val(doc: Any, key: str) -> Any:
+    """The value at a field key (`hq.city`, `jobs[]`, `[]`), or MISSING."""
+    return get(doc, _segs(key.removesuffix("[]")))
+
+
+def _eq(a: Any, b: Any) -> bool:
+    return a is b if MISSING in (a, b) else same(a, b)
+
+
+def _empty(v: Any) -> bool:
+    return v is MISSING or v is None or v == [] or v == {}
+
+
+def short(key: str, rule: Any) -> Any:
+    """A leaf rule with only a path as the bare path string, item maps included."""
+    if not isinstance(rule, dict):
+        return rule
+    if not key.endswith("[]") and set(rule) == {"from"} and isinstance(rule["from"], str):
+        return rule["from"]
+    if isinstance(rule.get("item"), dict):
+        return {**rule, "item": {k: short(k, r) for k, r in rule["item"].items()}}
+    return rule
+
+
+def _nodes(schema: dict[str, Any], prefix: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
+    """(field key, node) in schema order: arrays as `key[]`, objects before their children."""
+    if not prefix and schema.get("type") == "array":
+        yield "[]", schema
+        return
+    for k, sub in (schema.get("properties") or {}).items():
+        sub = sub if isinstance(sub, dict) else {}
+        key = _child(prefix, k)
+        if sub.get("type") == "array":
+            yield key + "[]", sub
+        else:
+            yield key, sub
+            if "properties" in sub:
+                yield from _nodes(sub, key)
+
+
+def _row(f: LeafFit) -> Row:
+    return Row(f.field, "", f.kind, short(f.field, f.rule), f.support, f.total, f.holdout, f.examples)
+
+
+class _Fitter:
+    def __init__(self, pairs: list[Pair], schema: dict[str, Any], opts: FitOptions) -> None:
+        self.pairs, self.schema, self.opts = pairs, schema, opts
+        self.sources: list[list[Occurrence]] = [scalars(p.provider) for p in pairs]
+        self.fields: dict[str, Any] = {}
+        self.rows: list[Row] = []
+        self.inputs = any(p.inputs for p in pairs)
+
+    def node(self, key: str, node: dict[str, Any]) -> None:
+        if key in self.opts.keep:
+            self.fields[key] = self.opts.keep[key]
+            self.rows.append(Row(key, "", "kept", self.opts.keep[key], 0, 0, 1.0, []))
+            return
+        vals = [_val(p.default, key) for p in self.pairs]
+        if all(map(_empty, vals)):  # the default never sends a value: leave it to x-empty
+            mixed = "The default's samples disagree on the empty form." if node.get("x-mixed-empty") else ""
+            self.rows.append(Row(key, "", "empty", None, 0, 0, 1.0, [], mixed))
+        elif key.endswith("[]"):
+            self.array(key, node, vals)
+        elif "properties" in node:
+            rule = fit_object_presence(key, self.pairs)
+            if rule:
+                self.fields[key] = rule
+                self.rows.append(Row(key, "", "presence", rule, len(self.pairs), len(self.pairs), 1.0, []))
+        else:
+            self.leaf(key, node, [None if v is MISSING else v for v in vals])
+
+    def array(self, key: str, node: dict[str, Any], vals: list[Any]) -> None:
+        rule, fits = fit_array(key, node, self.pairs)
+        if rule is None and (const := fit_const(key, vals)):
+            rule, fits = const, [LeafFit(key, const, "const", len(vals), len(vals), 1.0, [], [])]
+        if rule is not None:
+            self.fields[key] = short(key, rule)
+        head = fits[0] if fits else LeafFit(key, None, "none", 0, 0, 0.0, [], [])
+        self.rows.append(_row(head))
+        for f in fits[1:]:
+            # an item leaf the default never fills: the array's own evidence covers it
+            f = LeafFit(f.field, None, "empty", head.support, head.total, head.holdout, [], []) if f.total == 0 else f
+            self.rows.append(_row(f))
+
+    def leaf(self, key: str, node: dict[str, Any], targets: list[Any]) -> None:
+        f = fit_leaf(key, self.pairs, targets, self.sources, True, FLOOR)
+        if f.rule is not None:
+            rule: dict[str, Any] = f.rule
+            kind = f.kind
+            if self.inputs and (cond := fit_when(key, self.pairs)):
+                rule, kind = {**rule, **cond}, "when"
+            self.fields[key] = short(key, rule)
+            self.rows.append(Row(key, "", kind, short(key, rule), f.support, f.total, f.holdout, f.examples))
+            return
+        row = self.unmapped(f, targets)
+        if row.kind != "absent" and self.opts.ask:
+            row = self.asked(key, node, targets) or row
+        self.rows.append(row)
+
+    def unmapped(self, f: LeafFit, targets: list[Any]) -> Row:
+        """disagree when some source matches part of the pairs, absent when nothing in the
+        provider looks like the value, else none (needs code)."""
+        alt = next((a for a in f.alternatives if a["kind"] != "const" and a["support"] > 0), None)
+        if alt is not None:
+            outs = [apply_rule(alt["rule"], p.provider) for p in self.pairs]
+            live = [j for j, t in enumerate(targets) if t is not None]
+            order = sorted(live, key=lambda j: same(outs[j], targets[j]))
+            examples = [{"pair": self.pairs[j].name, "want": targets[j], "got": outs[j]} for j in order[:3]]
+            note = f"Closest rule: {json.dumps(alt['rule'])} on {alt['support']} of {f.total} pairs."
+            return Row(f.field, "", "disagree", None, 0, f.total, 0.0, examples, note)
+        related = any(_related(o.value, t) for t, occs in zip(targets, self.sources) if t is not None for o in occs)
+        return Row(f.field, "", "none" if related else "absent", None, 0, f.total, 0.0, f.examples)
+
+    def asked(self, key: str, node: dict[str, Any], targets: list[Any]) -> Row | None:
+        """The --ask answer for a manual leaf, if it names a provider path."""
+        assert self.opts.ask is not None
+        srcs = [s for s in collect([p.provider for p in self.pairs]) if s.kind == "scalar"][:MAX_SOURCES]
+        keys = [k for k in _segs(key) if isinstance(k, str)]
+        leaf = Leaf(key, [keys[-1] if keys else key], keys[-2] if len(keys) > 1 else "", None, False, node.get("type"))
+        picked = {s.path: s for s in srcs}.get(answer(self.opts.ask(question(leaf, None, srcs))) or "")
+        if picked is None:
+            return None
+        rule = rule_for(leaf, picked)
+        full = {"from": rule} if isinstance(rule, str) else rule
+        outs = [apply_rule(full, p.provider) for p in self.pairs]
+        live = [j for j, t in enumerate(targets) if t is not None]
+        hits = [j for j in live if same(outs[j], targets[j])]
+        order = sorted(live, key=lambda j: j in hits)
+        examples = [{"pair": self.pairs[j].name, "want": targets[j], "got": outs[j]} for j in order[:3]]
+        self.fields[key] = rule
+        return Row(key, "", "asked", rule, len(hits), len(live), 0.0, examples)
+
+
+def _spec(opts: FitOptions, fields: dict[str, Any], reject: list[Any] | None = None) -> dict[str, Any]:
+    spec = {"language": 2, "provider": opts.provider, "endpoint": opts.endpoint, "version": 1, "status": "draft", "fields": fields}
+    return {**spec, "reject": reject} if reject else spec
+
+
+def _check(f: _Fitter) -> None:
+    """Maps every pair through the compiled spec. A field whose runtime output disagrees with what
+    fit reported loses its rule and becomes manual, kind none, until the spec agrees with itself."""
+    pairs, n = f.pairs, len(f.pairs)
+    while f.fields:
+        art = _api.compile_spec(_spec(f.opts, f.fields), f.schema, transforms=f.opts.transforms)
+        outs = [art.map(p.provider) if p.inputs is None else art.map(p.provider, context=p.inputs) for p in pairs]
+        bad: list[tuple[Row, int, list[Any], list[Any]]] = []
+        for r in f.rows:
+            if (r.field not in f.fields and r.kind != "empty") or "[]." in r.field:
+                continue  # item rows: the array's own row checks them
+            got = [_val(o, r.field) for o in outs]
+            want = [_val(p.default, r.field) for p in pairs]
+            if r.kind == "empty":
+                r.support, r.total = sum(map(_eq, got, want)), n
+                continue
+            if r.kind == "presence":
+                support = sum(_empty(g) == _empty(w) for g, w in zip(got, want))
+            else:
+                live = [j for j in range(n) if want[j] is not MISSING and want[j] is not None]
+                support = sum(_eq(got[j], want[j]) for j in live)
+                if r.kind == "kept":
+                    r.support, r.total = support, len(live)
+            if r.kind != "kept" and support != r.support:
+                bad.append((r, support, got, want))
+        if not bad:
+            return
+        for r, support, got, want in bad:
+            r.note = f"Runtime check: the rule {json.dumps(r.rule)} maps {support} pairs, fit found {r.support}."
+            wrong = [j for j in range(n) if not _eq(got[j], want[j]) and not _empty(want[j])]
+            r.examples = [{"pair": pairs[j].name, "want": want[j], "got": None if got[j] is MISSING else got[j]} for j in wrong[:3]]
+            del f.fields[r.field]
+            r.kind, r.rule, r.support, r.holdout = "none", None, 0, 0.0
+            if r.field.endswith("[]"):  # its item rows describe a rule the spec no longer has
+                f.rows = [x for x in f.rows if not x.field.startswith(r.field + ".")]
+
+
+def _stub_name(key: str) -> str:
+    name = re.sub(r"\W+", "_", key).strip("_") or "field"
+    return f"f_{name}" if name[0].isdigit() or keyword.iskeyword(name) else name
+
+
+def stubs(rows: list[Row], pairs: list[Pair], provider: str, endpoint: str) -> str:
+    """One function per manual field outside arrays that needs code. Its doctests are the pairs fit
+    could not reproduce, so they fail until the function is written."""
+    by = {p.name: p for p in pairs}
+    out = [
+        f'"""Transform stubs from canonic fit for {provider} {endpoint}.',
+        "",
+        "Each function gets the whole provider body and returns the canonical value. Map the field",
+        'with {"from": "$", "transform": "<function name>"} and pass this file with --transforms.',
+        '"""',
+    ]
+    for r in rows:
+        if r.kind != "none" or "[]" in r.field or r.field.startswith("reject["):
+            continue
+        name = _stub_name(r.field)
+        # repr() of the bodies; a body string holding three double quotes breaks the docstring.
+        tests = [line for e in r.examples[:3] if e["pair"] in by for line in (f"    >>> {name}({by[e['pair']].provider!r})", f"    {e['want']!r}")]
+        out += ["", "", f"def {name}(body):", f'    r"""The canonical field {r.field}.', "", *tests, '    """', "    return None"]
+    return "\n".join(out) + "\n"
+
+
+def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) -> FitResult:
+    """The in-process core of `run`: fit, decide, prove. Writes nothing."""
+    f = _Fitter(pairs, schema, options)
+    for key, node in _nodes(schema):
+        f.node(key, node)
+    _check(f)
+    reject = propose_reject(schema, pairs) if schema.get("type") != "array" else []
+    for i, cond in enumerate(reject):
+        hit = [p.name for p in pairs if _rejects(cond, p.provider)]
+        f.rows.append(Row(f"reject[{i}]", "", "reject", cond, len(hit), len(pairs), 1.0, [], f"Rejects {len(hit)} of {len(pairs)} pairs: {', '.join(hit)}."))
+    spec = _spec(options, f.fields, reject) if f.fields else None
+    if spec is not None:
+        _api.compile_spec(spec, schema, transforms=options.transforms)  # never write a spec that does not compile
+    for r in f.rows:
+        lf = LeafFit(r.field, None, r.kind, r.support, r.total, r.holdout, [], [])
+        r.tier = decide.tier(lf, min_auto=options.min_auto, min_pairs=options.min_pairs, floor=FLOOR)
+        if r.tier == "auto" and r.kind == "empty" and r.note:  # mixed empty forms go to review
+            r.tier = "review"
+    return FitResult(options.provider, options.endpoint, len(pairs), f.rows, spec, stubs(f.rows, pairs, options.provider, options.endpoint))
+
+
+def exit_code(result: FitResult, strict: bool = False) -> int:
+    """2 for a manual field or a skipped pair, 1 for a field to review (2 with `strict`), else 0.
+    Kept fields do not count: a person already reviewed them."""
+    if result.skipped or any(r.tier == "manual" for r in result.fields):
+        return 2
+    if any(r.tier == "review" and r.kind != "kept" for r in result.fields):
+        return 2 if strict else 1
+    return 0
+
+
+def run(args: argparse.Namespace, transforms: Transforms | None = None) -> int:
+    """`canonic fit` with parsed arguments (see commands/fit.py for the flags)."""
+    pairs, skipped = load_pairs(Path(args.default), Path(args.provider), Path(args.inputs) if args.inputs else None)
+    if len(pairs) < 3:
+        print(f"need at least 3 pairs, got {len(pairs)}", file=sys.stderr)
+        return 2
+    if len(pairs) < 8:
+        print(f"fit: only {len(pairs)} pairs; 8 or more that differ give rules you can trust", file=sys.stderr)
+    schema = read_json(args.schema) if args.schema else derive_schema([p.default for p in pairs])
+    keep = read_json(args.keep) if args.keep else {}
+    if not isinstance(keep, dict):
+        raise ValueError(f"{args.keep}: must be an object of field key to rule")
+    opts = FitOptions(args.provider_name, args.endpoint, args.min_auto, args.min_pairs, keep, ask_with(args.ask) if args.ask else None, transforms or {})
+    result = fit_pairs(pairs, schema, opts)
+    result.skipped = skipped
+    out = Path(args.out)
+    if result.spec is None:
+        print("fit: no field could be mapped, so no spec was written", file=sys.stderr)
+    else:
+        old = read_json(str(out)).get("fields", {}) if out.exists() else None
+        if isinstance(old, dict):
+            new = result.spec["fields"]
+            for key in dict.fromkeys([*old, *new]):
+                if key not in keep and old.get(key) != new.get(key):
+                    print(f"fit: {key} changed since the last spec; add it to --keep to hold it", file=sys.stderr)
+        out.write_text(json.dumps(result.spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if args.report:
+        write_md(result, Path(args.report).with_suffix(".md"))
+        write_json(result, Path(args.report).with_suffix(".json"))
+    else:
+        sys.stdout.write(to_md(result))
+    if args.transforms_out:
+        Path(args.transforms_out).write_text(result.transforms, encoding="utf-8")
+    s = result.summary()
+    print(f"fit: {s['auto']} auto, {s['review']} review, {s['manual']} manual", file=sys.stderr)
+    return exit_code(result, args.strict)

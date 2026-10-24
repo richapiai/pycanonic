@@ -1,0 +1,37 @@
+{
+  "uid": "1005",
+  "person": {
+    "first": "Ed",
+    "last": "Pike"
+  },
+  "contact": {
+    "email": "ed@mail4.example.test",
+    "phone_count": 4
+  },
+  "since": "2020-05-14T14:04:00Z",
+  "state": "inactive",
+  "office": {
+    "town": "Bergen",
+    "floor": 6
+  },
+  "labels": [
+    "t4a"
+  ],
+  "positions": [
+    {
+      "org": "Kettle",
+      "title": "role40",
+      "level": 0
+    },
+    {
+      "org": "Kettle",
+      "title": "role41",
+      "level": 1
+    },
+    {
+      "org": "Kettle",
+      "title": "role42",
+      "level": 2
+    }
+  ]
+}

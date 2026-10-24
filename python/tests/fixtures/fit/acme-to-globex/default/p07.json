@@ -1,0 +1,27 @@
+{
+  "id": 1007,
+  "name": "Gus Reed",
+  "email": "gus@mail6.example.test",
+  "joined": "2022-07-16",
+  "status": "active",
+  "hq": null,
+  "tags": [],
+  "jobs": [
+    {
+      "org": "Lumen",
+      "roles": [
+        {
+          "title": "role60"
+        }
+      ]
+    },
+    {
+      "org": "Nimbus",
+      "roles": [
+        {
+          "title": "role61"
+        }
+      ]
+    }
+  ]
+}

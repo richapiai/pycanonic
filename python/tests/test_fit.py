@@ -1,18 +1,31 @@
-"""`canonic fit`: the leaf search (index, transform chains, rule choice, holdout), arrays and structure."""
+"""`canonic fit`: the leaf search (index, transform chains, rule choice, holdout), arrays, structure, and the command."""
 
 from __future__ import annotations
 
+import doctest
+import importlib.util
 import json
+from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
+import pytest
+
 import pycanonic
+from pycanonic.cli.__main__ import main
 
 from pycanonic.cli.fit.arrays import fit_array
 from pycanonic.cli.fit.chains import Chain, apply, apply_rule, candidates
+from pycanonic.cli.fit import fit as fit_mod
+from pycanonic.cli.fit import report
 from pycanonic.cli.fit.compare import same
+from pycanonic.cli.fit.decide import tier
+from pycanonic.cli.fit.derive import derive_schema
+from pycanonic.cli.fit.fit import FitOptions, exit_code, fit_pairs
 from pycanonic.cli.fit.index import Occurrence, scalars
 from pycanonic.cli.fit.leaves import LeafFit, _related, fit_leaf
-from pycanonic.cli.fit.pairs import Pair
+from pycanonic.cli.fit.pairs import Pair, load_pairs
+from pycanonic.cli.fit.report import FitResult, Row
 from pycanonic.cli.fit.structure import fit_const, fit_object_presence, fit_when, propose_reject
 
 # --- leaf section ---
@@ -386,3 +399,223 @@ def test_reject_proposal() -> None:
     assert propose_reject(schema, pairs_of(rows)) == [{"missing": "full_name"}]
     full = [(d, {**p, "full_name": d["name"]}) for d, p in rows]
     assert propose_reject(schema, pairs_of(full)) == []
+
+
+# --- command section ---
+
+FIXTURE = Path(__file__).parent / "fixtures" / "fit" / "acme-to-globex"
+NEVER_AUTO = ["lookup", "const", "regex", "group", "omit", "when", "reject", "null_if", "keys", "absent"]
+
+
+def lf(kind: str, support: int, total: int, holdout: float = 1.0) -> LeafFit:
+    return LeafFit("f", {"from": "f"}, kind, support, total, holdout, [], [])
+
+
+def fixture_pairs() -> list[Pair]:
+    pairs, skipped = load_pairs(FIXTURE / "default", FIXTURE / "provider", None)
+    assert skipped == [] and len(pairs) == 10
+    return pairs
+
+
+def fit_fixture(**kw: Any) -> FitResult:
+    pairs = fixture_pairs()
+    return fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("globex", "person.enrich", **kw))
+
+
+def cli(tmp: Path, *extra: str) -> int:
+    args = ["fit", "--default", str(FIXTURE / "default"), "--provider", str(FIXTURE / "provider"), "--provider-name", "globex", "--endpoint", "person.enrich"]
+    return main([*args, "--out", str(tmp / "spec.json"), "--report", str(tmp / "report"), *extra])
+
+
+def handle_pairs(n: int = 6) -> list[Pair]:
+    """`handle` is the last and first name, lower case, joined by a dot: no learned chain gives it."""
+    names = [("Ada", "Lane"), ("Bo", "Marsh"), ("Cy", "North"), ("Di", "Oak"), ("Ed", "Pike"), ("Flo", "Quill")][:n]
+    return [Pair(f"p{i}.json", {"first": f, "handle": f"{l.lower()}.{f.lower()}"}, {"person": {"first": f, "last": l}}, None) for i, (f, l) in enumerate(names)]
+
+
+def test_tier_auto_needs_5_pairs() -> None:
+    assert tier(lf("path", 5, 5)) == "auto"
+    assert tier(lf("path", 4, 4)) == "review"
+    assert tier(lf("path", 4, 4), min_pairs=4) == "auto"
+    assert tier(lf("path", 9, 10)) == "review"  # 90% support
+    assert tier(lf("path", 10, 10, 0.9)) == "review"  # holdout below 95%
+    assert tier(lf("path", 7, 10)) == "manual"  # below the floor
+    assert tier(lf("none", 0, 10)) == tier(lf("disagree", 0, 10)) == "manual"
+
+
+@pytest.mark.parametrize("kind", NEVER_AUTO)
+def test_tier_never_auto_kinds(kind: str) -> None:
+    assert tier(lf(kind, 20, 20)) == "review"
+
+
+def test_exit_codes() -> None:
+    def result(*tiers: str, skipped: list[tuple[str, str]] | None = None) -> FitResult:
+        rows = [Row(f"f{i}", t, "path" if t != "review" else "lookup", None, 1, 1, 1.0, []) for i, t in enumerate(tiers)]
+        return FitResult("a", "e", 5, rows, None, "", skipped or [])
+
+    assert exit_code(result("auto", "auto")) == 0
+    assert exit_code(result("auto", "review")) == 1
+    assert exit_code(result("auto", "review", "manual")) == 2
+    assert exit_code(result("auto", "review"), strict=True) == 2
+    assert exit_code(result("auto"), strict=True) == 0
+    assert exit_code(result("auto", skipped=[("x.json", "not JSON")])) == 2
+
+
+def test_report_json_layout(tmp_path: Path) -> None:
+    result = fit_fixture()
+    report.write_json(result, tmp_path / "r.json")
+    got = json.loads((tmp_path / "r.json").read_text())
+    assert list(got) == ["provider", "endpoint", "pairs", "skipped", "fields", "summary"]
+    assert (got["provider"], got["endpoint"], got["pairs"], got["skipped"]) == ("globex", "person.enrich", 10, [])
+    assert all(list(f) == ["field", "tier", "kind", "rule", "support", "total", "holdout", "examples", "risk"] for f in got["fields"])
+    assert list(got["summary"]) == ["auto", "review", "manual"]
+    assert sum(got["summary"].values()) == len(got["fields"])
+
+
+def test_report_md_lists_review_with_risk(tmp_path: Path) -> None:
+    result = fit_fixture()
+    report.write_md(result, tmp_path / "r.md")
+    md = (tmp_path / "r.md").read_text()
+    assert "10 pairs. " in md.splitlines()[2]
+    assert "| email | path | `\"contact.email\"` | 10 of 10 | 100% |" in md
+    section = md.split("## jobs[]: review, group")[1].split("\n## ")[0]
+    assert "- evidence: 10 of 10 pairs, holdout 100%" in section
+    assert report.RISKS["group"] in section
+    assert "## status: manual, disagree" in md and report.RISKS["disagree"] in md
+
+
+def test_keep_preserves_rule(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    kept = {"from": "state", "transform": [{"lookup": {"table": {"active": "active", "inactive": "inactive"}, "else": "null"}}]}
+    (tmp_path / "keep.json").write_text(json.dumps({"status": kept}))
+    code = cli(tmp_path, "--keep", str(tmp_path / "keep.json"))
+    spec = json.loads((tmp_path / "spec.json").read_text())
+    assert spec["fields"]["status"] == kept
+    assert list(spec["fields"])[:5] == ["id", "name", "email", "joined", "status"]  # schema order
+    row = next(f for f in json.loads((tmp_path / "report.json").read_text())["fields"] if f["field"] == "status")
+    assert (row["tier"], row["kind"], row["rule"], row["support"], row["total"]) == ("review", "kept", kept, 7, 10)
+    assert "## status: review, kept by reviewer" in (tmp_path / "report.md").read_text()
+    assert code == 1  # hq and jobs[] still need review; the kept field does not raise the code
+
+
+def test_changed_warning(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli(tmp_path) == 2
+    spec = json.loads((tmp_path / "spec.json").read_text())
+    spec["fields"]["email"] = "contact.other"
+    (tmp_path / "spec.json").write_text(json.dumps(spec))
+    capsys.readouterr()
+    cli(tmp_path)
+    err = capsys.readouterr().err
+    assert "fit: email changed since the last spec; add it to --keep to hold it" in err
+    assert "fit: name changed" not in err
+    (tmp_path / "keep.json").write_text(json.dumps({"email": "contact.other"}))
+    (tmp_path / "spec.json").write_text(json.dumps(spec))
+    cli(tmp_path, "--keep", str(tmp_path / "keep.json"))
+    assert "email changed" not in capsys.readouterr().err
+
+
+def test_too_few_pairs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    for side in ("d", "p"):
+        (tmp_path / side).mkdir()
+        for i in range(2):
+            (tmp_path / side / f"{i}.json").write_text(json.dumps({"a": i}))
+    (tmp_path / "d" / "bad.json").write_text("{")
+    (tmp_path / "p" / "bad.json").write_text("{}")
+    args = ["fit", "--default", str(tmp_path / "d"), "--provider", str(tmp_path / "p"), "--provider-name", "a", "--endpoint", "e", "--out", str(tmp_path / "s.json")]
+    assert main(args) == 2
+    assert "need at least 3 pairs, got 2" in capsys.readouterr().err
+    assert not (tmp_path / "s.json").exists()
+    for side in ("d", "p"):
+        (tmp_path / side / "2.json").write_text(json.dumps({"a": 2}))
+    main(args)
+    assert "fit: only 3 pairs" in capsys.readouterr().err
+
+
+def test_transforms_stub_has_doctests(tmp_path: Path) -> None:
+    pairs = handle_pairs()
+    result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
+    row = {r.field: r for r in result.fields}["handle"]
+    assert (row.tier, row.kind) == ("manual", "none")
+    assert result.spec is not None and "handle" not in result.spec["fields"]
+    assert "def handle(body):" in result.transforms
+    (tmp_path / "stubs.py").write_text(result.transforms)
+    module = importlib.util.module_from_spec(spec := importlib.util.spec_from_file_location("stubs", tmp_path / "stubs.py"))  # type: ignore[arg-type]
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+    tests = doctest.DocTestFinder().find(module.handle)
+    runner = doctest.DocTestRunner(optionflags=doctest.REPORT_ONLY_FIRST_FAILURE)
+    for t in tests:
+        runner.run(t, out=lambda _: None)
+    assert (runner.failures, runner.tries) == (3, 3)  # the stub returns None until someone writes it
+    module.handle = lambda body: f"{body['person']['last'].lower()}.{body['person']['first'].lower()}"
+    assert all(module.handle(p.provider) == p.default["handle"] for p in pairs)
+
+
+def test_ask_answers_are_review() -> None:
+    pairs = handle_pairs()
+    asked: list[Any] = []
+
+    def ask(q: dict[str, Any]) -> str:
+        asked.append(q["field"])
+        return "person.last"
+
+    result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e", ask=ask))
+    row = {r.field: r for r in result.fields}["handle"]
+    assert asked == ["handle"]  # manual leaves only, not `first`
+    assert (row.tier, row.kind, row.rule) == ("review", "asked", "person.last")
+    assert result.spec is not None and result.spec["fields"]["handle"] == "person.last"
+
+
+def test_absent_field_stays_unmapped() -> None:
+    pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "nickname": f"zz{i}q"}, {"name": f"n{i}"}, None) for i in range(6)]
+    result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
+    row = {r.field: r for r in result.fields}["nickname"]
+    assert (row.tier, row.kind, row.risk()) == ("review", "absent", report.RISKS["absent"])
+    assert result.spec is not None and list(result.spec["fields"]) == ["name"]
+
+
+def test_runtime_check_downgrades(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A rule that fit reports as matching but the runtime does not reproduce is not written."""
+    real = fit_mod.fit_leaf
+
+    def wrong(field: str, *a: Any, **kw: Any) -> LeafFit:
+        f = real(field, *a, **kw)
+        return replace(f, rule={"from": "other"}) if field == "email" else f
+
+    monkeypatch.setattr(fit_mod, "fit_leaf", wrong)
+    result = fit_fixture()
+    row = {r.field: r for r in result.fields}["email"]
+    assert (row.tier, row.kind, row.rule) == ("manual", "none", None)
+    assert row.note == 'Runtime check: the rule "other" maps 0 pairs, fit found 10.'
+    assert row.examples[0] == {"pair": "p01.json", "want": "ada@mail0.example.test", "got": None}
+    assert result.spec is not None and "email" not in result.spec["fields"]
+
+
+def test_end_to_end_fixture(tmp_path: Path) -> None:
+    assert cli(tmp_path, "--transforms-out", str(tmp_path / "t.py")) == 2  # status is manual
+    spec = json.loads((tmp_path / "spec.json").read_text())
+    assert (spec["language"], spec["status"], spec["version"]) == (2, "draft", 1)
+    f = spec["fields"]
+    assert list(f) == ["id", "name", "email", "joined", "hq", "hq.city", "tags[]", "jobs[]"]
+    assert f["email"] == "contact.email" and f["hq.city"] == "office.town"
+    assert f["jobs[]"]["group_by"] == "org" and f["jobs[]"]["item"]["org"] == "org"
+    assert f["jobs[]"]["item"]["roles[]"] == {"from": "$group", "item": {"title": "title"}}
+    pairs = fixture_pairs()
+    art = pycanonic.compile_spec(spec, derive_schema([p.default for p in pairs]))
+    for p in pairs:
+        raw = json.dumps(p.provider).encode()
+        want = {**p.default, "status": None}
+        for got in (art.map(raw), art.map(p.provider), json.loads(art.map_json(raw))):
+            assert same(got, want), (p.name, got)
+    rows = {r["field"]: r for r in json.loads((tmp_path / "report.json").read_text())["fields"]}
+    assert (rows["status"]["tier"], rows["status"]["kind"]) == ("manual", "disagree")
+    assert {k: rows[k]["tier"] for k in ("id", "name", "email", "joined", "hq.city", "tags[]")} == dict.fromkeys(("id", "name", "email", "joined", "hq.city", "tags[]"), "auto")
+    assert {k: rows[k]["kind"] for k in ("id", "joined", "name", "hq", "jobs[]")} == {"id": "cast", "joined": "format_date", "name": "join", "hq": "presence", "jobs[]": "group"}
+    assert "def " not in (tmp_path / "t.py").read_text()  # disagree is a decision, not code
+
+
+def test_array_root_field_key() -> None:
+    """an array root is the field key `[]`."""
+    pairs = [Pair(f"p{i}.json", [{"name": f"n{i}{k}"} for k in range(i % 3 + 1)], {"results": [{"n": f"n{i}{k}"} for k in range(i % 3 + 1)]}, None) for i in range(6)]
+    result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
+    assert result.spec is not None and result.spec["fields"] == {"[]": {"from": "results", "item": {"name": "n"}}}
+    assert [(r.field, r.tier) for r in result.fields] == [("[]", "auto"), ("[].name", "auto")]

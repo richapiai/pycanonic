@@ -1,0 +1,22 @@
+{
+  "id": 1002,
+  "name": "Bo Marsh",
+  "email": "bo@mail1.example.test",
+  "joined": "2021-02-11",
+  "status": "inactive",
+  "hq": null,
+  "tags": [
+    "t1a",
+    "t1b"
+  ],
+  "jobs": [
+    {
+      "org": "Kettle",
+      "roles": [
+        {
+          "title": "role10"
+        }
+      ]
+    }
+  ]
+}

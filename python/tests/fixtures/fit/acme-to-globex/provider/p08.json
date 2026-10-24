@@ -1,0 +1,38 @@
+{
+  "uid": "1008",
+  "person": {
+    "first": "Hal",
+    "last": "Stone"
+  },
+  "contact": {
+    "email": "hal@mail7.example.test",
+    "phone_count": 7
+  },
+  "since": "2023-08-17T17:01:00Z",
+  "state": "inactive",
+  "office": {
+    "town": "Cork",
+    "floor": 9
+  },
+  "labels": [
+    "t7a",
+    "t7b"
+  ],
+  "positions": [
+    {
+      "org": "Nimbus",
+      "title": "role70",
+      "level": 0
+    },
+    {
+      "org": "Nimbus",
+      "title": "role71",
+      "level": 1
+    },
+    {
+      "org": "Orbit",
+      "title": "role72",
+      "level": 2
+    }
+  ]
+}

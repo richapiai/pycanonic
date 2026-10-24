@@ -1,0 +1,24 @@
+{
+  "id": 1006,
+  "name": "Flo Quill",
+  "email": "flo@mail5.example.test",
+  "joined": "2021-06-15",
+  "status": "inactive",
+  "hq": {
+    "city": "Ghent"
+  },
+  "tags": [
+    "t5a",
+    "t5b"
+  ],
+  "jobs": [
+    {
+      "org": "Orbit",
+      "roles": [
+        {
+          "title": "role50"
+        }
+      ]
+    }
+  ]
+}

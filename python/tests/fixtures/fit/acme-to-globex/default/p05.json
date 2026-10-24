@@ -1,0 +1,29 @@
+{
+  "id": 1005,
+  "name": "Ed Pike",
+  "email": "ed@mail4.example.test",
+  "joined": "2020-05-14",
+  "status": "retired",
+  "hq": {
+    "city": "Bergen"
+  },
+  "tags": [
+    "t4a"
+  ],
+  "jobs": [
+    {
+      "org": "Kettle",
+      "roles": [
+        {
+          "title": "role40"
+        },
+        {
+          "title": "role41"
+        },
+        {
+          "title": "role42"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": 1009,
+  "name": "Ivy Thorn",
+  "email": "ivy@mail8.example.test",
+  "joined": "2020-09-18",
+  "status": "inactive",
+  "hq": null,
+  "tags": [
+    "t8a"
+  ],
+  "jobs": [
+    {
+      "org": "Kettle",
+      "roles": [
+        {
+          "title": "role80"
+        }
+      ]
+    },
+    {
+      "org": "Lumen",
+      "roles": [
+        {
+          "title": "role81"
+        }
+      ]
+    }
+  ]
+}

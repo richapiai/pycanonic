@@ -1,0 +1,30 @@
+{
+  "uid": "1004",
+  "person": {
+    "first": "Di",
+    "last": "Oak"
+  },
+  "contact": {
+    "email": "di@mail3.example.test",
+    "phone_count": 3
+  },
+  "since": "2023-04-13T13:03:00Z",
+  "state": "active",
+  "positions": [
+    {
+      "org": "Nimbus",
+      "title": "role30",
+      "level": 0
+    },
+    {
+      "org": "Orbit",
+      "title": "role31",
+      "level": 1
+    },
+    {
+      "org": "Nimbus",
+      "title": "role32",
+      "level": 2
+    }
+  ]
+}
