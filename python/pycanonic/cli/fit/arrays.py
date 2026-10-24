@@ -46,26 +46,25 @@ def get(doc: Any, segs: list[Seg]) -> Any:
 
 
 def agree(out: Any, want: Any, keys: list[str]) -> bool:
-    """`out` reproduces the default's array `want` on the item leaves that have a rule: the same
-    element count, and on every element each key in `keys` (relative item keys such as `name`,
-    `school.id`, `roles[]`, `roles[].title`) gives the default's value, null and missing alike.
-    Item leaves without a rule are not compared, as top-level fields without one are not. With no
-    keys (scalar items, a const or kept rule) the arrays compare whole."""
+    """`out` has the default array's structure, as an object is judged by its keys: the same element
+    (or group) count, and the same count in every nested array that has a rule. `keys` are the
+    relative item keys with a rule (`name`, `roles[]`, `roles[].title`). Each item leaf is judged on
+    its own row, so a leaf that is right on most elements does not fail the array. With no keys
+    (scalar items, a const or kept rule) the arrays compare whole."""
     out, want = (None if v is MISSING else v for v in (out, want))
     if not keys or not isinstance(out, list) or not isinstance(want, list):
         return same(out, want)
     if len(out) != len(want):
         return False
+    nested = [k for k in keys if k.endswith("[]") and k.count("[]") == 1]
     for x, y in zip(out, want):
-        for k in keys:
-            if "[]" not in k:
-                a, b = get(x, _segs(k)), get(y, _segs(k))
-                if not same(None if a is MISSING else a, None if b is MISSING else b):
-                    return False
-            elif k.endswith("[]") and k.count("[]") == 1:  # a nested array, judged the same way
-                sub = [s[len(k) + 1 :] for s in keys if s.startswith(k + ".")]
-                if not agree(get(x, _segs(k[:-2])), get(y, _segs(k[:-2])), sub):
-                    return False
+        for k in nested:
+            sub = [s[len(k) + 1 :] for s in keys if s.startswith(k + ".")]
+            a, b = (None if (v := get(z, _segs(k[:-2]))) is MISSING else v for z in (x, y))
+            if isinstance(a, list) and isinstance(b, list) and not sub:
+                sub = [""]  # a nested array of scalars: its count, not its values
+            if not agree(a, b, sub):
+                return False
     return True
 
 

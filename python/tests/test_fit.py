@@ -440,6 +440,40 @@ def test_grouped_array_with_a_group_leaf_the_provider_lacks() -> None:
     assert (by["jobs[]"].kind, by["jobs[]"].support) == ("group", 6)
 
 
+def test_item_leaf_right_on_most_elements_does_not_reject_the_array() -> None:
+    """`org` is right on 9 of 10 elements: the array keeps its rule, and `org` is its own row."""
+
+    def row(i: int) -> tuple[Any, Any]:
+        d = {"jobs": [{"title": f"t{i}{k}", "org": f"o{i}{k}"} for k in range(2)]}
+        return d, {"work": [{"role": f"t{i}{k}", "orgName": "zzq" if (i, k) == (0, 0) else f"o{i}{k}"} for k in range(2)]}
+
+    rows = [row(i) for i in range(5)]
+    node = objs(title=S, org=S)
+    rule, fits = fit_array("jobs[]", node, pairs_of(rows))
+    assert rule == {"from": "work", "item": {"title": {"from": "role"}, "org": {"from": "orgName"}}}
+    by = _fit_rows("jobs", node, rows)
+    assert (by["jobs[]"].kind, by["jobs[]"].support, by["jobs[]"].total) == ("path", 5, 5)
+    org = by["jobs[].org"]
+    assert (org.support, org.total) == (9, 10) and org.tier in ("review", "manual")
+
+
+def test_decoy_array_of_the_same_length_is_still_rejected() -> None:
+    rows = [({"jobs": [{"title": f"t{i}{k}"} for k in range(2)]}, {"other": [{"x": _code(i, k)} for k in range(2)]}) for i in range(5)]
+    rule, fits = fit_array("jobs[]", objs(title=S), pairs_of(rows))
+    assert rule is None and fits[0].kind == "none"
+
+
+def test_grouped_array_with_a_group_leaf_right_on_most_groups() -> None:
+    rows = [grouped(i, k) for i, k in enumerate(GROUPS)]
+    rows[0][0]["jobs"][0]["start"] = "2019-01"  # one of 14 groups disagrees
+    rule, fits = fit_array("jobs[]", JOBS, pairs_of(rows))
+    assert rule is not None and rule["item"]["start"] == {"aggregate": "min", "from": "$group[].start"}
+    by = {f.field: f for f in fits}
+    assert (by["jobs[]"].kind, by["jobs[]"].support) == ("group", 6)
+    assert (by["jobs[].start"].support, by["jobs[].start"].total) == (13, 14)
+    assert _fit_rows("jobs", JOBS, rows)["jobs[]"].support == 6
+
+
 # --- structure section ---
 
 
