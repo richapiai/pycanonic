@@ -52,13 +52,14 @@ def _at(path: str, key: str | int) -> str:
 
 def shape(got: Any, want: Any, node: dict[str, Any], path: str = "$") -> list[tuple[str, str]]:
     """Where the mapped output `got` has another shape than the default's `want`: keys and their
-    order, JSON types, and null against an empty container. Null against a value that is not empty
-    is a value miss, which the value check counts. An `x-open` node may differ in keys."""
+    order, JSON types, and null against an object or array, in either direction. Null
+    against a scalar is a value miss, which the value check counts (R35). An `x-open` node may
+    differ in keys."""
     kg, kw = _kind(got), _kind(want)
     if kg != kw:
         if "null" in (kg, kw):
-            other = want if got is None else got
-            return [(path, "null against [] or {}")] if isinstance(other, (list, dict)) and not other else []
+            other = kw if kg == "null" else kg
+            return [(path, f"null against {other}")] if other in ("object", "array") else []
         return [(path, f"type {kg} against {kw}")]
     if isinstance(got, list):
         item = node.get("items") or {}

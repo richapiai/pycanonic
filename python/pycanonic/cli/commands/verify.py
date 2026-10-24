@@ -14,7 +14,7 @@ USAGE = """canonic verify <spec.json> --schema <file> --default <dir> --provider
 
   Maps each provider body through the spec and compares the output with the default's body of
   the same name. It checks the shape at every depth (keys, key order, JSON types, null against
-  [] or {}; an x-open map may differ in keys) and, per mapped field, the share of pairs that
+  an object or array; an x-open map may differ in keys) and, per mapped field, the share of pairs that
   match. A rejected pair fails only if the spec without its reject rules maps it to exactly the
   default's body, or if too many pairs are rejected. A skipped pair (on one side only, or not
   JSON) fails too. Exit 0 when all checks pass, else 1.

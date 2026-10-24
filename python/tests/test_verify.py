@@ -42,11 +42,27 @@ def test_shape_key_order() -> None:
 
 
 def test_shape_null_vs_list() -> None:
-    assert shape({"tags": None}, {"tags": []}, {}) == [("tags", "null against [] or {}")]
-    assert shape({"m": {}}, {"m": None}, {}) == [("m", "null against [] or {}")]
+    assert shape({"tags": None}, {"tags": []}, {}) == [("tags", "null against array")]
+    assert shape({"m": {}}, {"m": None}, {}) == [("m", "null against object")]
     assert shape({"tags": {}}, {"tags": []}, {}) == [("tags", "type object against array")]
     assert shape({"jobs": [{"n": 1}]}, {"jobs": [{"n": "1"}]}, {}) == [("jobs[0].n", "type number against string")]
-    assert shape({"name": None, "hq": None}, {"name": "a", "hq": {"city": "x"}}, {}) == []  # a value miss, not a shape one
+    assert shape({"name": None}, {"name": "a"}, {}) == []  # a value miss, not a shape one (R35)
+
+
+def test_shape_null_against_container_both_ways() -> None:
+    """an object or array against null is a shape failure in both directions, at any
+    depth, empty or not. An object of nulls where the default sends null breaks the contract."""
+    assert shape({"loc": {"city": None, "country": None}}, {"loc": None}, {}) == [("loc", "null against object")]
+    assert shape({"loc": None}, {"loc": {"city": "x"}}, {}) == [("loc", "null against object")]
+    assert shape({"tags": ["a"]}, {"tags": None}, {}) == [("tags", "null against array")]
+    assert shape({"tags": None}, {"tags": ["a"]}, {}) == [("tags", "null against array")]
+    nested = shape({"jobs": [{"org": {"name": None}}, {"org": None}]}, {"jobs": [{"org": None}, {"org": {"name": "o"}}]}, {})
+    assert nested == [("jobs[0].org", "null against object"), ("jobs[1].org", "null against object")]
+    assert shape(None, [1], {}) == [("$", "null against array")]
+    rows = pairs([({"name": "a", "loc": None}, {"n": "a"})])
+    schema = {"type": "object", "properties": {"name": S, "loc": {"type": "object", "properties": {"city": S}}}}
+    r = run(spec({"name": "n", "loc.city": "c"}), schema, rows, 0.95, None)
+    assert r.shape_failures == [("p0.json", "loc", "null against object")] and not r.ok
 
 
 def test_open_map_keys_may_differ() -> None:
