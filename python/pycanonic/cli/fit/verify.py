@@ -4,13 +4,13 @@ gate a provider. Rejects follow , not the design."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from ... import Rejected, _api
 from .compare import same
 from .arrays import MISSING
-from .fit import _eq, _val
+from .fit import _empty, _eq, _nodes, _val
 from .pairs import Pair
 
 
@@ -21,6 +21,8 @@ class VerifyResult:
     rejected: list[str]
     ok: bool
     rejected_wrongly: list[str]  # rejects that throw away an answer equal to the default's
+    misses: dict[str, list[str]] = field(default_factory=dict)  # field key to the first 5 pairs that miss
+    unmapped: dict[str, int] = field(default_factory=dict)  # leaf the spec leaves out to pairs where the default fills it
 
     def to_json(self, pairs: int, skipped: list[tuple[str, str]]) -> dict[str, Any]:
         return {
@@ -28,7 +30,8 @@ class VerifyResult:
             "pairs": pairs,
             "skipped": [{"pair": n, "reason": why} for n, why in skipped],
             "shape_failures": [{"pair": p, "path": at, "message": m} for p, at, m in self.shape_failures],
-            "fields": {k: {"match": m, "total": t, "share": m / t if t else 1.0} for k, (m, t) in self.fields.items()},
+            "fields": {k: {"match": m, "total": t, "share": m / t if t else 1.0, "misses": self.misses.get(k, [])} for k, (m, t) in self.fields.items()},
+            "unmapped": {k: {"pairs": n} for k, n in self.unmapped.items()},
             "rejected": self.rejected,
             "rejected_wrongly": self.rejected_wrongly,
             "reject_share": len(self.rejected) / pairs if pairs else 0.0,
@@ -81,6 +84,24 @@ def _sorted(v: Any) -> Any:
     return [_sorted(x) for x in v] if isinstance(v, list) else v
 
 
+def _unmapped(spec_fields: dict[str, Any], schema: dict[str, Any]) -> list[str]:
+    """The schema's leaves (arrays count as one) that no field key maps, by itself or through an
+    ancestor that copies a whole value (a path or a `from` rule; `present` and `if_empty` do not)."""
+
+    def copied(k: str) -> bool:
+        r = spec_fields.get(k)
+        return isinstance(r, str) or (isinstance(r, dict) and "from" in r)
+
+    out = []
+    for k, node in _nodes(schema):
+        if ("properties" in node and not node.get("x-open")) or k in spec_fields:
+            continue
+        parts = k.split(".")
+        if not any(copied(".".join(parts[:i])) for i in range(1, len(parts))):
+            out.append(k)
+    return out
+
+
 def run(
     spec: dict[str, Any],
     schema: dict[str, Any],
@@ -89,15 +110,19 @@ def run(
     transforms: dict[str, Callable[..., Any]] | None,
     max_reject: float = 0.10,
     skipped: list[tuple[str, str]] | None = None,
+    fail_unmapped: bool = False,
 ) -> VerifyResult:
     """Maps every pair. A rejected pair counts in no field. It fails only if the spec without its
     reject rules maps it to exactly the default's output, or if over `max_reject` of the pairs are
     rejected. A field counts only pairs where either side has a value, and any
-    `skipped` pair fails the run."""
+    `skipped` pair fails the run. A leaf the spec does not map but the default fills is
+    listed, and fails the run only with `fail_unmapped`."""
     art = _api.compile_spec(spec, schema, transforms=transforms)
     loose = _api.compile_spec({k: v for k, v in spec.items() if k != "reject"}, schema, transforms=transforms) if spec.get("reject") else None
     keys = list(spec.get("fields") or {})
     counts = {k: [0, 0] for k in keys}
+    misses: dict[str, list[str]] = {k: [] for k in keys}
+    unmapped = dict.fromkeys(_unmapped(spec.get("fields") or {}, schema), 0)
     failures: list[tuple[str, str, str]] = []
     rejected: list[str] = []
     wrongly: list[str] = []
@@ -110,13 +135,20 @@ def run(
                 wrongly.append(p.name)
             continue
         failures += [(p.name, at, msg) for at, msg in shape(out, p.default, schema)]
+        for k in unmapped:
+            unmapped[k] += not _empty(_val(p.default, k))
         for k in keys:
             got, want = _val(out, k), _val(p.default, k)
             if (got is None or got is MISSING) and (want is None or want is MISSING):
                 continue  # both null: neither a match nor a miss
-            counts[k][0] += _eq(_sorted(got), _sorted(want))
+            hit = _eq(_sorted(got), _sorted(want))
+            counts[k][0] += hit
             counts[k][1] += 1
+            if not hit and len(misses[k]) < 5:
+                misses[k].append(p.name)
     fields = {k: (m, t) for k, (m, t) in counts.items()}
+    unmapped = {k: n for k, n in unmapped.items() if n}
     share = len(rejected) / len(pairs) if pairs else 0.0
     ok = not skipped and not failures and not wrongly and share <= max_reject and all(t == 0 or m / t >= min_match for m, t in fields.values())
-    return VerifyResult(failures, fields, rejected, ok, wrongly)
+    ok = ok and not (fail_unmapped and unmapped)
+    return VerifyResult(failures, fields, rejected, ok, wrongly, {k: v for k, v in misses.items() if v}, unmapped)

@@ -189,7 +189,7 @@ For a manual field that needs code, `--transforms-out transforms.py` writes one 
 
 ```
 canonic verify globex.json --schema canonical.json --default samples/default/ --provider samples/new/ \
-  [--inputs samples/inputs/] [--transforms transforms.py] [--min-match 0.95] [--max-reject 0.10] [--json]
+  [--inputs samples/inputs/] [--transforms transforms.py] [--min-match 0.95] [--max-reject 0.10] [--fail-unmapped] [--json]
 ```
 
 It maps each provider body through the spec and compares the output with the default's body of the same name. It checks:
@@ -198,8 +198,9 @@ It maps each provider body through the spec and compares the output with the def
 2. Values: for each field the spec maps, the share of pairs that match. Numbers compare by value (`1` equals `1.0`). Everything else compares as JSON, without regard to key order. A pair where both sides are null counts neither way, so a field's total counts only pairs where one side has a value. Fields that the spec does not map are left out of the value check.
 3. Rejects: every rejected pair is listed. A rejected pair fails the run in one case: the spec without its reject rules maps that pair to exactly the default's output, so the reject threw away a correct answer. If the spec rejects more than `--max-reject` of the pairs (default 10%), the run fails too.
 4. Skipped pairs: a pair on one side only, or a body that is not JSON, fails the run.
+5. Leaves the spec does not map: each canonical leaf that the spec leaves out but the default fills is listed, for example `not mapped: status (12 pairs with a value)`. They do not fail the run, because the provider can lack a field on purpose. With `--fail-unmapped`, they do.
 
-It prints a table, or JSON with `--json`. If every check passes, it exits 0. Otherwise it exits 1. Run it in CI on every spec change, and again after each new recording of pairs.
+It prints a table, or JSON with `--json`. If every check passes, it exits 0. If a check fails, it exits 1. If a file cannot be read or there are no pairs, it exits 2. Run it in CI on every spec change, and again after each new recording of pairs.
 
 ## A worked example
 

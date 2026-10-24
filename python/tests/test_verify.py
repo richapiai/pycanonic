@@ -135,7 +135,8 @@ def test_json_output_layout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
         "pairs": 4,
         "skipped": [],
         "shape_failures": [],
-        "fields": {"name": {"match": 3, "total": 3, "share": 1.0}, "email": {"match": 3, "total": 3, "share": 1.0}},
+        "fields": {"name": {"match": 3, "total": 3, "share": 1.0, "misses": []}, "email": {"match": 3, "total": 3, "share": 1.0, "misses": []}},
+        "unmapped": {},
         "rejected": ["p0.json"],
         "rejected_wrongly": [],
         "reject_share": 0.25,
@@ -212,3 +213,39 @@ def test_key_order_only_in_shape() -> None:
 def test_shape_checks_common_keys_when_keys_differ() -> None:
     got, want = {"x": {"b": 1, "a": 2, "e": 0}}, {"x": {"a": "2", "b": 1, "c": 3}}
     assert shape(got, want, {}) == [("x.c", "missing key"), ("x.e", "extra key"), ("x", "key order"), ("x.a", "type number against string")]
+
+
+# --- final fix wave: and the miss list ---
+
+
+def test_unmapped_leaf_listed_and_fail_flag() -> None:
+    """R43: a leaf the default fills but the spec does not map is listed; --fail-unmapped fails it."""
+    rows = pairs([({"name": f"n{i}", "status": "on" if i < 3 else None, "hq": {"city": "c", "zip": "z"}}, {"n": f"n{i}", "c": "c"}) for i in range(4)])
+    schema = derive_schema([p.default for p in rows])
+    s = spec({"name": "n", "hq.city": "c"})
+    r = run(s, schema, rows, 0.95, None)
+    assert r.unmapped == {"status": 3, "hq.zip": 4} and r.ok
+    assert not run(s, schema, rows, 0.95, None, fail_unmapped=True).ok
+    open_schema = {"type": "object", "properties": {"m": {"type": "object", "x-open": True, "properties": {"a": S}}}}
+    whole = run(spec({"m": "x"}), open_schema, pairs([({"m": {"a": "1"}}, {"x": {"a": "1"}})]), 0.95, None)
+    assert whole.unmapped == {}  # a path on an open map copies its leaves
+
+
+def test_unmapped_and_misses_in_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "d").mkdir()
+    (tmp_path / "p").mkdir()
+    for i in range(12):
+        write(tmp_path / "d" / f"p{i:02}.json", {"name": f"n{i}", "status": "on"})
+        write(tmp_path / "p" / f"p{i:02}.json", {"n": f"n{i}" if i > 6 else "x"})
+    s = write(tmp_path / "spec.json", spec({"name": "n"}))
+    sc = write(tmp_path / "schema.json", {"type": "object", "properties": {"name": S, "status": S}})
+    args = ["verify", s, "--schema", sc, "--default", str(tmp_path / "d"), "--provider", str(tmp_path / "p"), "--min-match", "0"]
+    assert main(args) == 0
+    table = capsys.readouterr().out
+    assert "not mapped: status (12 pairs with a value)" in table
+    assert "name  5/12  0.42  misses p00.json, p01.json, p02.json, p03.json, p04.json\n" in table
+    assert main([*args, "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["unmapped"] == {"status": {"pairs": 12}}
+    assert out["fields"]["name"]["misses"] == ["p00.json", "p01.json", "p02.json", "p03.json", "p04.json"]
+    assert main([*args, "--fail-unmapped"]) == 1
