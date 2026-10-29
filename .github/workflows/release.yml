@@ -1,7 +1,8 @@
 name: release
 
 # A v* tag builds the wheels and the sdist, installs each wheel in a clean venv and runs the README
-# quick start, then publishes to PyPI (trusted publishing) and canonic-core to crates.io.
+# quick start, then attaches the wheels and the sdist to a GitHub release. PyPI (trusted publishing)
+# and crates.io run only when the repository variable PUBLISH_PUBLIC is "true".
 # The nightly schedule runs cargo audit and the fuzz targets only.
 #
 # Bench: the blocking gate is not here. Shared runners are too noisy to gate on timing. Before you
@@ -184,7 +185,30 @@ jobs:
             /venv/bin/python quickstart.py
             /venv/bin/canonic --help'
 
+  github-release:
+    needs: [audit, wheels, sdist, smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      # The notes are the CHANGELOG section of this version.
+      - run: |
+          awk -v v="## ${GITHUB_REF_NAME#v}" '$0==v{f=1;next} /^## /{if(f)exit} f' CHANGELOG.md > notes.md
+          test -s notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --title "pycanonic ${GITHUB_REF_NAME#v}" --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   pypi:
+    if: vars.PUBLISH_PUBLIC == 'true'
     needs: [audit, wheels, sdist, smoke]
     runs-on: ubuntu-latest
     environment: pypi
@@ -198,6 +222,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   crates:
+    if: vars.PUBLISH_PUBLIC == 'true'
     needs: pypi
     runs-on: ubuntu-latest
     environment: crates-io

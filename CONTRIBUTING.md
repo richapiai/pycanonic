@@ -72,9 +72,10 @@ A release is a `v*` tag. `.github/workflows/release.yml` does the rest:
 2. It builds abi3 wheels for manylinux x86_64 and aarch64, musllinux x86_64, macOS universal2 and Windows x86_64, plus an sdist.
 3. It installs each wheel in a clean venv on Python 3.10 and 3.14, runs the README quick start and `canonic --help`.
 4. It runs `cargo audit`.
-5. It publishes to PyPI with trusted publishing, then runs `cargo publish -p canonic-core`.
+5. It creates a GitHub release for the tag, with the wheels and the sdist attached, and the `CHANGELOG.md` section as notes.
+6. If the repository variable `PUBLISH_PUBLIC` is `true`, it publishes to PyPI with trusted publishing, then runs `cargo publish -p canonic-core`. Without the variable, nothing leaves GitHub.
 
-Before the first release, set up these once:
+Before the first public release, set up these once:
 
 - On PyPI, add a trusted publisher for this repository, workflow `release.yml`, environment `pypi`.
 - In the repository options, create the environments `pypi` and `crates-io`. Add a `CARGO_REGISTRY_TOKEN` secret to `crates-io`.
@@ -102,7 +103,7 @@ To cut a release:
    git push origin v0.1.0
    ```
 
-5. Watch the `release` workflow. The PyPI and crates.io jobs wait for the wheel smoke test and the audit.
+5. Watch the `release` workflow. The GitHub release, PyPI and crates.io jobs wait for the wheel smoke test and the audit.
 
 To publish by hand instead, for example after a workflow failure past the wheel stage:
 
