@@ -234,7 +234,7 @@ On 13 invented providers, 75% of the fields land in auto, and no auto field is w
 
 ## Same behavior as TypeScript
 
-`conformance/cases/` holds 145 cases exported from the TypeScript package. Each case has a spec, its schema, raw inputs, and what the TypeScript artifact returns for them, or the exact compile error. `cargo test` and `pytest python/tests` run every case through `map(bytes)`, `map(dict)`, `map_json`, `extract` and the stats. One case is excluded as a documented divergence: two keys that differ only in a lone surrogate. CI fails once the copy is more than 30 days old. See [conformance/README.md](conformance/README.md).
+`conformance/cases/` holds 145 cases exported from the TypeScript package. Each case has a spec, its schema, raw inputs, and what the TypeScript artifact returns for them, or the exact compile error. `cargo test` and `pytest python/tests` run every case through `map(bytes)`, `map(dict)`, `map_json`, `extract` and the stats. One case is excluded as a documented divergence: two keys that differ only in a lone surrogate. CI fails once the copy is more than 30 days old. See [conformance/README.md](https://github.com/richapiai/pycanonic/blob/main/conformance/README.md).
 
 ## Known limits
 
