@@ -58,7 +58,7 @@ The interpreters read their mapping description while they map: a JSONata expres
 - jsonbender (7.1x) and jmespath without transforms (7.9x) are light pure-Python interpreters. They spend under 1 µs per field. pycanonic spends about 110 to 123 ns per field, so both land at 7.0x to 8.2x.
 - On the M3 Max laptop, pycanonic takes 39 µs on bytes: about 12 µs to parse, 16 µs to run the plan and 10 µs to build the Python objects. `orjson.loads` of the 7.3 KB output alone takes 19 µs, so object building has little left in it.
 
-A plan compiled into per-field kernels is the next step to clear the last two. It is not in 0.1.0.
+A plan compiled into per-field kernels is the next step to clear the last two. It is not in 0.1.
 
 For context, the TypeScript `node bench/interpreters.js` on the M3 Max laptop gives canonic 9.2 µs and jsonata 2.2.2 1112.6 µs (121.1x). The TypeScript side also has one library under 10x: @munesoft/api-normalizer at 5.8x.
 
