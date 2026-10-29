@@ -192,7 +192,7 @@ fn text(mut v: Value) -> String {
             }
             Value::Array(a) => a.iter_mut().for_each(canon),
             Value::Number(n) => {
-                // past 2^63 an integral float stays float text, so it equals no integer.
+                // Past 2^63 an integral float stays float text, so it equals no integer.
                 if let Some(f) = n.as_f64().filter(|f| f.fract() == 0.0 && f.abs() < 9.2e18) {
                     *v = Value::from(f as i64);
                 }

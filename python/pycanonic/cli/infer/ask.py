@@ -28,7 +28,7 @@ Ask = Callable[[Question], "str | None"]
 LOW = 0.6
 """Matches below this confidence are flagged for review, and asked about."""
 INSTRUCTION = "Which source path holds this canonical field? Reply with exactly one path from sources, or null if none of them does."
-# the first 200 scalar paths only. If real payloads need more, rank them by score first.
+# The first 200 scalar paths only. If real payloads need more, rank them by score first.
 MAX_SOURCES = 200
 
 

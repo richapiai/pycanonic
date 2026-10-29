@@ -41,7 +41,7 @@ class Chain:
         return [n if a is None else {n: a} for n, a in self.steps]
 
 
-# unbounded, one artifact per distinct chain in the run; an LRU bound if a run grows large.
+# Unbounded, one artifact per distinct chain in the run; an LRU bound if a run grows large.
 _compiled: dict[str, Any] = {}
 
 

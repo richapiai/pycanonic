@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `canonic fit` no longer proposes a rule that memorizes one sample pair. A lookup table keeps an entry only if two sample pairs show it. A learned text argument (a prefix, a suffix, a pattern) must change the value in two sample pairs. A reject condition must hit only bodies that lack at least half of the fitted sources, and conditions that reject the same pairs collapse to one. On the 13 invented providers of `python/tests/fit_eval/`, three learned tables that memorized the samples are now manual. The auto share stays at 75%, with no wrong auto field.
+- `canonic schema`, `fit` and `verify` are marked experimental in the README and in `docs/fit.md`.
+- `docs/known-limits.md` lists three more limits: aggregates take no transform, `group_by` reads one path, and the cost of a custom transform.
+
 ## 0.1.0
 
 The first release. pycanonic is the Python version of the TypeScript canonic, with a Rust core. It reads the same spec files and gives the same output on the 145 cases of the shared conformance corpus, with one documented divergence. It also adds spec language 2 and three commands that onboard a provider from paired samples.

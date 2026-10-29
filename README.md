@@ -230,6 +230,8 @@ canonic verify globex.json --schema canonical.json --default samples/default/ --
 
 `canonic schema` records the default's shape, key order and empty values. `canonic fit` learns a spec from the pairs and sorts every field into auto, review or manual. Each field in the report has its evidence and what can break on live traffic. `canonic verify` maps every pair and exits 1 on a shape failure or a field below the match bar, so CI can gate the provider. A reviewer locks the fields they checked with `--keep`, and `fit` refits the rest.
 
+`canonic schema`, `fit` and `verify` are experimental in 0.1. Their rules and report format can change in a minor release. With few pairs, most fields land in review. Read every review rule before you keep it.
+
 On 13 invented providers, 75% of the fields land in auto, and no auto field is wrong on fresh pairs. The target is 80%. The specs use spec language 2 (`"language": 2`), which only pycanonic runs. See [docs/fit.md](https://github.com/richapiai/pycanonic/blob/main/docs/fit.md) and the [Language 2](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md#language-2) rules.
 
 ## Same behavior as TypeScript

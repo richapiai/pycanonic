@@ -995,7 +995,7 @@ impl<S: Sink> Exec<'_, S> {
         f: &mut Frame<'_, D>,
         ps: &[At],
     ) -> Option<Option<S::Out>> {
-        // one Vec per read, as codegen.ts allocates one array. Only multi-path `from` pays.
+        // One Vec per read, as codegen.ts allocates one array. Only multi-path `from` pays.
         let docs: Vec<Option<D>> = ps.iter().map(|p| f.read(*p)).collect();
         if docs.iter().all(Option::is_none) {
             return None;

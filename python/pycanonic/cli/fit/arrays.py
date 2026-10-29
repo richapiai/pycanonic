@@ -278,7 +278,7 @@ def _object(props: dict[str, Any], eps: list[Pair], owners: list[int], groups: l
             sub_pairs = eps if groups is None else [Pair(e.name, e.default, {_G: g}, e.inputs) for e, g in zip(eps, groups)]
             rule, sub_fits = fit_array(key + "[]", sub, sub_pairs, owners)
             if groups is not None and sub_fits:
-                # a nested array in a group reads $group only, not the first element; add
+                # A nested array in a group reads $group only, not the first element; add
                 # the first element as a second source if a provider needs it.
                 rule = _regroup(rule)
                 head = sub_fits[0]
@@ -372,7 +372,7 @@ def fit_array(field: str, node: dict[str, Any], pairs: list[Pair], owners: list[
         tried.append(_Tried(kind, full, it, frozenset(j for j in live if agree(outs[j], wants[j], keys)), outs))
 
     for kind in KINDS:
-        # only the best source by shared values gets the full item fit; try
+        # Only the best source by shared values gets the full item fit; try
         # the next ones too if a provider has two near-identical arrays.
         found: list[tuple[int, int, dict[str, Any], list[tuple[int, list[Any], list[Any]]], list[list[Any]] | None]] = []
         for i, ((k, base), es) in enumerate(zip(srcs, elems)):

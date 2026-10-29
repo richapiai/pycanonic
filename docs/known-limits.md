@@ -81,13 +81,27 @@ These were left out of language 2 and `canonic fit` on purpose:
 
 The auto share and the zero wrong auto fields of `canonic fit` come from 13 invented providers in `python/tests/fit_eval/`, not from real provider responses. The auto share is 75% there, below the 80% target. See [fit.md](fit.md#how-well-fit-does). A real provider can have patterns the suite does not cover. Review the report, and run `canonic verify` on pairs that `fit` did not learn from.
 
+With few pairs, `fit` can propose rules that fit the samples by chance, for example a boolean read from another boolean that agreed on every sample. They land in review, never in auto. A lookup entry, a learned text argument and a reject each need two sample pairs or more, so a rule that memorizes one pair is not proposed. The commands are experimental in 0.1.
+
 ## Custom transforms
 
 - For a spec that names a transform alone, the call is `f(value)`. For a spec that gives an argument, the call is `f(value, arg)`.
 - A transform that raises an `Exception` subclass is caught. The field gets `None` or its default, and the error is counted. `KeyboardInterrupt` and `SystemExit` are not swallowed. They are raised from `map` once it returns.
-- A result other than `str`, `int`, `float`, `bool` or `None` counts as a rejection. The TypeScript package keeps any value a transform returns.
+- On a leaf, a result other than `str`, `int`, `float`, `bool` or `None` counts as a rejection. A container transform (language 2) returns a list or a dict, see [spec-format.md](spec-format.md#container-transforms). The TypeScript package keeps any value a transform returns.
 - A dict or list value reaches a transform as a JSON copy, not the original object. The copy stops at 512 levels of nesting or 1,000,000 values. Past either cap the field is `None` and one error is counted.
 - A transform that mutates the input dict during a `map` call can see stale reads. pycanonic reads a shared path prefix once per call, so later fields read the sub-dict as it was first seen.
+
+## Aggregates take no transform
+
+An aggregate such as `{"aggregate": "min", "from": "$group[].started"}` returns the folded value as it is. It cannot take `transform`, so a grouped date cannot be reformatted in the spec. Format the source dates the way the output needs, or build the array with a container transform.
+
+## group_by reads one path
+
+`group_by` keys on one path. It cannot key on the first present of several paths, such as an ID with a name as fallback. An element whose key is null forms a group of its own.
+
+## A custom transform costs a round trip
+
+A custom transform is a Python call. On a leaf, the cost is the call itself. A container transform also gets its source as a JSON copy, and its result is checked against the canonical node. In one measurement, a container transform over a list of 12 objects took 90 µs of a 94 µs `map`. The same spec without that field mapped in 3 µs. Keep container transforms for logic that the spec language cannot express.
 
 ## Limits of shape and fingerprint
 

@@ -220,7 +220,7 @@ impl FillMonitor {
         let mut alerts = Vec::new();
         for (field, s) in &w.fields {
             // A field inside an item is a rate over elements, and needs as many of those as a window needs responses.
-            // a window short on elements is skipped, not carried over. Merge per field if sparse arrays need judging
+            // A window short on elements is skipped, not carried over. Merge per field if sparse arrays need judging
             if s.total.is_some_and(|t| t < self.opts.min_responses) {
                 continue;
             }

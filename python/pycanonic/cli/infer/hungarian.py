@@ -32,7 +32,7 @@ def assign(score: list[list[float]]) -> list[int]:
     return out
 
 
-# positional state is the textbook form of this algorithm. It stays so a reader can check the code against the textbook.
+# Positional state is the textbook form of this algorithm. It stays so a reader can check the code against the textbook.
 def augment(i: int, m: int, cost: Callable[[int, int], float], u: list[float], v: list[float], p: list[int], way: list[int]) -> None:
     minv = [math.inf] * (m + 1)
     used = [False] * (m + 1)

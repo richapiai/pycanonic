@@ -213,7 +213,7 @@ fn named(o: Out, names: &[String]) -> Out {
 /// What the parser has to build for `plan`: every path it reads, everything below a value that
 /// goes out as it is. Where an array has both an index and all elements read, the index gets both.
 pub fn filter_for(plan: &Plan) -> Filter {
-    // a case-insensitive plan keeps the whole body, because a key that matches only by
+    // A case-insensitive plan keeps the whole body, because a key that matches only by
     // case has a name the filter does not list. A lowercase key table would keep the pruning.
     if plan.case_insensitive {
         return Filter::all();

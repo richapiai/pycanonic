@@ -262,7 +262,7 @@ fn steps(p: &str, flat: bool) -> Option<Vec<Path>> {
                 if digits == 0 || (digits > 1 && b[i + 1] == b'0') || b.get(j) != Some(&b']') {
                     return None;
                 }
-                // an index past usize::MAX saturates. It reads nothing either way.
+                // An index past usize::MAX saturates. It reads nothing either way.
                 out.push(Step::Idx(p[i + 1..j].parse().unwrap_or(usize::MAX)));
                 i = j + 1;
             }

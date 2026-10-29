@@ -16,7 +16,7 @@ from .leaves import _segs, fit_leaf
 from .pairs import Pair
 
 _OBJ: dict[str, Any] = {"type": "object", "properties": {"x": {}}}
-# a provider that leaves a leaf out in up to half the pairs still gets its path found; a
+# A provider that leaves a leaf out in up to half the pairs still gets its path found; a
 # provider that misses it more often gets no proposal.
 _REJECT_FLOOR = 0.5
 
@@ -103,8 +103,12 @@ def _rejects(cond: dict[str, Any], body: Any) -> bool:
 
 def propose_reject(schema: dict[str, Any], pairs: list[Pair]) -> list[dict[str, Any]]:
     """`{"missing": p}` for each leaf outside arrays that is never null in the default and whose
-    source path `p` the provider leaves out in some pairs. Always for review."""
-    out: list[dict[str, Any]] = []
+    source path `p` the provider leaves out in some pairs. Always for review.
+
+    A reject is a failover for a body with no usable data, so a condition stays only if each pair
+    it rejects lacks at least half of the fitted sources (an error body, not a profile without a
+    bio). Conditions that reject the same pairs are one cause: the first in schema order stays."""
+    conds: list[dict[str, Any]] = []
     for key in _leaves(schema, []):
         targets = [at(p.default, key) for p in pairs]
         if any(t is None for t in targets):
@@ -114,6 +118,17 @@ def propose_reject(schema: dict[str, Any], pairs: list[Pair]) -> list[dict[str, 
         if not isinstance(src, str) or src == "$":
             continue
         cond = {"missing": src}
-        if cond not in out and any(_rejects(cond, p.provider) for p in pairs):
+        if cond not in conds:
+            conds.append(cond)
+
+    def lacks_most(body: Any) -> bool:
+        return 2 * sum(_rejects(c, body) for c in conds) >= len(conds)
+
+    out: list[dict[str, Any]] = []
+    seen: set[frozenset[int]] = set()
+    for cond in conds:
+        hit = frozenset(i for i, p in enumerate(pairs) if _rejects(cond, p.provider))
+        if hit and hit not in seen and all(lacks_most(pairs[i].provider) for i in hit):
+            seen.add(hit)
             out.append(cond)
     return out

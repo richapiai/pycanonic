@@ -18,6 +18,8 @@ from .compare import same
 from .index import Occurrence
 from .pairs import Pair
 
+# Transforms whose argument fit learns from one value's text, not from a fixed list.
+_LEARNED = {"strip_prefix", "strip_suffix", "regex", "replace", "split"}
 _KIND_RANK = {"path": 0, "join": 1, "coalesce": 2, "lookup": 3, "const": 4}
 _CASE = {"lower", "upper", "title"}
 _TOKEN = re.compile(r"[^\W_]{2,}")
@@ -112,8 +114,9 @@ def _proposals(target: Any, occs: list[Occurrence]) -> list[_Cand]:
 
 
 class _Search:
-    def __init__(self, field: str, pairs: list[Pair], targets: list[Any], sources: list[list[Occurrence]], lookups: bool, floor: float) -> None:
+    def __init__(self, field: str, pairs: list[Pair], targets: list[Any], sources: list[list[Occurrence]], lookups: bool, floor: float, owners: list[int] | None = None) -> None:
         self.targets, self.lookups, self.floor = targets, lookups, floor
+        self.owner = owners or list(range(len(pairs)))  # the sample pair behind each (element) pair
         self.bodies = [p.provider for p in pairs]
         self.values = [{o.path: o.value for o in occs} for occs in sources]
         self.proposed = [_proposals(t, occs) if t is not None else [] for t, occs in zip(targets, sources)]
@@ -156,7 +159,7 @@ class _Search:
         live = [j for j in train if self.targets[j] is not None]
         in_train = set(live)
         support: Callable[[_Cand], int] = lambda c: len(self.hits(c) & in_train)
-        cands = list(dict.fromkeys(c for j in live for c in self.proposed[j]))
+        cands = [c for c in dict.fromkeys(c for j in live for c in self.proposed[j]) if not self._one_off(c)]
         scored = {c: support(c) for c in cands}
         for c in self._coalesces(scored, support):
             scored[c] = support(c)
@@ -168,6 +171,14 @@ class _Search:
         if live and len(live) == len(train) and len(consts) == 1:  # a constant holds in every pair, null included
             scored[_Cand("const", const=consts.pop())] = len(live)
         return sorted(scored.items(), key=lambda cs: self.rank(*cs))
+
+    def _one_off(self, c: _Cand) -> bool:
+        """A chain whose learned text argument (a prefix, a suffix, a pattern) changes the value in
+        fewer than two sample pairs. Its argument is one pair's text, such as a school's town."""
+        if c.kind != "path" or not any(n in _LEARNED for n, _ in c.steps):
+            return False
+        changed = {self.owner[j] for j in self.hits(c) if not same(self.values[j].get(c.paths[0]), self.targets[j])}
+        return len(changed) < 2
 
     def _coalesces(self, scored: dict[_Cand, int], support: Callable[[_Cand], int]) -> list[_Cand]:
         """Per chain, add the path that adds the most pairs to the best path, up to three paths. The
@@ -196,10 +207,13 @@ class _Search:
         """A table per path from its value to the target most pairs give it, scored by support like
         any rule, so one noisy pair does not hide it. A value whose targets tie has no
         majority, so the path gets no table. Only for scalar targets, when some value repeats (a table with one entry per pair is an ID,
-        not an enum), and the targets differ (one target is a constant)."""
+        not an enum), and the targets differ (one target is a constant). An entry needs its value and
+        target in two sample pairs: an entry seen in one pair memorizes that pair (a company's
+        domain, a title's employment type), so it is left out, and a table left with no entry is none."""
         out: list[_Cand] = []
         for path in dict.fromkeys(p for j in live for p in self.values[j]):
             votes: dict[str, Counter[str]] = {}
+            where: dict[tuple[str, str], set[int]] = {}
             first: dict[str, Any] = {}
             seen = 0
             for j in live:
@@ -211,13 +225,14 @@ class _Search:
                 key = json.dumps(t, sort_keys=True)
                 first.setdefault(key, t)
                 votes.setdefault(text(v), Counter())[key] += 1
+                where.setdefault((text(v), key), set()).add(self.owner[j])
                 seen += 1
             else:
                 tops = {k: c.most_common(2) for k, c in votes.items()}
                 if any(len(t) > 1 and t[0][1] == t[1][1] for t in tops.values()):
                     continue  # a tie is no majority: the pairs disagree, so the path is not an enum
-                table = {k: first[t[0][0]] for k, t in tops.items()}
-                if len(table) < seen and len({json.dumps(t, sort_keys=True) for t in table.values()}) > 1:
+                table = {k: first[t[0][0]] for k, t in tops.items() if len(where[(k, t[0][0])]) >= 2}
+                if table and len(table) < seen and len({json.dumps(t, sort_keys=True) for t in table.values()}) > 1:
                     arg = {"table": dict(sorted(table.items())), "else": "null"}
                     out.append(_cand("lookup", (path,), Chain([("lookup", arg)])))
         return out
@@ -241,7 +256,7 @@ def fit_leaf(
 
     The holdout leaves out one sample pair at a time. For element pairs, `owners[j]` names the
     sample pair that element `j` came from, so all elements of one response leave together, and the pair holds only if every one of its elements is reproduced."""
-    s = _Search(field, pairs, targets, sources_by_pair, lookups_allowed, floor)
+    s = _Search(field, pairs, targets, sources_by_pair, lookups_allowed, floor, owners)
     every = list(range(len(pairs)))
     live = [j for j in every if targets[j] is not None]
     ranked = s.select(every)

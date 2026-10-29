@@ -99,9 +99,9 @@ def test_lookup_learned() -> None:
     enum = [("UP", "liked"), ("STAR", "starred"), ("UP", "liked"), ("DOWN", "disliked"), ("STAR", "starred")]
     f = leaf("reaction", [(t, {"kind": s}) for s, t in enum])
     assert f.kind == "lookup"
-    assert f.rule == {"from": "kind", "transform": [{"lookup": {"table": {"DOWN": "disliked", "STAR": "starred", "UP": "liked"}, "else": "null"}}]}
-    assert f.support == 5
-    assert f.holdout < 1  # DOWN is seen once
+    # DOWN is seen in one pair only, so the table leaves it out and that pair misses.
+    assert f.rule == {"from": "kind", "transform": [{"lookup": {"table": {"STAR": "starred", "UP": "liked"}, "else": "null"}}]}
+    assert (f.support, f.total) == (4, 5)
     assert leaf("reaction", [(t, {"kind": s}) for s, t in enum], lookups=False).kind == "none"
 
 
@@ -123,6 +123,36 @@ def test_lookup_with_tied_votes_gets_no_table() -> None:
     enum = [("UP", "liked"), ("UP", "fond"), ("STAR", "starred"), ("STAR", "starred"), ("DOWN", "disliked")]
     f = leaf("reaction", [(t, {"kind": s}) for s, t in enum])
     assert (f.kind, f.rule, f.support) == ("none", None, 0)
+
+
+def test_lookup_keeps_only_values_seen_in_two_sample_pairs() -> None:
+    """A table entry seen in one sample pair memorizes that pair. Elements of one response count
+    as one pair (`owners`), so a value repeated inside one response is still seen once."""
+    rows = [("liked", {"kind": "UP"})] * 4 + [("starred", {"kind": "STAR"})] * 4 + [("disliked", {"kind": "DOWN"})] * 2
+    pairs = [Pair(f"e{i}.json", {"reaction": t}, b, None) for i, (t, b) in enumerate(rows)]
+    targets = [t for t, _ in rows]
+    owners = [0, 1, 2, 3, 4, 5, 6, 7, 8, 8]  # both DOWN elements come from sample pair 8
+    f = fit_leaf("reaction", pairs, targets, [scalars(p.provider) for p in pairs], True, owners=owners)
+    assert f.kind == "lookup"
+    assert f.rule == {"from": "kind", "transform": [{"lookup": {"table": {"STAR": "starred", "UP": "liked"}, "else": "null"}}]}
+    assert (f.support, f.total) == (8, 10)
+
+
+def test_lookup_of_one_off_values_is_no_table() -> None:
+    """Company name to domain over five profiles: every value is seen in one pair, so no table."""
+    rows = [(f"c{i}.example", {"company": f"Co {i}"}) for i in range(5)] + [("c0.example", {"company": "Co 0"})]
+    pairs = [Pair(f"e{i}.json", {"domain": t}, b, None) for i, (t, b) in enumerate(rows)]
+    f = fit_leaf("domain", pairs, [t for t, _ in rows], [scalars(p.provider) for p in pairs], True, owners=[0, 1, 2, 3, 4, 0])
+    assert (f.kind, f.rule) == ("none", None)
+
+
+def test_argument_learned_from_one_pair_is_not_kept() -> None:
+    """A suffix that only one sample pair carries is that pair's text, not a rule: the plain path wins."""
+    rows = [(f"School {i}", {"school": f"School {i}"}) for i in range(5)] + [("Big School", {"school": "Big School, Oslo"})]
+    f = leaf("name", rows)
+    assert (f.rule, f.kind, f.support, f.total) == ({"from": "school"}, "path", 5, 6)
+    rows = [(f"School {i}", {"school": f"School {i}, Campus"}) for i in range(6)]  # every pair carries it
+    assert leaf("name", rows).rule == {"from": "school", "transform": [{"strip_suffix": ", Campus"}]}
 
 
 def test_holdout_catches_overfit() -> None:
@@ -528,6 +558,20 @@ def test_reject_proposal() -> None:
     assert propose_reject(schema, pairs_of(rows)) == [{"missing": "full_name"}]
     full = [(d, {**p, "full_name": d["name"]}) for d, p in rows]
     assert propose_reject(schema, pairs_of(full)) == []
+
+
+def test_reject_needs_a_mostly_empty_body() -> None:
+    """A provider that leaves out one field the default always had is not a failover; a body that
+    lacks most fitted sources (an error body) is, and its conditions collapse to the first one."""
+    schema = {"type": "object", "properties": {"name": S, "title": S, "bio": S, "city": S}}
+    def row(i: int, body: dict[str, Any]) -> tuple[Any, Any]:
+        return ({"name": f"n{i}", "title": f"t{i}", "bio": f"b{i}", "city": f"c{i}"}, body)
+    full = lambda i: {"full_name": f"n{i}", "role": f"t{i}", "about": f"b{i}", "town": f"c{i}"}
+    rows = [row(i, full(i)) for i in range(5)]
+    rows.append(row(5, {k: v for k, v in full(5).items() if k != "about"}))  # a real profile without a bio
+    assert propose_reject(schema, pairs_of(rows)) == []
+    rows.append(row(6, {"error": {"type": "not_found"}}))
+    assert propose_reject(schema, pairs_of(rows)) == [{"missing": "full_name"}]
 
 
 # --- command section ---

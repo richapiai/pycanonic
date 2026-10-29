@@ -10,6 +10,8 @@ A pair is one request sent to both providers: the default's response and the new
 
 The specs that `fit` writes use [language 2](spec-format.md#language-2), so only pycanonic can run them.
 
+These three commands are experimental in 0.1. Their rules, tiers and report format can change in a minor release. `pycanonic` itself (`compile_spec`, `map` and the spec format) follows semantic versioning.
+
 ## The pairs
 
 ```
