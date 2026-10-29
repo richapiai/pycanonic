@@ -5,7 +5,7 @@ This page lists everything `pycanonic` and `pycanonic.stream` export, with the t
 ```python
 from pycanonic import (
     compile_spec, load, validate_spec, validate_canonical, SpecError, Issue,
-    Artifact, Stats, Registry, Transform, default_transforms, validators,
+    Artifact, Rejected, Stats, Registry, Transform, default_transforms, validators,
     FillMonitor, FieldAlert, shape, fingerprint, ShadowDiff, merge_gate, GateResult,
 )
 from pycanonic.stream import routing_tap, RoutingTap
@@ -65,6 +65,10 @@ class Issue:
 
 `class SpecError(ValueError)`. `compile_spec` raises it for a bad spec or schema.
 
+### `Rejected`
+
+`class Rejected(Exception)`. `map` and `map_json` raise it when a `reject` condition holds. Its `reason` is the condition as compact JSON text, for example `'{"missing":"data.name"}'`. See [spec-format.md](spec-format.md#language-2).
+
 ## The artifact
 
 ```python
@@ -77,8 +81,8 @@ class Artifact:
     source: str                       # the plan listing, one line per field
     stats: Stats
 
-    def map(self, src: Json | Parsed) -> dict[str, Any]: ...
-    def map_json(self, raw: Json) -> bytes: ...
+    def map(self, src: Json | Parsed, context: Mapping[str, Any] | None = None) -> Any: ...
+    def map_json(self, raw: Json, context: Mapping[str, Any] | None = None) -> bytes: ...
     def view(self, src: Json | Parsed) -> View: ...
     def extract(self, raw: Json) -> dict[str, Any]: ...
     def stream(self) -> ExtractStream: ...
@@ -89,9 +93,10 @@ class Artifact:
 
 `Json` is JSON text: `bytes | str | bytearray | memoryview`. A `bytearray` or `memoryview` is copied before parsing. `Parsed` is what `json.loads` returns (`dict`, `list`, `int`, `float`, `bool`, `None`) or a `tuple`. At the root, it can also be any other `Mapping`, which is copied one level into a `dict`. Below the root only `dict`, `list` and `tuple` have members.
 
-- `map(src)` returns the full canonical object as nested dicts. It never raises on bad data, and it counts stats. A root that is neither `Json` nor `Parsed` (a `set`, an arbitrary object) raises `TypeError`.
+- `map(src)` returns the full canonical object as nested dicts. An array root (language 2) gives a `list`. It never raises on bad data, and it counts stats. A `reject` rule (language 2) raises `Rejected` on purpose. A root that is neither `Json` nor `Parsed` (a `set`, an arbitrary object) raises `TypeError`.
+- `context` is the request inputs that `$input` paths read (language 2). It must be a JSON-like `Mapping` with `str` keys, or `map` raises `TypeError`. A plan that does not read `$input` ignores it.
 - `map_json(raw)` takes JSON text and returns the canonical object as JSON `bytes`. It builds no Python objects and counts stats. The bytes equal what `JSON.stringify` writes for the same value in the TypeScript package.
-- `view(src)` returns a lazy canonical object. Each field is mapped the first time you read it and then kept. It counts no stats.
+- `view(src)` returns a lazy canonical object. Each field is mapped the first time you read it and then kept. It counts no stats. It supports language 1 plans only, and raises `ValueError` on a plan with a language 2 rule.
 - `extract(raw)` reads the routing fields from JSON text without parsing the whole body. The result is flat and keyed by spec field (`{"company.domain": "acme.com"}`).
 - `stream()` returns a new incremental reader for the same fields. Use one per response.
 - `plan_json()` returns the compiled plan as JSON, for `load`. The JSON carries `"format": 1`, or `"format": 2` when the plan has a language 2 rule. `load` raises `ValueError` for a plan without it or with another value. In that case, rebuild the plan from its spec.
