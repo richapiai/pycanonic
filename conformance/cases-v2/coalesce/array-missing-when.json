@@ -1,0 +1,69 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "draft",
+    "fields": {
+      "n": "n",
+      "tags[]": {
+        "coalesce": [
+          {
+            "from": "a",
+            "when": {
+              "path": "k",
+              "eq": 1
+            }
+          },
+          "b"
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "string"
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "x-empty": "missing"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "n": "x",
+        "a": [
+          "q"
+        ]
+      },
+      "context": null,
+      "expected": {
+        "n": "x"
+      }
+    },
+    {
+      "body": {
+        "n": "x",
+        "k": 1,
+        "a": [
+          "q"
+        ]
+      },
+      "context": null,
+      "expected": {
+        "n": "x",
+        "tags": [
+          "q"
+        ]
+      }
+    }
+  ]
+}

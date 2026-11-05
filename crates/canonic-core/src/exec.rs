@@ -718,6 +718,14 @@ fn pick<D: Doc>(es: &[Entry2], f: &mut Frame<'_, D>, list: bool) -> Option<D> {
     })
 }
 
+/// A list's source: the value at `at`, or with `coalesce` the first entry that is used.
+fn list_source<D: Doc>(at: At, coalesce: &[Entry2], f: &mut Frame<'_, D>) -> Option<D> {
+    match coalesce.is_empty() {
+        true => f.read(at),
+        false => pick(coalesce, f, true),
+    }
+}
+
 /// A `default` as a borrowed `Value`.
 fn json_value(v: &serde_json::Value) -> Value<'_> {
     use serde_json::Value as J;
@@ -1083,8 +1091,9 @@ impl<S: Sink> Exec<'_, S> {
                     from: Input::At(at),
                     stat,
                     ops,
+                    coalesce,
                     ..
-                } if ops.missing == Empty::Missing && f.read(*at).is_none() => {
+                } if ops.missing == Empty::Missing && list_source(*at, coalesce, f).is_none() => {
                     self.stats.miss(*stat)
                 }
                 op => {
@@ -1348,11 +1357,7 @@ impl<S: Sink> Exec<'_, S> {
                 return self.empty(ops.missing, false);
             }
             (Input::At(at), _) => {
-                let x = match coalesce.is_empty() {
-                    true => f.read(*at),
-                    false => pick(coalesce, f, true),
-                };
-                let Some(x) = x else {
+                let Some(x) = list_source(*at, coalesce, f) else {
                     self.stats.miss(stat);
                     return self.empty(ops.missing, false);
                 };
