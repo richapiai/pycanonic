@@ -21,6 +21,11 @@
 - `canonic fit` proposes `format` (a fixed prefix and suffix around the provider value, learned from at least two pairs, auto like `strip_prefix`) and the `first_word` mode of `split_name` (review). It no longer proposes a lookup from a number source to a text target, and it marks a table in which a target value has fewer than two source values as `weak, possibly by chance`. It also compares text after trim and white-space collapse, and counts a text cut short (the shorter has 20 characters or more) as a near match. A field that is right only on such pairs is review with the note `near match: white space or text cut short in N pairs`. `format` needs the value on a token boundary in the default text. On the 14 invented providers of `python/tests/fit_eval/`, the auto share stays at 75% with no wrong auto field.
 - `canonic fit` and `canonic verify` take `--align-items <default list> <provider list> --by <default id> <provider id>` with `--id-pattern <regex>`. They pair the items of a list by id instead of the whole bodies, as `<pair>#<n>` in the default list's order, and fit or verify the item pairs against the schema of the list's items. The id is the digits of the id text, or group 1 of the regex, else the whole match. Every digit counts, so `urn:example:v2:item:752` gives `2752`; `--id-pattern 'item:(\d+)'` is the fix. A repeated id pairs its first element only. The report and `--json` (`aligned`) give matched, default-only and provider-only counts per pair. A bad regex or a list path that is not an array of objects exits 2.
 
+### Fixed
+
+- A `canonic fit` draft has every canonical key. Each manual field (`none` or `disagree`), at the top level or inside an item map, gets a placeholder `{"const": <empty form>}`: the node's `x-empty`, else what strict shape writes, else null. Its report row starts with `placeholder:`. `canonic verify` lists a placeholder as not mapped, as before. `verify` also no longer reports a missing key on a leaf whose schema says `x-empty: "missing"`, because that is the leaf's null. Against a value, it is a value miss. So a fresh draft whose provider lacks such a leaf, inside list items too, no longer fails the shape check.
+- An `if_empty` row of the fit report says once that the object's empty form is a guess.
+
 ## 0.1.1
 
 ### Changed

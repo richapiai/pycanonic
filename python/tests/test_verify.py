@@ -28,10 +28,30 @@ def pairs(rows: list[tuple[Any, Any]]) -> list[Pair]:
 
 
 def test_shape_missing_key() -> None:
-    rows = pairs([({"name": "a", "nick": "x"}, {"n": "a"}), ({"name": "b"}, {"n": "b"})])
-    r = run(spec({"name": "n"}), derive_schema([p.default for p in rows]), rows, 0.95, None)
-    assert r.shape_failures == [("p0.json", "nick", "missing key")] and not r.ok
+    assert shape({"a": 1}, {"a": 1, "b": 2}, {}) == [("b", "missing key")]
     assert shape({"a": 1, "b": 2}, {"a": 1}, {}) == [("b", "extra key")]
+    gone = {"properties": {"b": {"x-empty": "missing"}}}
+    assert shape({"a": 1}, {"a": 1, "b": {"c": 1}}, gone) == [("b", "missing key")]  # a container is still shape
+
+
+def test_missing_key_under_x_empty_missing_is_a_value_miss() -> None:
+    """No key is how x-empty "missing" writes a leaf's null, so against a scalar it is a value miss
+    (R35, R66), and an unmapped leaf stays a "not mapped" listing (R43)."""
+    rows = pairs([({"name": "a", "nick": "x"}, {"n": "a"}), ({"name": "b"}, {"n": "b"})])
+    schema = derive_schema([p.default for p in rows])
+    r = run(spec({"name": "n"}), schema, rows, 0.95, None)
+    assert r.shape_failures == [] and r.unmapped == {"nick": ["p0.json"]} and r.ok
+    assert not run(spec({"name": "n"}), schema, rows, 0.95, None, fail_unmapped=True).ok
+    r = run(spec({"name": "n", "nick": "nk"}), schema, pairs([({"name": "a", "nick": "x"}, {"n": "a"}), ({"name": "b"}, {"n": "b", "nk": "y"})]), 0.95, None)
+    assert r.shape_failures == [] and r.fields["nick"] == (0, 2) and not r.ok
+
+
+def test_placeholder_counts_as_unmapped() -> None:
+    rows = pairs([({"name": "a", "nick": "x", "jobs": [{"t": "1", "id": 1}]}, {"n": "a", "j": [{"t": "1"}]})])
+    schema = derive_schema([p.default for p in rows])
+    hole = {"const": None}
+    r = run(spec({"name": "n", "nick": hole, "jobs[]": {"from": "j", "item": {"t": "t", "id": hole}}}), schema, rows, 0.95, None)
+    assert set(r.unmapped) == {"nick", "jobs[].id"} and "nick" not in r.fields and "jobs[].id" not in r.fields and r.ok
 
 
 def test_shape_key_order() -> None:

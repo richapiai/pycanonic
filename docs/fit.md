@@ -175,7 +175,7 @@ This is the table the reviewer reads. The report prints the row of each field th
 | Learned regex | `regex` | review | A URL or string format the samples did not show. |
 | Group by | `group` | review | The grouping key is wrong for records with gaps or repeats, for example two runs under one key with another element between them. Check with a pair that has that pattern. |
 | Optional object | `presence` | review | If the provider sends the parent object with different content, the object can be null by mistake. |
-| Empty form of an object the default always sent | `if_empty` | review | The default sent this object in every sample, so its empty form is a guess. If every leaf in it is null, the object is null. If the default sends {} or an object of nulls there, the output differs. |
+| Empty form of an object the default always sent | `if_empty` | review | If every leaf in it is null, the object is null. If the default sends {} or an object of nulls there, the output differs. |
 | Condition on a request input | `when` | review | An input combination the samples did not show. |
 | Omit a key | `omit` | review | Customers parsing a fixed key set. |
 | Reject rule | `reject` | review | Too strict: good answers fail over to the next provider and cost money. Too loose: empty answers reach customers. |
@@ -193,7 +193,8 @@ This is the table the reviewer reads. The report prints the row of each field th
 Notes on the table:
 
 - `omit` does not get its own row. It is part of a `when` row. `fit` never proposes `null_if`. The `omit` and `null_if` texts are for rules a person writes.
-- A field can also print a note in front of the text, such as the closest rule for a `disagree` field or `The default's samples disagree on the empty form.`
+- A field can also print a note in front of the text, such as the closest rule for a `disagree` field or `The default's samples disagree on the empty form.` An `if_empty` field's note says that the default sent the object in all N pairs, so its empty form is a guess.
+- A manual field (`none` or `disagree`) gets a placeholder in the draft: `{"const": <empty form>}`, where the empty form is the schema node's `x-empty`, else what strict shape writes, else null. An object node gets no placeholder. The draft then has every canonical key, and `verify` lists the field as not mapped, the same as a field with no rule, until a rule replaces it. `verify` treats any `{"const": null}`, `{"const": []}` or `{"const": {}}` rule that way. The note starts with `placeholder:`.
 
 No tool here catches these problems:
 
@@ -228,7 +229,7 @@ canonic verify globex.json --schema canonical.json --default samples/default/ --
 
 It maps each provider body through the spec and compares the output with the default's body of the same name. It checks:
 
-1. Shape, at every depth: the same keys in the same order, the same JSON types, and null against an object or an array, in both directions. An object of nulls where the default sends null fails as `null against object`. An `x-open` map can differ in keys. A null against a scalar is a value miss, not a shape failure.
+1. Shape, at every depth: the same keys in the same order, the same JSON types, and null against an object or an array, in both directions. An object of nulls where the default sends null fails as `null against object`. An `x-open` map can differ in keys. A null against a scalar is a value miss, not a shape failure. So is a key left out against a scalar where the schema node says `x-empty: "missing"`, because that is how the schema writes the leaf's null.
 2. Values: for each field the spec maps, the share of pairs that match. Numbers compare by value (`1` equals `1.0`). Everything else compares as JSON, without regard to key order. A pair where both sides are null counts neither way, so a field's total counts only pairs where one side has a value. Fields that the spec does not map are left out of the value check.
 
    For each list the spec maps, `verify` also scores every leaf inside the items, by position and up to the shorter length (`items[].name`, and `a[].b[].c` for nested lists). A union field is scored per leaf of the branch that fits the default, as `<node>(<branch>).<leaf>`. Each list also gets a count row, `items[] (count)`, which matches when both lengths are equal or both sides are null or empty. The whole-list row stays. Every row gates on `--min-match`, so one item leaf that always differs now fails the run. A miss in an item row is listed as `<pair>#<index>`.

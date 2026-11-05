@@ -4,6 +4,7 @@ compiling it and mapping every pair, and writes the spec, the report and the tra
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import keyword
 import re
@@ -218,6 +219,56 @@ class _Fitter:
         return Row(key, "", "asked", rule, len(hits), len(live), None, examples)
 
 
+_EMPTY_FORM: dict[str, Any] = {"null": None, "[]": [], "{}": {}, "missing": None}
+
+
+def _node_at(schema: dict[str, Any], key: str) -> dict[str, Any]:
+    """The schema node of a field key, item fields included (`jobs[].org.id`). `jobs[]` is the array."""
+    node = schema
+    for i, part in enumerate(key.removesuffix("[]").split("[]")):
+        node = (node.get("items") or {}) if i else node
+        for s in _segs(part):
+            node = (node.get("properties") or {}).get(s) or {}
+    return node
+
+
+def _empty_form(node: dict[str, Any], strict: bool) -> Any:
+    """What the runtime writes for the node with no value: its x-empty, else the strict table, else
+    null. Under x-empty "missing" a null leaves the key out."""
+    if node.get("x-empty") in _EMPTY_FORM:
+        return _EMPTY_FORM[node["x-empty"]]
+    if not strict:
+        return None
+    return [] if node.get("type") == "array" else {} if node.get("x-open") else None
+
+
+def _with_holes(f: _Fitter) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The fitted rules plus a placeholder, `{"const": <empty form>}`, for every manual field, top
+    level or inside item maps, so the draft has every canonical key. Also each placed key
+    with its empty form.
+    An object node gets none: a const there would replace the leaves mapped below it."""
+    fields, placed = copy.deepcopy(f.fields), {}
+    strict = f.schema.get("x-shape") == "strict"
+    for r in f.rows:
+        node = _node_at(f.schema, r.field)
+        if r.kind not in decide.MANUAL or r.rule is not None or "properties" in node:
+            continue
+        head, *rest = r.field.split("[].")
+        hole = {"const": _empty_form(node, strict)}
+        if not rest:
+            fields.setdefault(r.field, hole)
+            placed[r.field] = hole["const"]
+            continue
+        rule = fields.get(head + "[]")
+        for part in rest[:-1]:
+            rule = rule["item"].get(part + "[]") if isinstance(rule, dict) and isinstance(rule.get("item"), dict) else None
+        if isinstance(rule, dict) and isinstance(rule.get("item"), dict):
+            rule["item"].setdefault(rest[-1], hole)
+            placed[r.field] = hole["const"]
+    order = {r.field: i for i, r in enumerate(f.rows)}  # a top-level placeholder in schema order
+    return dict(sorted(fields.items(), key=lambda kv: order.get(kv[0], len(order)))), placed
+
+
 def _spec(opts: FitOptions, fields: dict[str, Any], reject: list[Any] | None = None, drift: bool = False) -> dict[str, Any]:
     spec: dict[str, Any] = {"language": 2, "provider": opts.provider, "endpoint": opts.endpoint, "version": 1, "status": "draft"}
     if drift:
@@ -267,7 +318,7 @@ def _check(f: _Fitter) -> None:
     A pair that the runtime rejects but fit did not drops the reject rules (fit_pairs makes them manual)."""
     pairs, n, tol = f.pairs, len(f.pairs), f.opts.tolerance
     while f.fields:
-        art = _api.compile_spec(_spec(f.opts, f.fields, f.reject, f.drift), f.schema, transforms=f.opts.transforms)
+        art = _api.compile_spec(_spec(f.opts, _with_holes(f)[0], f.reject, f.drift), f.schema, transforms=f.opts.transforms)
         outs: list[Any] = []
         for p in pairs:
             try:
@@ -366,7 +417,7 @@ def _fit(pairs: list[Pair], schema: dict[str, Any], options: FitOptions, reject:
         f.node(key, node)
     _check(f)
     if f.fields and f.reject:  # never write a spec that has not mapped every pair, rejects included
-        art = _api.compile_spec(_spec(options, f.fields, f.reject, f.drift), schema, transforms=options.transforms)
+        art = _api.compile_spec(_spec(options, _with_holes(f)[0], f.reject, f.drift), schema, transforms=options.transforms)
         for p in failover:
             try:
                 _map(art, p)
@@ -392,7 +443,11 @@ def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) ->
     if f.disagree:
         disagree, f = f.disagree, _fit(pairs, schema, options, [], bool(drift), [])
         f.disagree = disagree
-    spec = _spec(options, f.fields, f.reject, f.drift) if f.fields else None
+    fields, placed = _with_holes(f)
+    spec = _spec(options, fields, f.reject, f.drift) if f.fields else None
+    for r in f.rows:
+        if spec and r.field in placed:
+            r.note = " ".join(filter(None, [r.note, f"placeholder: the draft writes {json.dumps(placed[r.field])}, the schema's empty form, until a rule replaces it."]))
     if drift:  # one decision for the whole spec, always for review
         note = f"The provider spells keys in more than one case, for example {', '.join(drift)}, so keys match without regard to case."
         f.rows.insert(0, Row("spec.keys", "", "keys", "case_insensitive", len(pairs), len(pairs), None, [], note))

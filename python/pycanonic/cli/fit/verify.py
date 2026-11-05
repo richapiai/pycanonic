@@ -61,8 +61,8 @@ def _at(path: str, key: str | int) -> str:
 def shape(got: Any, want: Any, node: dict[str, Any], path: str = "$") -> list[tuple[str, str]]:
     """Where the mapped output `got` has another shape than the default's `want`: keys and their
     order, JSON types, and null against an object or array, in either direction. Null
-    against a scalar is a value miss, which the value check counts (R35). An `x-open` node may
-    differ in keys."""
+    against a scalar is a value miss, which the value check counts (R35), and so is a key left out
+    against a scalar under x-empty "missing" (R66). An `x-open` node may differ in keys."""
     kg, kw = _kind(got), _kind(want)
     if kg != kw:
         if "null" in (kg, kw):
@@ -74,11 +74,17 @@ def shape(got: Any, want: Any, node: dict[str, Any], path: str = "$") -> list[tu
         return [f for i, (g, w) in enumerate(zip(got, want)) for f in shape(g, w, item, _at(path, i))]
     if not isinstance(got, dict) or node.get("x-open"):
         return []
-    out = [(_at(path, k), "missing key") for k in want if k not in got] + [(_at(path, k), "extra key") for k in got if k not in want]
+    props = (_branch(node, want) or ("", {}))[1] if "oneOf" in node else node.get("properties") or {}
+
+    def gone(k: str, v: Any) -> bool:
+        """No key where the node's x-empty is "missing" is its null: against a scalar, a value miss (R35)."""
+        return (props.get(k) or {}).get("x-empty") == "missing" and _kind(v) not in ("object", "array")
+
+    out = [(_at(path, k), "missing key") for k in want if k not in got and not gone(k, want[k])]
+    out += [(_at(path, k), "extra key") for k in got if k not in want and not gone(k, got[k])]
     common = [k for k in want if k in got]
     if [k for k in got if k in want] != common:
         out.append((path, "key order"))
-    props = (_branch(node, want) or ("", {}))[1] if "oneOf" in node else node.get("properties") or {}
     return out + [f for k in common for f in shape(got[k], want[k], props.get(k) or {}, _at(path, k))]
 
 
@@ -170,6 +176,18 @@ def _sorted(v: Any) -> Any:
     return [_sorted(x) for x in v] if isinstance(v, list) else v
 
 
+def _hole(rule: Any) -> bool:
+    """A const that writes an empty form, as fit's placeholders do: it maps nothing."""
+    return isinstance(rule, dict) and set(rule) == {"const"} and rule["const"] in (None, [], {})
+
+
+def _mapped(rule: Any) -> Any:
+    """`rule` without the placeholders in its item maps, at any depth."""
+    if isinstance(rule, dict) and isinstance(rule.get("item"), dict):
+        return {**rule, "item": {k: _mapped(r) for k, r in rule["item"].items() if not _hole(r)}}
+    return rule
+
+
 def _unmapped(spec_fields: dict[str, Any], schema: dict[str, Any]) -> list[str]:
     """The schema's leaves (arrays count as one) that no field key maps, by itself or through an
     ancestor that copies a whole value (a path or a `from` rule; `present` and `if_empty` do not)."""
@@ -209,10 +227,11 @@ def run(
     items by position and a count row; `ignore` drops a field and all below it.
     `allow` maps a field to the reason its unmapped leaves are expected, itself and all below it, and
     `fail_unmapped` fails only on the leaves it does not cover. A pair that equals the
-    default only within `tolerance` counts as a match and in `tolerated`."""
+    default only within `tolerance` counts as a match and in `tolerated`. A placeholder,
+    a const that writes an empty form, counts as unmapped."""
     art = _api.compile_spec(spec, schema, transforms=transforms)
     loose = _api.compile_spec({k: v for k, v in spec.items() if k != "reject"}, schema, transforms=transforms) if spec.get("reject") else None
-    sf = spec.get("fields") or {}
+    sf = {k: _mapped(r) for k, r in (spec.get("fields") or {}).items() if not _hole(r)}  # placeholders count as unmapped
     ignored = set(ignore or ())
     kept = {k: v for k, v in sf.items() if not _under(k, ignored)}
     keys = list(kept)

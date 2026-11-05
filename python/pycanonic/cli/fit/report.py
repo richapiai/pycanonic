@@ -29,7 +29,7 @@ RISKS: dict[str, str] = {
     "regex": "A URL or string format the samples did not show.",
     "group": "The grouping key is wrong for records with gaps or repeats, for example two runs under one key with another element between them. Check with a pair that has that pattern.",
     "presence": "If the provider sends the parent object with different content, the object can be null by mistake.",
-    "if_empty": "The default sent this object in every sample, so its empty form is a guess. If every leaf in it is null, the object is null. If the default sends {} or an object of nulls there, the output differs.",
+    "if_empty": "If every leaf in it is null, the object is null. If the default sends {} or an object of nulls there, the output differs.",
     "when": "An input combination the samples did not show.",
     "omit": "Customers parsing a fixed key set.",
     "reject": "Too strict: good answers fail over to the next provider and cost money. Too loose: empty answers reach customers.",

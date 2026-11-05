@@ -718,7 +718,7 @@ def test_transforms_stub_has_doctests(tmp_path: Path) -> None:
     result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
     row = {r.field: r for r in result.fields}["handle"]
     assert (row.tier, row.kind) == ("manual", "none")
-    assert result.spec is not None and "handle" not in result.spec["fields"]
+    assert result.spec is not None and result.spec["fields"]["handle"] == {"const": None}  # placeholder (R66)
     assert "def handle(body):" in result.transforms
     (tmp_path / "stubs.py").write_text(result.transforms)
     module = importlib.util.module_from_spec(spec := importlib.util.spec_from_file_location("stubs", tmp_path / "stubs.py"))  # type: ignore[arg-type]
@@ -768,9 +768,9 @@ def test_runtime_check_downgrades(monkeypatch: pytest.MonkeyPatch) -> None:
     result = fit_fixture()
     row = {r.field: r for r in result.fields}["email"]
     assert (row.tier, row.kind, row.rule) == ("manual", "none", None)
-    assert row.note == 'Runtime check: the rule "other" maps 0 pairs, fit found 10.'
+    assert row.note == 'Runtime check: the rule "other" maps 0 pairs, fit found 10. placeholder: the draft writes null, the schema\'s empty form, until a rule replaces it.'
     assert row.examples[0] == {"pair": "p01.json", "want": "ada@mail0.example.test", "got": None}
-    assert result.spec is not None and "email" not in result.spec["fields"]
+    assert result.spec is not None and result.spec["fields"]["email"] == {"const": None}
 
 
 def test_end_to_end_fixture(tmp_path: Path) -> None:
@@ -778,7 +778,8 @@ def test_end_to_end_fixture(tmp_path: Path) -> None:
     spec = json.loads((tmp_path / "spec.json").read_text())
     assert (spec["language"], spec["status"], spec["version"]) == (2, "draft", 1)
     f = spec["fields"]
-    assert list(f) == ["id", "name", "email", "joined", "hq", "hq.city", "tags[]", "jobs[]"]
+    assert list(f) == ["id", "name", "email", "joined", "status", "hq", "hq.city", "tags[]", "jobs[]"]
+    assert f["status"] == {"const": None}  # the manual field's placeholder (R66)
     assert f["email"] == "contact.email" and f["hq.city"] == "office.town"
     assert f["jobs[]"]["group_by"] == "org" and f["jobs[]"]["item"]["org"] == "org"
     assert f["jobs[]"]["item"]["roles[]"] == {"from": "$group", "item": {"title": "title"}}
@@ -1096,3 +1097,40 @@ def test_trailing_space_is_review() -> None:
     assert "near match: white space or text cut short in 3 pairs" in row.risk()
     short = [("Item name number %d" % i, {"name": "Item name number %d" % i}) for i in range(8)] + [(f"short text {i} and more", {"name": f"short text {i}"}) for i in range(3)]
     assert _fit_leaf_rows("name", short)["name"].rule is None  # a cut under 20 characters is no near match
+
+
+def _crew_pairs() -> list[Pair]:
+    """Crew lists whose item leaf `vessel.ref` the provider cannot give (its `hull` code has other
+    digits), and one item leaves out: the schema says `x-empty: "missing"` for it."""
+    pairs = []
+    for i in range(8):
+        crew = [{"vessel": {"ref": 100 + i * 10 + k, "label": f"v{i}{k}"}, "role": f"r{i}{k}"} for k in range(2)]
+        if i == 0:
+            del crew[1]["vessel"]["ref"]
+        hands = [{"boat": f"v{i}{k}", "job": f"r{i}{k}", "hull": f"H-{900 - i * 10 - k}"} for k in range(2)]
+        pairs.append(Pair(f"p{i}.json", {"name": f"n{i}", "crew": crew, "flags": [f"f{i}"] if i % 2 else []}, {"n": f"n{i}", "hands": hands}, None))
+    return pairs
+
+
+def test_fresh_draft_has_full_shape() -> None:
+    """A manual item leaf gets its schema empty form in the draft and reads "placeholder", and verify
+    on the fresh draft reports no missing key."""
+    from pycanonic.cli.fit import verify
+
+    pairs = _crew_pairs()
+    schema = derive_schema([p.default for p in pairs])
+    assert schema["properties"]["crew"]["items"]["properties"]["vessel"]["properties"]["ref"]["x-empty"] == "missing"
+    result = fit_pairs(pairs, schema, FitOptions("acme", "e"))
+    rows = {r.field: r for r in result.fields}
+    assert rows["crew[].vessel.ref"].tier == "manual" and "placeholder" in rows["crew[].vessel.ref"].risk()
+    assert result.spec is not None and result.spec["fields"]["crew[]"]["item"]["vessel.ref"] == {"const": None}
+    v = verify.run(result.spec, schema, pairs, 0.95, None)
+    assert result.spec["fields"]["flags[]"] == {"const": []}  # x-empty "[]": an empty list, not null
+    assert v.shape_failures == []
+    assert "crew[].vessel.ref" not in v.fields and len(v.unmapped["crew[].vessel.ref"]) == 8  # listed, as with no rule (R43)
+
+
+def test_if_empty_note_once() -> None:
+    pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "org": {"name": f"o{i}"}}, {"n": f"n{i}", "employer": {"orgName": f"o{i}"}}, None) for i in range(10)]
+    rows = {r.field: r for r in fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e")).fields}
+    assert rows["org"].risk().count("its empty form is a guess") == 1
