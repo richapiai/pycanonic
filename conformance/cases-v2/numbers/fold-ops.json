@@ -1,0 +1,138 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "ops",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "add": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "add"
+      },
+      "sub": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "sub"
+      },
+      "mul": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "mul"
+      },
+      "min": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "min"
+      },
+      "max": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "max"
+      },
+      "floor_div": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "floor_div"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "add": {
+        "type": "number"
+      },
+      "sub": {
+        "type": "number"
+      },
+      "mul": {
+        "type": "number"
+      },
+      "min": {
+        "type": "number"
+      },
+      "max": {
+        "type": "number"
+      },
+      "floor_div": {
+        "type": "integer"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "a": 7,
+        "b": 2
+      },
+      "context": null,
+      "expected": {
+        "add": 9,
+        "sub": 5,
+        "mul": 14,
+        "min": 2,
+        "max": 7,
+        "floor_div": 3
+      }
+    },
+    {
+      "body": {
+        "a": "7.5",
+        "b": "2.5"
+      },
+      "context": null,
+      "expected": {
+        "add": 10,
+        "sub": 5,
+        "mul": 18.75,
+        "min": 2.5,
+        "max": 7.5,
+        "floor_div": 3
+      }
+    },
+    {
+      "body": {
+        "a": -7,
+        "b": 2
+      },
+      "context": null,
+      "expected": {
+        "add": -5,
+        "sub": -9,
+        "mul": -14,
+        "min": -7,
+        "max": 2,
+        "floor_div": -4
+      }
+    },
+    {
+      "body": {
+        "a": 7,
+        "b": 0
+      },
+      "context": null,
+      "expected": {
+        "add": 7,
+        "sub": 7,
+        "mul": 0,
+        "min": 0,
+        "max": 7,
+        "floor_div": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "stats",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "pages": {
+        "from": [
+          "total",
+          "$input.size"
+        ],
+        "transform": "ceil_div"
+      },
+      "ratio": {
+        "from": [
+          "total",
+          "$input.size"
+        ],
+        "transform": "div"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "pages": {
+        "type": "integer"
+      },
+      "ratio": {
+        "type": "number"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "total": 101
+      },
+      "context": {
+        "size": 10
+      },
+      "expected": {
+        "pages": 11,
+        "ratio": 10.1
+      }
+    },
+    {
+      "body": {
+        "total": "101"
+      },
+      "context": {
+        "size": 10
+      },
+      "expected": {
+        "pages": 11,
+        "ratio": 10.1
+      }
+    },
+    {
+      "body": {},
+      "context": {
+        "size": 10
+      },
+      "expected": {
+        "pages": null,
+        "ratio": null
+      }
+    },
+    {
+      "body": {
+        "total": 101
+      },
+      "context": {
+        "size": 0
+      },
+      "expected": {
+        "pages": null,
+        "ratio": null
+      }
+    },
+    {
+      "body": {
+        "total": 101
+      },
+      "context": {
+        "size": null
+      },
+      "expected": {
+        "pages": null,
+        "ratio": null
+      }
+    },
+    {
+      "body": {
+        "total": true
+      },
+      "context": {
+        "size": 10
+      },
+      "expected": {
+        "pages": null,
+        "ratio": null
+      }
+    },
+    {
+      "body": {
+        "total": [
+          1
+        ]
+      },
+      "context": {
+        "size": 10
+      },
+      "expected": {
+        "pages": null,
+        "ratio": null
+      }
+    },
+    {
+      "body": {
+        "total": null
+      },
+      "context": {
+        "size": 10
+      },
+      "expected": {
+        "pages": null,
+        "ratio": null
+      }
+    },
+    {
+      "body": {
+        "total": 2.5
+      },
+      "context": {
+        "size": 2
+      },
+      "expected": {
+        "pages": 2,
+        "ratio": 1.25
+      }
+    }
+  ]
+}

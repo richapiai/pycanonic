@@ -1,0 +1,61 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "three",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "t": {
+        "from": [
+          "a",
+          "b",
+          "c"
+        ],
+        "transform": "add"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "t": {
+        "type": "number"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "a": 1,
+        "b": 2,
+        "c": 3
+      },
+      "context": null,
+      "expected": {
+        "t": 6
+      }
+    },
+    {
+      "body": {
+        "a": 1,
+        "b": null,
+        "c": 3
+      },
+      "context": null,
+      "expected": {
+        "t": null
+      }
+    },
+    {
+      "body": {
+        "a": 1,
+        "b": 2
+      },
+      "context": null,
+      "expected": {
+        "t": null
+      }
+    }
+  ]
+}

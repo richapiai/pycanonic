@@ -104,6 +104,20 @@ _DEFAULT_NAMES = (
     "format_date",
     "parse_number",
     "parse_range",
+    "len",
+    "add",
+    "sub",
+    "mul",
+    "div",
+    "ceil_div",
+    "floor_div",
+    "min",
+    "max",
+    "eq",
+    "lt",
+    "lte",
+    "gt",
+    "gte",
 )
 _SEMANTICS = ("email", "phone", "domain", "linkedin_url", "url", "iso_date", "money")
 

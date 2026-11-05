@@ -569,7 +569,30 @@ If any condition holds, `map` and `map_json` raise `pycanonic.Rejected`. Its `re
 
 ### Transforms in language 2
 
-Language 2 adds thirteen default transforms and formats for `parse_date`. The string transforms are `regex`, `strip_prefix`, `strip_suffix`, `replace`, `lookup`, `null_if`, `upper`, `title`, `split` and `to_string`. The date and number transforms are `format_date`, `parse_number` and `parse_range`. [transforms.md](transforms.md#language-2-transforms) has each one with its edge cases.
+Language 2 adds twenty-seven default transforms and formats for `parse_date`. The string transforms are `regex`, `strip_prefix`, `strip_suffix`, `replace`, `lookup`, `null_if`, `upper`, `title`, `split` and `to_string`. The date and number transforms are `format_date`, `parse_number` and `parse_range`. `len`, the number transforms and the compares are in [Numbers](transforms.md#numbers). [transforms.md](transforms.md#language-2-transforms) has each one with its edge cases.
+
+A `from` list folds with a number transform, and one source takes a constant:
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "properties": {"pages": {"type": "integer"}, "percent": {"type": "number"}}},
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "pages": {"from": ["total", "$input.size"], "transform": "ceil_div"},
+      "percent": {"from": "share", "transform": {"mul": 100}}
+    }
+  },
+  "body": {"total": 101, "share": 0.25},
+  "context": {"size": 10},
+  "expected": {"pages": 11, "percent": 25}
+}
+```
 
 <!-- run -->
 ```json

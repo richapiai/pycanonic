@@ -1,0 +1,25 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "n": {
+        "from": "a",
+        "transform": {
+          "add": 1
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "number"
+      }
+    }
+  },
+  "error": "acme orgs v1: fields[\"n\"]: unknown transform \"add\""
+}

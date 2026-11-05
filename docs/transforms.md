@@ -2,7 +2,7 @@
 
 pycanonic ships nine default transforms and seven routing validators. They live in `crates/canonic-core/src/transforms.rs`, and Python sees them as `default_transforms` and `validators`. Each one is a port of the TypeScript function, and the conformance corpus checks them against it.
 
-A spec with `"language": 2` can also use the thirteen transforms in [Language 2 transforms](#language-2-transforms), and `parse_date` with a list of formats. A language 1 spec that names one of them fails the compile with `unknown transform "regex"`.
+A spec with `"language": 2` can also use the twenty-seven transforms in [Language 2 transforms](#language-2-transforms), and `parse_date` with a list of formats. A language 1 spec that names one of them fails the compile with `unknown transform "regex"`.
 
 Every one returns null for input it cannot handle and never raises. A transform that gets a value and returns null sets the field to `None`, or to its `default`. It also adds one to that field's `errors` in `artifact.stats.snapshot()`. Property tests in `crates/canonic-core/tests/` run each transform on junk input and random values.
 
@@ -257,6 +257,36 @@ Argument, required: `"min"` or `"max"`. It reads one end of a size range. A numb
 | `"a-b"` | null | null |
 
 An open range has no max, so `max` gives null and counts an error, as any null from a value that was not null does. See [known-limits.md](known-limits.md#an-open-range-counts-as-an-error).
+
+### Numbers
+
+Language 2 has numbers and compares: `add`, `sub`, `mul`, `div`, `ceil_div`, `floor_div`, `min`, `max`, `eq`, `lt`, `lte`, `gt` and `gte`. On one source they take one number argument, as in `{"mul": 100}`. On a `from` list of two or more sources, the first transform takes no argument and folds the sources left to right: `{"from": ["total", "$input.size"], "transform": "ceil_div"}`. A transform later in the chain gets one value, so it takes an argument. Any other combination fails the compile.
+
+An input is a number, or a string that holds one (the rule of `cast`). Booleans, objects, arrays, null and a missing source give null. A fold with a missing or null source gives null. Division by zero gives null, and so does a result that is not finite. `ceil_div` and `floor_div` give integers, and a whole result of the other number transforms is an integer. The compares give booleans. A custom transform of the same name wins over the default. In a chain, a null result counts as one error when the source was present.
+
+| Rule | Input | Output |
+|---|---|---|
+| `ceil_div` on `["total", "size"]` | `101`, `10` | `11` |
+| `ceil_div` | `"101"`, `10` | `11` |
+| `div` | `2.5`, `2` | `1.25` |
+| `div` or `ceil_div` | `101`, `0` | null |
+| `add` | `"1e400"`, `1` | null |
+| `mul` | `1e200`, `1e200` | null |
+| `add` | `true`, `1` | null |
+| `{"mul": 100}` | `1.5` | `150` |
+| `{"eq": 0}` | `"0"` | `true` |
+| `gte` on `["a", "b"]` | `2`, `2` | `true` |
+
+### len
+
+No argument. It gives the number of elements of an array, or the number of characters of a string. An object, a number, a boolean, null and a missing source give null. As the first transform on a `from` list, it gives null.
+
+| Input | Output |
+|---|---|
+| `[]` | `0` |
+| `[1, 2]` | `2` |
+| `"héllo"` | `5` |
+| `{}` | null |
 
 ## Container transforms
 

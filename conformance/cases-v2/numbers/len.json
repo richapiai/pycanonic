@@ -1,0 +1,128 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "len",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "n": {
+        "from": "v",
+        "transform": "len"
+      },
+      "m": {
+        "from": "v",
+        "transform": [
+          "len",
+          {
+            "add": 1
+          }
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "integer"
+      },
+      "m": {
+        "type": "integer"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "v": []
+      },
+      "context": null,
+      "expected": {
+        "n": 0,
+        "m": 1
+      }
+    },
+    {
+      "body": {
+        "v": [
+          1,
+          2
+        ]
+      },
+      "context": null,
+      "expected": {
+        "n": 2,
+        "m": 3
+      }
+    },
+    {
+      "body": {
+        "v": "h\u00e9llo"
+      },
+      "context": null,
+      "expected": {
+        "n": 5,
+        "m": 6
+      }
+    },
+    {
+      "body": {
+        "v": ""
+      },
+      "context": null,
+      "expected": {
+        "n": 0,
+        "m": 1
+      }
+    },
+    {
+      "body": {
+        "v": {}
+      },
+      "context": null,
+      "expected": {
+        "n": null,
+        "m": null
+      }
+    },
+    {
+      "body": {
+        "v": 5
+      },
+      "context": null,
+      "expected": {
+        "n": null,
+        "m": null
+      }
+    },
+    {
+      "body": {
+        "v": true
+      },
+      "context": null,
+      "expected": {
+        "n": null,
+        "m": null
+      }
+    },
+    {
+      "body": {
+        "v": null
+      },
+      "context": null,
+      "expected": {
+        "n": null,
+        "m": null
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "n": null,
+        "m": null
+      }
+    }
+  ]
+}

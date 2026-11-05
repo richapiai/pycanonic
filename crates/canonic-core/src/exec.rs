@@ -37,7 +37,7 @@ use crate::plan::{CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, T
 use crate::sink::{Out, Sink, copy};
 use crate::spec::{self, Source, is_group};
 use crate::stats::Stats;
-use crate::transforms::{Transform, conform, validate};
+use crate::transforms::{Builtin, Transform, conform, validate};
 use crate::value::Value;
 use serde_json::Value as J;
 use std::collections::HashMap;
@@ -693,6 +693,11 @@ fn pipe_doc<'d, D: Doc>(custom: &[Arc<dyn Transform>], tx: &[TxRef], d: &'d D) -
                 container(custom, first, json(d, 0, &mut budget)),
             )
         }
+        // `len` first in line reads an array's length. An object has none.
+        (Value::Container, Some((TxRef::Builtin(Builtin::Len), rest))) => match d.len() {
+            Some(n) => pipe(custom, rest, Value::Int(n as i64)),
+            None => Value::Null,
+        },
         (v, _) => pipe(custom, tx, v),
     }
 }

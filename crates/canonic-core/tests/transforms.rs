@@ -396,7 +396,7 @@ fn builtin_arguments() {
         };
         assert!(b(name, a).is_ok(), "{name}");
     }
-    assert_eq!(default_transform_names().len(), 22);
+    assert_eq!(default_transform_names().len(), 36);
 }
 
 #[test]

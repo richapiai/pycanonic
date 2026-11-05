@@ -1,0 +1,26 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "bad",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "pages": {
+        "from": "a",
+        "transform": {
+          "add": "1"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "pages": {
+        "type": "number"
+      }
+    }
+  },
+  "error": "acme bad v1: fields[\"pages\"]: invalid argument for add"
+}

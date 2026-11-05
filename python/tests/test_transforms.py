@@ -244,3 +244,21 @@ def test_parse_date_formats_and_new_names_need_language_2():
     assert a.map(body) == want
     assert a.map(json.dumps(body).encode()) == want
     assert json.loads(a.map_json(json.dumps(body))) == want
+
+
+def test_custom_shadows_new_builtin():
+    fields = {"full_name": {"from": ["a", "b"], "transform": "add"}}
+    s = {**spec(fields), "language": 2}
+    assert _core.compile(s, CANONICAL, None).map({"a": 1, "b": 2})["full_name"] == 3
+    a = _core.compile(s, CANONICAL, {"add": lambda v: "custom"})
+    assert a.map({"a": 1, "b": 2})["full_name"] == "custom"
+
+
+def test_division_by_zero_and_bad_input_count_as_errors():
+    s = {**spec({"full_name": {"from": ["a", "b"], "transform": "div"}}), "language": 2}
+    a = _core.compile(s, CANONICAL, None)
+    assert a.map({"a": 1, "b": 0})["full_name"] is None
+    assert a.map({"a": "x", "b": 2})["full_name"] is None
+    assert a.map({"a": 1})["full_name"] is None
+    f = a.stats_snapshot()["fields"]["full_name"]
+    assert f == {"fill": 0, "errors": 3}

@@ -494,9 +494,9 @@ fn date_number_range_arguments_are_checked() {
 }
 
 #[test]
-fn twenty_two_default_transforms() {
+fn thirty_six_default_transforms() {
     let names = canonic_core::default_transform_names();
-    assert_eq!(names.len(), 22);
+    assert_eq!(names.len(), 36);
     assert_eq!(canonic_core::LANGUAGE_1_TRANSFORMS, 9);
     assert_eq!(names[canonic_core::LANGUAGE_1_TRANSFORMS], "regex");
 }
@@ -699,4 +699,26 @@ proptest! {
             prop_assert_eq!(b.apply_list(std::slice::from_ref(&v)), Value::Null);
         }
     }
+}
+
+#[test]
+fn number_transforms() {
+    use Value::{Bool, Float, Int, Null};
+    let one = |name, k: f64, v| run(name, Some(json!(k)), v);
+    assert_eq!(one("mul", 100.0, s("1.5")), Int(150));
+    assert_eq!(one("div", 4.0, Int(10)), Float(2.5));
+    assert_eq!(one("div", 0.0, Int(10)), Null);
+    assert_eq!(one("ceil_div", 10.0, Int(101)), Int(11));
+    assert_eq!(one("floor_div", 10.0, Int(-1)), Int(-1));
+    assert_eq!(one("add", 1.0, Bool(true)), Null);
+    assert_eq!(one("add", 1.0, s("1e400")), Null);
+    assert_eq!(one("mul", 1e200, Float(1e200)), Null);
+    assert_eq!(one("gte", 2.0, Int(2)), Bool(true));
+    assert_eq!(run("len", None, s("héllo")), Int(5));
+    assert_eq!(run("len", None, Int(5)), Null);
+    assert_eq!(tx("add", None).apply_list(&[Int(1), s("2")]), Int(3));
+    assert_eq!(tx("add", None).apply_list(&[Int(1)]), Null);
+    assert_eq!(run("add", None, Int(1)), Null);
+    assert!(builtin("add", Some(&json!("1"))).is_err());
+    assert!(builtin("len", Some(&json!(1))).is_err());
 }

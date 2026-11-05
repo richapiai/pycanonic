@@ -5,6 +5,7 @@
 ### Added
 
 - Language 2 conditions in `when`, `filter` and `reject` gain `matches`, `starts_with`, `ends_with`, `contains`, the compares `lt`, `lte`, `gt` and `gte`, and the combinators `not`, `all` and `any`. A language 1 spec that uses one fails the grammar check as before.
+- Language 2 gets `len`, the number transforms `add`, `sub`, `mul`, `div`, `ceil_div`, `floor_div`, `min` and `max`, and the compares `eq`, `lt`, `lte`, `gt` and `gte`. On one source they take a number, as in `{"mul": 100}`. On a `from` list they take no argument and fold the sources left to right. A language 1 spec that names one fails with `unknown transform` as before.
 
 ## 0.1.1
 

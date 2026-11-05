@@ -4,6 +4,7 @@
 
 use crate::canonical::{Empty, Kind, Node, Semantic};
 use crate::dates::{self, DateOut, Layout, date_from_epoch, date_from_string};
+use crate::numbers::{self, NumOp};
 use crate::strings::{self, Find, Otherwise, Pattern};
 use crate::value::{Value, js_number_to_string};
 use serde::{Deserialize, Serialize};
@@ -138,6 +139,10 @@ pub enum Builtin {
         units: bool,
     },
     ParseRange(RangeEnd),
+    /// Array length, or string length in characters.
+    Len,
+    /// `Some(k)`: one source and a constant. `None`: the fold of a `from` list.
+    Num(NumOp, Option<f64>),
 }
 
 /// Why `builtin` refused: the name is not a default transform, or its argument is wrong.
@@ -150,7 +155,7 @@ pub enum ArgError {
 /// How many of the default transforms language 1 has. They come first in the list.
 pub const LANGUAGE_1_TRANSFORMS: usize = 9;
 
-const NAMES: [&str; 22] = [
+const NAMES: [&str; 36] = [
     "cast",
     "lower",
     "trim",
@@ -174,6 +179,20 @@ const NAMES: [&str; 22] = [
     "format_date",
     "parse_number",
     "parse_range",
+    "len",
+    "add",
+    "sub",
+    "mul",
+    "div",
+    "ceil_div",
+    "floor_div",
+    "min",
+    "max",
+    "eq",
+    "lt",
+    "lte",
+    "gt",
+    "gte",
 ];
 
 /// True for a default transform that only a language 2 spec can name.
@@ -263,7 +282,19 @@ pub fn builtin(name: &str, arg: Option<&serde_json::Value>) -> Result<Builtin, A
         "replace" => strings::replace_arg(arg).ok_or(ArgError::InvalidArgument),
         "lookup" => strings::lookup_arg(arg).ok_or(ArgError::InvalidArgument),
         "split" => strings::split_arg(arg).ok_or(ArgError::InvalidArgument),
-        _ => Err(ArgError::UnknownTransform),
+        "len" => no_arg(Builtin::Len),
+        _ => match NumOp::from_name(name) {
+            Some(op) => match arg {
+                None => Ok(Builtin::Num(op, None)),
+                Some(J::Number(n)) => n
+                    .as_f64()
+                    .filter(|f| f.is_finite())
+                    .map(|k| Builtin::Num(op, Some(k)))
+                    .ok_or(ArgError::InvalidArgument),
+                Some(_) => Err(ArgError::InvalidArgument),
+            },
+            None => Err(ArgError::UnknownTransform),
+        },
     }
 }
 
@@ -327,6 +358,12 @@ impl Transform for Builtin {
             },
             Builtin::ParseNumber { units } => parse_number(&v, *units).map(number),
             Builtin::ParseRange(end) => parse_range(&v, *end).map(number),
+            Builtin::Len => match &v {
+                Value::Str(s) => Some(Value::Int(s.chars().count() as i64)),
+                _ => None,
+            },
+            Builtin::Num(op, Some(k)) => return numbers::with_constant(*op, *k, &v),
+            Builtin::Num(_, None) => None,
         };
         out.unwrap_or(Value::Null)
     }
@@ -395,6 +432,17 @@ impl Builtin {
             }
             Builtin::ParseRange(RangeEnd::Min) => ("parse_range", text("min")),
             Builtin::ParseRange(RangeEnd::Max) => ("parse_range", text("max")),
+            Builtin::Len => ("len", None),
+            Builtin::Num(op, k) => (
+                op.name(),
+                k.map(|k| {
+                    if k.fract() == 0.0 && k.abs() < 9e15 {
+                        J::from(k as i64)
+                    } else {
+                        J::from(k)
+                    }
+                }),
+            ),
         }
     }
 
@@ -418,8 +466,10 @@ impl Builtin {
     /// Applies the transform to a JS array, as `from` with several paths produces. Only `join`
     /// reads one. Every other default transform returns `Null` on an array.
     pub fn apply_list<'a>(&self, items: &[Value<'a>]) -> Value<'a> {
-        let Builtin::Join(sep) = self else {
-            return Value::Null;
+        let sep = match self {
+            Builtin::Join(sep) => sep,
+            Builtin::Num(op, None) => return numbers::fold(*op, items),
+            _ => return Value::Null,
         };
         let sep = sep.as_deref().unwrap_or(" ");
         let mut out = String::new();
@@ -529,7 +579,7 @@ pub(crate) fn as_f64(v: &Value) -> Option<f64> {
 }
 
 /// An integral double that fits i64 becomes `Int`, anything else stays `Float`.
-fn number<'a>(f: f64) -> Value<'a> {
+pub(crate) fn number<'a>(f: f64) -> Value<'a> {
     const LIMIT: f64 = 9_223_372_036_854_775_808.0; // 2^63
     if f.fract() == 0.0 && (-LIMIT..LIMIT).contains(&f) {
         Value::Int(f as i64)
@@ -539,7 +589,7 @@ fn number<'a>(f: f64) -> Value<'a> {
 }
 
 /// JavaScript `Number(s)` for decimal strings. `""`, blanks and 0x/0b/0o literals are rejected.
-fn js_number(s: &str) -> Option<f64> {
+pub(crate) fn js_number(s: &str) -> Option<f64> {
     js_number_unbounded(s).filter(|n| n.is_finite())
 }
 

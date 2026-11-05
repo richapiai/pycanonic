@@ -11,7 +11,7 @@ use crate::spec::{
     ArrayRule, FieldMap, Rule, ScalarRule, Source, Step, TransformRef, field_key, is_group,
     parse_spec,
 };
-use crate::transforms::{ArgError, builtin, language_2_only};
+use crate::transforms::{ArgError, Builtin, builtin, language_2_only};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -45,8 +45,10 @@ impl Resolver<'_> {
             })
     }
 
-    fn tx(&self, refs: &[TransformRef], at: &str) -> Result<Vec<TxRef>, String> {
-        refs.iter()
+    /// `sources` is how many values the first transform sees (`source_count`).
+    fn tx(&self, refs: &[TransformRef], at: &str, sources: usize) -> Result<Vec<TxRef>, String> {
+        let tx: Vec<TxRef> = refs
+            .iter()
             .map(|t| {
                 // An injected transform replaces a default of the same name, and its argument is its own business.
                 if let Some(index) = self.custom.iter().position(|c| *c == t.name) {
@@ -72,7 +74,9 @@ impl Resolver<'_> {
                     }
                 })
             })
-            .collect()
+            .collect::<Result<_, _>>()?;
+        number_args(&tx, sources, at)?;
+        Ok(tx)
     }
 
     fn scalar(
@@ -91,7 +95,7 @@ impl Resolver<'_> {
             Kind::Array { .. } => return Err(format!("{at}: canonical field is an array; add []")),
             Kind::Object { .. } => return Err(format!("{at}: canonical field is an object")),
         };
-        let tx = self.tx(&r.transform, at)?;
+        let tx = self.tx(&r.transform, at, source_count(&r.source))?;
         // The validator step every routing field ends with.
         let validator = if routing {
             let paths = match &r.source {
@@ -174,7 +178,7 @@ impl Resolver<'_> {
         } else if object.is_some() {
             return Err(format!("{at}: array of objects; use item"));
         } else {
-            let tx = self.tx(&r.transform, at)?;
+            let tx = self.tx(&r.transform, at, 1)?;
             match &r.pluck {
                 Some(p) => ListKind::Pluck(p.clone(), tx),
                 None => ListKind::Plain(tx),
@@ -236,7 +240,7 @@ impl Resolver<'_> {
         let [t] = tx.as_slice() else {
             return Ok(None);
         };
-        let tx = match self.tx(std::slice::from_ref(t), at)?.remove(0) {
+        let tx = match self.tx(std::slice::from_ref(t), at, 1)?.remove(0) {
             tx @ TxRef::Custom { .. } => tx,
             TxRef::Builtin(_) => return Ok(None),
         };
@@ -499,6 +503,50 @@ impl Resolver<'_> {
 }
 
 /// The node at a canonical path, through objects that are not open maps only.
+/// How many values a scalar rule's source gives its first transform. A `coalesce` gives one.
+pub(crate) fn source_count(source: &Source) -> usize {
+    match source {
+        Source::From(_) | Source::Coalesce(_) => 1,
+        Source::FromMany(ps) => ps.len(),
+    }
+}
+
+/// R51: a number or compare transform folds a `from` list when it is first in line and takes no
+/// argument. Every other one gets one value and needs a constant. This is the only place that
+/// words these errors.
+fn number_args(tx: &[TxRef], sources: usize, at: &str) -> Result<(), String> {
+    for (i, t) in tx.iter().enumerate() {
+        let TxRef::Builtin(Builtin::Num(op, k)) = t else {
+            continue;
+        };
+        let name = op.name();
+        let fail = |got: String, want: String| {
+            Err(format!(
+                "{at}: invalid argument for {name}: got {got}, expected {want}"
+            ))
+        };
+        match (i == 0 && sources > 1, k) {
+            (true, Some(k)) => {
+                return fail(
+                    k.to_string(),
+                    "no argument on a from list, or one source in from".into(),
+                );
+            }
+            (false, None) if sources > 1 => {
+                return fail("none".into(), format!("a number, as in {{\"{name}\": 10}}"));
+            }
+            (false, None) => {
+                return fail(
+                    "none".into(),
+                    format!("two or more sources in from, or {{\"{name}\": 10}}"),
+                );
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 fn lookup<'a>(mut children: &'a [(String, Node)], path: &[String]) -> Option<&'a Node> {
     let mut node: Option<&Node> = None;
     for part in path {

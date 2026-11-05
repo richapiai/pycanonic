@@ -1,0 +1,104 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "hostile",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "s": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "add"
+      },
+      "p": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "mul"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "s": {
+        "type": "number"
+      },
+      "p": {
+        "type": "number"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "a": "1e400",
+        "b": 1
+      },
+      "context": null,
+      "expected": {
+        "s": null,
+        "p": null
+      }
+    },
+    {
+      "body": {
+        "a": 1.7e+308,
+        "b": 1.7e+308
+      },
+      "context": null,
+      "expected": {
+        "s": null,
+        "p": null
+      }
+    },
+    {
+      "body": {
+        "a": "NaN",
+        "b": 1
+      },
+      "context": null,
+      "expected": {
+        "s": null,
+        "p": null
+      }
+    },
+    {
+      "body": {
+        "a": "0x10",
+        "b": 1
+      },
+      "context": null,
+      "expected": {
+        "s": null,
+        "p": null
+      }
+    },
+    {
+      "body": {
+        "a": "",
+        "b": 1
+      },
+      "context": null,
+      "expected": {
+        "s": null,
+        "p": null
+      }
+    },
+    {
+      "body": {
+        "a": 1e+200,
+        "b": 1e+200
+      },
+      "context": null,
+      "expected": {
+        "s": 2e+200,
+        "p": null
+      }
+    }
+  ]
+}

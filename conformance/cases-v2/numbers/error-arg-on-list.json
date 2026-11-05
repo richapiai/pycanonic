@@ -1,0 +1,29 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "bad",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "pages": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": {
+          "ceil_div": 10
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "pages": {
+        "type": "number"
+      }
+    }
+  },
+  "error": "acme bad v1: fields[\"pages\"]: invalid argument for ceil_div: got 10, expected no argument on a from list, or one source in from"
+}

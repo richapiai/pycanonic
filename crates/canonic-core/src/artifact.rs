@@ -10,7 +10,7 @@ use crate::plan::{CompileError, Field, ListKind, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, RustSink, Sink};
 use crate::spec::{Path, Source, Step, is_group};
 use crate::stats::Stats;
-use crate::transforms::Transform;
+use crate::transforms::{Builtin, Transform};
 use crate::value::Value;
 use crate::write::{JsonSink, member_keys};
 use std::collections::HashMap;
@@ -329,7 +329,9 @@ fn custom(tx: &[TxRef]) -> bool {
 
 fn scalar(f: &mut Filter, s: &Scalar) {
     // A custom transform's container input goes to it whole (`Transform::apply_container`).
-    let whole = (s.validator.is_none() && s.tx.is_empty()) || custom(&s.tx);
+    // `len` first in line counts an array's elements, so the array is read whole.
+    let len = matches!(s.tx.first(), Some(TxRef::Builtin(Builtin::Len)));
+    let whole = (s.validator.is_none() && s.tx.is_empty()) || custom(&s.tx) || len;
     let paths = match &s.source {
         Source::From(p) => std::slice::from_ref(p),
         Source::FromMany(ps) | Source::Coalesce(ps) => ps.as_slice(),

@@ -1,0 +1,172 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "const",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "x100": {
+        "from": "v",
+        "transform": {
+          "mul": 100
+        }
+      },
+      "inc": {
+        "from": "v",
+        "transform": {
+          "add": 1
+        }
+      },
+      "zero": {
+        "from": "v",
+        "transform": {
+          "eq": 0
+        }
+      },
+      "half": {
+        "from": "v",
+        "transform": [
+          {
+            "div": 2
+          },
+          {
+            "add": 0.5
+          }
+        ]
+      },
+      "cap": {
+        "from": "v",
+        "transform": {
+          "min": 10
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "x100": {
+        "type": "number"
+      },
+      "inc": {
+        "type": "number"
+      },
+      "zero": {
+        "type": "boolean"
+      },
+      "half": {
+        "type": "number"
+      },
+      "cap": {
+        "type": "number"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "v": 3
+      },
+      "context": null,
+      "expected": {
+        "x100": 300,
+        "inc": 4,
+        "zero": false,
+        "half": 2,
+        "cap": 3
+      }
+    },
+    {
+      "body": {
+        "v": "0"
+      },
+      "context": null,
+      "expected": {
+        "x100": 0,
+        "inc": 1,
+        "zero": true,
+        "half": 0.5,
+        "cap": 0
+      }
+    },
+    {
+      "body": {
+        "v": 12.5
+      },
+      "context": null,
+      "expected": {
+        "x100": 1250,
+        "inc": 13.5,
+        "zero": false,
+        "half": 6.75,
+        "cap": 10
+      }
+    },
+    {
+      "body": {
+        "v": true
+      },
+      "context": null,
+      "expected": {
+        "x100": null,
+        "inc": null,
+        "zero": null,
+        "half": null,
+        "cap": null
+      }
+    },
+    {
+      "body": {
+        "v": "x"
+      },
+      "context": null,
+      "expected": {
+        "x100": null,
+        "inc": null,
+        "zero": null,
+        "half": null,
+        "cap": null
+      }
+    },
+    {
+      "body": {
+        "v": {
+          "a": 1
+        }
+      },
+      "context": null,
+      "expected": {
+        "x100": null,
+        "inc": null,
+        "zero": null,
+        "half": null,
+        "cap": null
+      }
+    },
+    {
+      "body": {
+        "v": null
+      },
+      "context": null,
+      "expected": {
+        "x100": null,
+        "inc": null,
+        "zero": null,
+        "half": null,
+        "cap": null
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "x100": null,
+        "inc": null,
+        "zero": null,
+        "half": null,
+        "cap": null
+      }
+    }
+  ]
+}

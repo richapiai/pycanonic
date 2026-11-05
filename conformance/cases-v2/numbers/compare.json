@@ -1,0 +1,137 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "cmp",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "eq": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "eq"
+      },
+      "lt": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "lt"
+      },
+      "lte": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "lte"
+      },
+      "gt": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "gt"
+      },
+      "gte": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "gte"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "eq": {
+        "type": "boolean"
+      },
+      "lt": {
+        "type": "boolean"
+      },
+      "lte": {
+        "type": "boolean"
+      },
+      "gt": {
+        "type": "boolean"
+      },
+      "gte": {
+        "type": "boolean"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "a": 1,
+        "b": 2
+      },
+      "context": null,
+      "expected": {
+        "eq": false,
+        "lt": true,
+        "lte": true,
+        "gt": false,
+        "gte": false
+      }
+    },
+    {
+      "body": {
+        "a": 2,
+        "b": 2
+      },
+      "context": null,
+      "expected": {
+        "eq": true,
+        "lt": false,
+        "lte": true,
+        "gt": false,
+        "gte": true
+      }
+    },
+    {
+      "body": {
+        "a": "3",
+        "b": 2
+      },
+      "context": null,
+      "expected": {
+        "eq": false,
+        "lt": false,
+        "lte": false,
+        "gt": true,
+        "gte": true
+      }
+    },
+    {
+      "body": {
+        "a": true,
+        "b": 1
+      },
+      "context": null,
+      "expected": {
+        "eq": null,
+        "lt": null,
+        "lte": null,
+        "gt": null,
+        "gte": null
+      }
+    },
+    {
+      "body": {
+        "a": 1
+      },
+      "context": null,
+      "expected": {
+        "eq": null,
+        "lt": null,
+        "lte": null,
+        "gt": null,
+        "gte": null
+      }
+    }
+  ]
+}
