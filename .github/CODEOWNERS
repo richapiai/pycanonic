@@ -5,3 +5,7 @@
 /crates/canonic-core/src/plan.rs          @vicky002
 /crates/canonic-core/src/artifact.rs      @vicky002
 /bench/                                   @vicky002
+# The CI and release workflows publish to PyPI and crates.io, and the leak scan guards every push.
+/.github/                                 @vicky002
+/pyproject.toml                           @vicky002
+/scripts/leak-scan.sh                     @vicky002

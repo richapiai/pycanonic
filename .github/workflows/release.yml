@@ -3,6 +3,7 @@ name: release
 # A v* tag builds the wheels and the sdist, installs each wheel in a clean venv and runs the README
 # quick start, then attaches the wheels and the sdist to a GitHub release. PyPI (trusted publishing)
 # and crates.io run only when the repository variable PUBLISH_PUBLIC is "true".
+# A tag push also runs the full CI suite (ci.yml), and the release and publish jobs wait for it.
 # The nightly schedule runs cargo audit and the fuzz targets only.
 #
 # Bench: the blocking gate is not here. Shared runners are too noisy to gate on timing. Before you
@@ -21,14 +22,18 @@ permissions:
 
 jobs:
   audit:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install cargo-audit --locked
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - run: cargo install cargo-audit --version 0.22.2 --locked
       - run: cargo audit
 
   fuzz:
+    timeout-minutes: 45
     if: github.event_name != 'push'
     strategy:
       fail-fast: false
@@ -36,23 +41,31 @@ jobs:
         target: [extract, stream, map_bytes]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       # libFuzzer needs nightly. Nothing else in CI uses it.
-      - uses: dtolnay/rust-toolchain@nightly
-      - run: cargo install cargo-fuzz --locked
+      - uses: dtolnay/rust-toolchain@2c76c034f9e32a5d6e2c104dc4df23a22476db04 # nightly
+        with:
+          toolchain: nightly
+      - run: cargo install cargo-fuzz --version 0.13.2 --locked
       - working-directory: crates/canonic-core
         run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=600
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: fuzz-${{ matrix.target }}
           path: crates/canonic-core/fuzz/artifacts/
 
+  # The full CI suite (ci.yml) on the tagged commit. The release and both publish jobs need it.
+  test:
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/ci.yml
+
   version:
+    timeout-minutes: 5
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       # The tag, the extension crate, canonic-core and __version__ must name the same version.
       - run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -63,6 +76,7 @@ jobs:
           test "$tag" = "$ext" && test "$tag" = "$core" && test "$tag" = "$py"
 
   wheels:
+    timeout-minutes: 60
     needs: version
     strategy:
       fail-fast: false
@@ -90,36 +104,38 @@ jobs:
             manylinux: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
       # pyo3's abi3-py310 feature makes every wheel cp310-abi3: one wheel per platform.
-      - uses: PyO3/maturin-action@v1
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
           args: --release --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: wheel-${{ matrix.name }}
           path: dist/*.whl
 
   sdist:
+    timeout-minutes: 15
     needs: version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: PyO3/maturin-action@v1
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: sdist
           args: --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sdist
           path: dist/*.tar.gz
 
   smoke:
+    timeout-minutes: 20
     needs: wheels
     strategy:
       fail-fast: false
@@ -151,11 +167,11 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           sparse-checkout: README.md
           sparse-checkout-cone-mode: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: wheel-${{ matrix.wheel }}
           path: dist
@@ -166,7 +182,7 @@ jobs:
           test -s smoke/quickstart.py
           cp dist/*.whl smoke/
       - if: ${{ !matrix.alpine }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ matrix.python }}
       - if: ${{ !matrix.alpine }}
@@ -186,16 +202,17 @@ jobs:
             /venv/bin/canonic --help'
 
   github-release:
-    needs: [audit, wheels, sdist, smoke]
+    timeout-minutes: 10
+    needs: [test, audit, wheels, sdist, smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           sparse-checkout: CHANGELOG.md
           sparse-checkout-cone-mode: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true
@@ -208,27 +225,31 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   pypi:
+    timeout-minutes: 15
     if: vars.PUBLISH_PUBLIC == 'true'
-    needs: [audit, wheels, sdist, smoke]
+    needs: [test, audit, wheels, sdist, smoke]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write # trusted publishing
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
 
   crates:
+    timeout-minutes: 20
     if: vars.PUBLISH_PUBLIC == 'true'
     needs: pypi
     runs-on: ubuntu-latest
     environment: crates-io
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
       - run: cargo publish -p canonic-core
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

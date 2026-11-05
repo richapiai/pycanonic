@@ -1,25 +1,36 @@
 name: ci
 
+# release.yml calls this workflow on a v* tag, so the tests pass before anything is published.
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request cancels the older run. Runs on main and releases finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   rust:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           components: clippy, rustfmt
       - run: cargo test --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -28,30 +39,36 @@ jobs:
   timing:
     # Wall-clock ratio tests in the Rust suites; skipped unless PYCANONIC_TIMING_TESTS=1.
     # Non-blocking: shared runners are noisy.
+    timeout-minutes: 30
     continue-on-error: true
     runs-on: ubuntu-latest
     env:
       PYCANONIC_TIMING_TESTS: "1"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
       - run: cargo test --release -p canonic-core
 
   python:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.12", "3.14"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
       - run: python -m venv .venv
       - run: .venv/bin/pip install maturin pytest
       - run: .venv/bin/maturin develop
@@ -60,14 +77,17 @@ jobs:
   bench:
     # Non-blocking: timing is noisy on shared GitHub runners, and the linux-x86_64 baseline comes
     # from the bench box. The blocking run is on the bench box before a release (bench/README.md).
+    timeout-minutes: 45
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
       - run: python -m venv .venv
       - run: .venv/bin/pip install maturin -r bench/requirements.txt
       - run: .venv/bin/maturin develop --release
@@ -77,18 +97,20 @@ jobs:
       - run: .venv/bin/python bench/interpreters.py
 
   leak-scan:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
       - run: scripts/leak-scan.sh
       - run: scripts/leak-scan.sh --history
 
   conformance-fresh:
+    timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       # The corpus runners live in `cargo test` and `pytest python/tests`. This job fails once the
       # last conformance/sync.sh run (line 3 of SOURCE_COMMIT) is more than 30 days old.
       - run: |
