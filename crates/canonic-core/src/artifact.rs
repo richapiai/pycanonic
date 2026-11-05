@@ -297,8 +297,10 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
                 let mut e = Filter::default();
                 match kind {
                     ListKind::Item(c) => fields(&mut e, c),
-                    ListKind::Pluck(p, tx) => node(&mut e, p).all |= tx.is_empty() || custom(tx),
-                    ListKind::Plain(tx) => e.all |= tx.is_empty() || custom(tx),
+                    ListKind::Pluck(p, tx) => {
+                        node(&mut e, p).all |= tx.is_empty() || whole_input(tx)
+                    }
+                    ListKind::Plain(tx) => e.all |= tx.is_empty() || whole_input(tx),
                 }
                 // Conditions, `unique` and `sort_by` can compare whole values.
                 let filter = ops.filter.iter().flat_map(cond_paths);
@@ -349,15 +351,16 @@ fn cond_paths(c: &Cond) -> Vec<&Path> {
         .collect()
 }
 
-fn custom(tx: &[TxRef]) -> bool {
-    tx.iter().any(|t| matches!(t, TxRef::Custom { .. }))
+/// Whether a transform chain needs its input whole. A custom transform's container input goes
+/// to it whole (`Transform::apply_container`), and `len` first in line counts an array's
+/// elements.
+fn whole_input(tx: &[TxRef]) -> bool {
+    let custom = tx.iter().any(|t| matches!(t, TxRef::Custom { .. }));
+    custom || matches!(tx.first(), Some(TxRef::Builtin(Builtin::Len)))
 }
 
 fn scalar(f: &mut Filter, s: &Scalar) {
-    // A custom transform's container input goes to it whole (`Transform::apply_container`).
-    // `len` first in line counts an array's elements, so the array is read whole.
-    let len = matches!(s.tx.first(), Some(TxRef::Builtin(Builtin::Len)));
-    let whole = (s.validator.is_none() && s.tx.is_empty()) || custom(&s.tx) || len;
+    let whole = (s.validator.is_none() && s.tx.is_empty()) || whole_input(&s.tx);
     // A computed entry may run a custom transform or `len`, so all its paths are read
     // whole. Narrow it to the entries that need it if the artifact size matters.
     let whole = whole || matches!(s.source, Source::Computed(_));
