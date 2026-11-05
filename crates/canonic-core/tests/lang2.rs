@@ -696,3 +696,25 @@ fn stat_names_of_quoted_item_keys_follow_the_path_grammar() {
     let names = compile(&spec, &root, &[]).unwrap().stat_names;
     assert_eq!(names, ["[]", "[][\"@id\"]"]);
 }
+
+// The spec of the map_bytes fuzz target: one field per language 2 rule. It must compile, and the
+// ways in must agree on it.
+#[test]
+fn the_fuzz_spec_compiles_and_maps_the_same_every_way() {
+    let f: J = serde_json::from_str(include_str!("fixtures/specs/lang2-all.json")).unwrap();
+    let a = canonic_core::Artifact::new(
+        compile(&f["spec"], &f["schema"], &[]).unwrap(),
+        Default::default(),
+    )
+    .unwrap();
+    let body = br#"{"nick":"ada","price":"USD 3.2M","ts":"2020-01-02","a":5,"b":3,
+        "url":"https://x.io/a/b","tags":["x","","y","x"],"type":"p","first":"A",
+        "positions":[{"org":{"id":1,"name":"Acme"},"pay":10,"title":"Dev"},
+        {"org":{"name":"Bolt"},"pay":-1,"title":"Ops"}]}"#;
+    let text = map_three(&a, body);
+    let out: J = serde_json::from_slice(&text).unwrap();
+    assert_eq!(out["price"], json!(320000000));
+    assert_eq!(out["jobs"][0]["total"], json!(20));
+    map_three(&a, b"{}");
+    map_three(&a, b"[1, 2]");
+}

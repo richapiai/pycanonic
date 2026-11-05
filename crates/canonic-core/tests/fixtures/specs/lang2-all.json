@@ -1,0 +1,245 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "fuzz",
+    "endpoint": "all",
+    "version": 1,
+    "status": "draft",
+    "reject": [
+      {
+        "path": "error",
+        "present": true
+      }
+    ],
+    "fields": {
+      "name": {
+        "coalesce": [
+          {
+            "from": "nick",
+            "when": {
+              "matches": "^[a-z]+$"
+            }
+          },
+          "name"
+        ],
+        "transform": "trim"
+      },
+      "price": {
+        "from": "price",
+        "transform": [
+          {
+            "parse_number": {
+              "units": true
+            }
+          },
+          {
+            "mul": 100
+          }
+        ]
+      },
+      "when": {
+        "from": "ts",
+        "transform": [
+          {
+            "format_date": "datetime_ms"
+          }
+        ]
+      },
+      "big": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": "gt"
+      },
+      "page": {
+        "from": "$input.page",
+        "when": {
+          "path": "$input.page",
+          "gte": 1
+        }
+      },
+      "slug": {
+        "from": "url",
+        "transform": {
+          "url_part": {
+            "path_segment": -1
+          }
+        }
+      },
+      "label": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": {
+          "format": "{0}/{1}"
+        }
+      },
+      "n": {
+        "from": "tags",
+        "transform": "len"
+      },
+      "tags[]": {
+        "coalesce": [
+          "tags",
+          "labels"
+        ],
+        "filter": {
+          "not": {
+            "path": "$",
+            "eq": ""
+          }
+        },
+        "unique": true,
+        "sort_by": "$",
+        "limit": 5
+      },
+      "kind": {
+        "one_of": [
+          {
+            "branch": "Person",
+            "when": {
+              "path": "type",
+              "eq": "p"
+            },
+            "fields": {
+              "first": "first"
+            }
+          },
+          {
+            "branch": "Org",
+            "fields": {
+              "org": "org"
+            }
+          }
+        ]
+      },
+      "jobs[]": {
+        "from": "positions",
+        "group_by": [
+          "org.id",
+          "org.name"
+        ],
+        "consecutive": false,
+        "item": {
+          "company": "org.name",
+          "count": {
+            "aggregate": "count",
+            "from": "$group"
+          },
+          "total": {
+            "aggregate": "sum",
+            "from": "$group[].pay",
+            "filter": {
+              "path": "pay",
+              "gt": 0
+            },
+            "transform": {
+              "mul": 2
+            }
+          },
+          "start": {
+            "aggregate": "min",
+            "from": "$group[].start",
+            "transform": [
+              {
+                "format_date": "datetime_ms"
+              }
+            ]
+          },
+          "titles[]": {
+            "from": "$group",
+            "pluck": "title",
+            "transform": "lower"
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "x-shape": "strict",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "price": {
+        "type": "number"
+      },
+      "when": {
+        "type": "string"
+      },
+      "big": {
+        "type": "boolean"
+      },
+      "page": {
+        "type": "integer"
+      },
+      "slug": {
+        "type": "string"
+      },
+      "label": {
+        "type": "string"
+      },
+      "n": {
+        "type": "integer"
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "kind": {
+        "type": "object",
+        "oneOf": [
+          {
+            "title": "Person",
+            "type": "object",
+            "properties": {
+              "first": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "title": "Org",
+            "type": "object",
+            "properties": {
+              "org": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "jobs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "company": {
+              "type": "string"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "total": {
+              "type": "number"
+            },
+            "start": {
+              "type": "string"
+            },
+            "titles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
