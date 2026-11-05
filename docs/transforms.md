@@ -260,7 +260,7 @@ The first layout that fits the whole trimmed string wins. If none fits, the lang
 
 ### parse_number
 
-Argument, optional: `{"units": true}`. It reads a number from text: commas are dropped, and one leading currency sign (`$ € £ ¥ ₹`) or 3-letter code (`USD 40`) is skipped. A number input comes back as it is. A boolean gives null.
+Argument, optional: `{"units": true}`. It reads a number from text: commas are dropped, and one leading currency sign (`$ € £ ¥ ₹`) or 3-letter code (`USD 40`) is skipped. Any three uppercase ASCII letters count as a code, with or without a space after them, so `"USD40"` gives `40` and so does `"SKU40"`. Do not use `parse_number` on IDs or SKUs that start with three capitals. A number input comes back as it is, except an integer past the signed 64-bit range, which comes back as the nearest double. A boolean gives null.
 
 With `"units": true`, a `K`, `M` or `B` suffix in any case multiplies by one thousand, one million or one billion.
 

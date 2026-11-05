@@ -30,7 +30,11 @@ JavaScript puts integer-like keys (`"1"`, `"42"`) first in every object, in nume
 
 JavaScript numbers are doubles, so the TypeScript package rounds an integer above 2^53. pycanonic keeps it exact. `{"id": 9007199254740993}` maps to `9007199254740993` here and to `9007199254740992` in TypeScript. The conformance runners allow one double step of difference past 2^53 for this reason.
 
-`cast: integer` and `cast: number` on a string go through a double, as in TypeScript: `"9007199254740993"` casts to `9007199254740992`. A JSON number that is already an integer keeps its exact value through either cast, and an untransformed value is always exact.
+`cast: integer` and `cast: number` on a string go through a double, as in TypeScript: `"9007199254740993"` casts to `9007199254740992`. A JSON number that is already an integer and fits a signed 64-bit integer keeps its exact value through either cast and through `parse_number`. A larger integer, such as `12345678901234567891`, goes through a double there too and comes back as `1.2345678901234567e+19`. An untransformed value is always exact.
+
+## Any three capitals read as a currency code
+
+The `money` validator and `parse_number` skip a leading 3-letter currency code, and any three uppercase ASCII letters count as one, with or without a space after them. So `parse_number` reads `"SKU100"` as `100`, and `money` accepts `"ABC1"`. The TypeScript `money` validator does the same, and language 1 must match it. `parse_number` keeps the rule because 0.1.1 read `"USD40"` as `40`. Do not run either on IDs or SKUs that start with three capitals.
 
 ## Compares and number transforms use doubles
 
