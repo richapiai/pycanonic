@@ -21,12 +21,12 @@ from ..io import Transforms, read_json, tolerance
 from . import decide
 from .arrays import MISSING, agree, fit_array, get
 from .chains import apply_rule
-from .compare import Tolerance, match, same
+from .compare import Tolerance, match, near, same
 from .derive import _child, derive_schema
 from .index import Occurrence, scalars
 from .leaves import LeafFit, _related, _segs, fit_leaf
 from .pairs import Pair, load_pairs
-from .report import FitResult, Row, to_md, write_json, write_md
+from .report import FitResult, Row, to_md, weak_lookup, write_json, write_md
 from .structure import _paths, _rejects, fit_const, fit_object_presence, fit_when, propose_reject
 
 FLOOR = 0.8
@@ -256,7 +256,7 @@ def _hit(rows: list[Row], key: str, got: Any, want: Any, tol: Tolerance = Tolera
     """The runtime reproduces the default's value. An array is judged as fit_array judges it: on the
     item leaves that have a rule, so an item leaf the provider lacks does not fail it."""
     if not key.endswith("[]"):
-        return _eq(got, want, tol)
+        return _eq(got, want, tol) or near(got, want)
     keys = [r.field[len(key) + 1 :] for r in rows if r.field.startswith(key + ".") and r.rule is not None]
     return agree(got, want, keys, tol) if keys else _eq(got, want)
 
@@ -409,7 +409,11 @@ def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) ->
         if one and r.tier == "review" and r.kind in decide.AUTO:
             r.note = " ".join(filter(None, [r.note, "The default sent one value or none in every pair, so the samples cannot tell this rule from a constant."]))
         if r.tolerated and r.tier == "review":
-            r.note = " ".join(filter(None, [r.note, f"matches within {r.tolerated}."]))
+            parts = r.tolerated.split(", ")
+            flags, cut = [x for x in parts if x.startswith("--")], [x for x in parts if not x.startswith("--")]
+            r.note = " ".join(filter(None, [r.note, f"matches within {', '.join(flags)}." if flags else "", f"{cut[0]}." if cut else ""]))
+        if r.kind == "lookup" and weak_lookup(r.rule):
+            r.note = " ".join(filter(None, [r.note, "weak, possibly by chance: a target value has fewer than two source values in the table."]))
         if r.kind == "reject" and f.disagree:
             r.tier = "manual"
     return FitResult(options.provider, options.endpoint, len(pairs), f.rows, spec, stubs(f.rows, pairs, options.provider, options.endpoint))

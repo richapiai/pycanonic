@@ -156,7 +156,7 @@ def test_argument_learned_from_one_pair_is_not_kept() -> None:
 
 
 def test_holdout_catches_overfit() -> None:
-    rows = [(f"v{i}", {"a": f"v{i}" if i else "x", "n": i}) for i in range(6)]
+    rows = [(f"v{i}", {"a": f"v{i}" if i else "x", "n": 7 * i + 3}) for i in range(6)]
     f = leaf("type", rows)
     assert (f.rule, f.kind, f.support, f.total) == ({"from": "a"}, "path", 5, 6)
     assert f.holdout == 5 / 6
@@ -923,7 +923,7 @@ def test_case_drift_sets_case_insensitive_keys() -> None:
     """Keys that drift in case across the samples set `"keys": "case_insensitive"`, a review row,
     so a casing that no sample showed still maps (fit_eval found drovo fields null on fresh pairs)."""
     style = lambda k, i: k if i % 3 else k[0].upper() + k[1:]
-    pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "score": i}, {style("fullName", i): f"n{i}", "rating": i}, None) for i in range(10)]
+    pairs = [Pair(f"p{i}.json", {"name": "n" + "abcdefghij"[i], "score": i}, {style("fullName", i): "n" + "abcdefghij"[i], "rating": i}, None) for i in range(10)]
     schema = derive_schema([p.default for p in pairs])
     result = fit_pairs(pairs, schema, FitOptions("acme", "e"))
     assert result.spec is not None and result.spec["keys"] == "case_insensitive"
@@ -1045,3 +1045,54 @@ def test_fit_tolerated_item_leaf_is_review() -> None:
     assert row.tier == "review" and row.support == row.total == 12
     assert "matches within --num-tolerance 0.01" in row.risk()
     assert next(r for r in run(Tolerance()).fields if r.field == "xs[].n").tier == "manual"
+
+
+# --- format, split_name modes, chance lookups, near matches (R53, R58, R67, R68) ---
+
+
+def _fit_leaf_rows(key: str, rows: list[tuple[Any, Any]]) -> dict[str, Row]:
+    return _fit_rows(key, S, [({key: t}, b) for t, b in rows])
+
+
+def test_fit_proposes_format() -> None:
+    rows = [({"id": f"urn:example:item:{100 + i}"}["id"], {"ref": 100 + i}) for i in range(6)]
+    f = leaf("id", rows)
+    assert f.kind == "format" and (f.support, f.total) == (6, 6)
+    assert f.rule == {"from": "ref", "transform": [{"format": "urn:example:item:{}"}]}
+    assert _fit_leaf_rows("id", rows)["id"].tier == "auto"
+    assert leaf("id", rows[:1]).kind != "format"  # one pair: the prefix is that pair's text
+
+
+def test_fit_split_first_word() -> None:
+    names = [("Mary", "Ann Smith"), ("Jo", "Lee Park"), ("Ada", "May Brown"), ("Sam", "Rae Stone"), ("Ivy", "Kay Reed"), ("Tom", "Joy Hale")]
+    rows = [(rest, {"full": f"{a} {rest}"}) for a, rest in names]
+    f = leaf("last_name", rows)
+    assert f.rule == {"from": "full", "transform": [{"split_name": {"part": "last", "mode": "first_word"}}]}
+    assert f.kind == "split_name"
+    assert _fit_leaf_rows("last_name", rows)["last_name"].tier == "review"
+
+
+def test_no_number_to_category_lookup() -> None:
+    sizes = [(1, "small"), (2, "small"), (3, "large"), (4, "large")] * 3
+    rows = [(t, {"size_min": n}) for n, t in sizes]
+    assert leaf("size", rows).kind == "none"
+    assert leaf("size", [(t, {"size_min": str(n)}) for n, t in sizes]).kind == "lookup"  # a text source still can
+
+
+def test_weak_lookup_label() -> None:
+    weak = [(t, {"kind": s}) for s, t in [("STAR", "starred"), ("UP", "liked")] * 4]
+    assert "weak, possibly by chance" in _fit_leaf_rows("reaction", weak)["reaction"].risk()
+    pairs = [("STAR", "starred"), ("FAV", "starred"), ("UP", "liked"), ("LIKE", "liked")] * 2
+    strong = _fit_leaf_rows("reaction", [(t, {"kind": s}) for s, t in pairs])["reaction"]
+    assert strong.kind == "lookup" and "weak" not in strong.risk()
+
+
+def test_trailing_space_is_review() -> None:
+    long = "A description that runs on for a while"
+    rows = [(f"Item name number {i}", {"name": f"Item name number {i}"}) for i in range(8)]
+    rows += [("Item name number 8 ", {"name": "Item name number 8"}), ("Item name number 9\t", {"name": "Item name number 9"}), (long + " and then more", {"name": long})]
+    row = _fit_leaf_rows("name", rows)["name"]
+    assert (row.tier, row.rule, row.support, row.total) == ("review", "name", 11, 11)
+    assert "near match: white space or text cut short in 3 pairs" in row.risk()
+    short = [("Item name number %d" % i, {"name": "Item name number %d" % i}) for i in range(8)] + [(f"short text {i} and more", {"name": f"short text {i}"}) for i in range(3)]
+    assert _fit_leaf_rows("name", short)["name"].rule is None  # a cut under 20 characters is no near match

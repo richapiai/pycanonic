@@ -23,6 +23,7 @@ RISKS: dict[str, str] = {
     "coalesce": "The second source has different meaning on records the samples did not cover.",
     "lookup": 'A value outside the table. `"else"` decides: keep (wrong vocabulary passes through), null (data lost), or a fixed value.',
     "const": "The default's value only looked constant in the samples. The most common cause of silent wrong data. Add pairs that differ.",
+    "format": "A record whose value needs a different prefix or suffix gets this one, so the text comes out wrong without an error.",
     "regex": "A URL or string format the samples did not show.",
     "group": "The grouping key is wrong for records with gaps or repeats, for example two runs under one key with another element between them. Check with a pair that has that pattern.",
     "presence": "If the provider sends the parent object with different content, the object can be null by mistake.",
@@ -42,6 +43,17 @@ RISKS: dict[str, str] = {
     "kept": "kept by reviewer",
     "asked": "A model chose this source path. Check it against the examples.",
 }
+
+
+def weak_lookup(rule: Any) -> bool:
+    """A lookup table in which some target value has fewer than two distinct source values."""
+    step = next((t["lookup"] for t in (rule or {}).get("transform", []) if isinstance(t, dict) and "lookup" in t), None) if isinstance(rule, dict) else None
+    if not isinstance(step, dict):
+        return False
+    by: dict[str, set[str]] = {}
+    for k, t in step["table"].items():
+        by.setdefault(json.dumps(t, sort_keys=True), set()).add(k)
+    return any(len(v) < 2 for v in by.values())
 
 
 @dataclass

@@ -16,13 +16,13 @@ from .compare import Tolerance, match, same
 # over all pairs in leaves.py. `null_if` cannot produce a non-null target, and `replace` is covered
 # by `regex`.
 SAFE = ["cast", "trim", "lower", "upper", "format_date", "parse_date", "strip_prefix", "strip_suffix", "join"]
-ORDER = [*SAFE, "to_string", "title", "split", "split_name", "parse_number", "parse_range", "to_domain", "normalize_phone", "normalize_linkedin", "regex"]
+ORDER = [*SAFE, "format", "to_string", "title", "split", "split_name", "parse_number", "parse_range", "to_domain", "normalize_phone", "normalize_linkedin", "regex"]
 
 _FIXED: dict[str, list[Any]] = {
     "cast": ["integer", "number", "boolean", "string"],
     "format_date": ["date", "datetime", "datetime_ms", "epoch_s", "epoch_ms"],
     "parse_date": [None, *({"formats": [f]} for f in ["%B %Y", "%b %Y", "%m/%Y", "%m/%d/%Y", "%d/%m/%Y", "%d %B %Y", "%d %b %Y"])],
-    "split_name": ["first", "last"],
+    "split_name": ["first", "last", *({"part": p, "mode": "first_word"} for p in ("first", "last"))],
     "parse_number": [None, {"units": True}],
     "parse_range": ["min", "max"],
 }
@@ -131,6 +131,11 @@ def _regexes(v: str, w: str) -> list[str]:
 
 def _learned(name: str, v: Any, w: str) -> list[Any]:
     """Arguments for `name` taken from value `v` and the wanted text `w`."""
+    if name == "format":  # the prefix and suffix around the value's text, at each place it shows
+        t = text(v) if not isinstance(v, (str, list, dict)) else v if isinstance(v, str) else ""
+        esc = lambda x: x.replace("{", "{{").replace("}", "}}")
+        at = [i for i in range(len(w)) if t and w.startswith(t, i)] if t != w else []
+        return [esc(w[:i]) + "{}" + esc(w[i + len(t) :]) for i in at]
     if not isinstance(v, str) or not w:
         return []
     lv, lw = v.lower(), w.lower()
@@ -168,7 +173,7 @@ def _steps(v: Any, w: str, want: str | None) -> list[tuple[str, Any]]:
             continue
         if name == "join":
             args = _join_seps(v, w)
-        elif name in ("strip_prefix", "strip_suffix", "split", "regex"):
+        elif name in ("strip_prefix", "strip_suffix", "split", "regex", "format"):
             args = _learned(name, v, w)
         else:
             args = _FIXED.get(name, [None])

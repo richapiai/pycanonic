@@ -14,15 +14,16 @@ from ..infer.score import Leaf, ScoreCtx, name_score
 from ..infer.sources import Source
 from ..infer.tokens import SEED
 from .chains import ORDER, SAFE, Chain, apply, apply_rule, candidates, text
-from .compare import Tolerance, match, same, used
+from .compare import Tolerance, match, near, same, used
 from .index import Occurrence
 from .pairs import Pair
 
 # Transforms whose argument fit learns from one value's text, not from a fixed list.
-_LEARNED = {"strip_prefix", "strip_suffix", "regex", "replace", "split"}
+_LEARNED = {"strip_prefix", "strip_suffix", "regex", "replace", "split", "format"}
 _KIND_RANK = {"path": 0, "join": 1, "coalesce": 2, "lookup": 3, "const": 4}
 _CASE = {"lower", "upper", "title"}
 _TOKEN = re.compile(r"[^\W_]{2,}")
+NEAR = "near match: white space or text cut short"
 _SEG = re.compile(r'\[(\d+)\]|\[("(?:[^"\\]|\\.)*")\]|\.?([^.\[\]]+)')
 
 
@@ -142,8 +143,13 @@ class _Search:
     def hits(self, c: _Cand) -> frozenset[int]:
         """The pairs with a value that the rule reproduces, over all pairs, so holdout runs reuse it."""
         if c not in self.memo:
-            self.memo[c] = frozenset(j for j in self.live if match(self.out(c, j), self.targets[j], self.tol) != "miss")
+            self.memo[c] = frozenset(j for j in self.live if self.fits(c, j))
         return self.memo[c]
+
+    def fits(self, c: _Cand, j: int) -> bool:
+        """The rule reproduces pair `j`, within the tolerance or as a near match of two texts."""
+        got = self.out(c, j)
+        return match(got, self.targets[j], self.tol) != "miss" or near(got, self.targets[j])
 
     def name(self, path: str) -> float:
         if path not in self.names:
@@ -222,8 +228,8 @@ class _Search:
                 v, t = self.values[j].get(path), self.targets[j]
                 if v is None:
                     continue
-                if isinstance(t, (dict, list)):
-                    break
+                if isinstance(t, (dict, list)) or (isinstance(v, (int, float)) and not isinstance(v, bool) and isinstance(t, str)):
+                    break  # R67: no number source to a text target
                 key = json.dumps(t, sort_keys=True)
                 first.setdefault(key, t)
                 votes.setdefault(text(v), Counter())[key] += 1
@@ -280,6 +286,9 @@ def fit_leaf(
     order = sorted(live, key=lambda j: j in s.hits(c))  # failures first, stable in pair order
     examples = [{"pair": pairs[j].name, "want": targets[j], "got": s.out(c, j)} for j in order[:3]]
     flags = dict.fromkeys(f for j in s.hits(c) if match(s.out(c, j), targets[j], tol) == "tolerated" for f in used(s.out(c, j), targets[j], tol))
+    cut = sum(match(s.out(c, j), targets[j], tol) == "miss" for j in s.hits(c))  # hits that only near() accepts
+    if cut:
+        flags[f"{NEAR} in {cut} pairs"] = None
     return LeafFit(field, c.rule(), c.label(), support, len(live), held / len(units), examples, alternatives, tolerated=", ".join(flags) or None)
 
 

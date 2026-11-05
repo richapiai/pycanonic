@@ -112,7 +112,7 @@ These kinds can be auto:
 
 - an exact path, `coalesce` and `join`
 - `cast`, `trim`, `lower` and `upper`
-- `format_date`, `parse_date`, `strip_prefix` and `strip_suffix`
+- `format_date`, `parse_date`, `strip_prefix`, `strip_suffix` and `format`
 - an empty form taken from the schema
 
 Every other kind goes to review:
@@ -121,6 +121,12 @@ Every other kind goes to review:
 - `group`, `wrap`, `flatten` and `filter`
 - `presence`, `if_empty`, `when` (with or without `omit`), `reject` and `keys`
 - fields the provider never sends, answers from `--ask`, and rules kept with `--keep`
+
+`format` is proposed when, in at least two pairs, the default is a fixed prefix, the provider value as text (a number as JavaScript writes it) and a fixed suffix, as in `{"format": "urn:example:item:{}"}`. `split_name` is also tried in its `first_word` mode: `{"split_name": {"part": "last", "mode": "first_word"}}`. It is review. When no rule reaches the floor, the best one shows as the closest rule.
+
+A lookup is never proposed from a number source to a text target. A table in which some target value has fewer than two source values carries the note `weak, possibly by chance`.
+
+A text field is also compared after trim and white-space collapse, and a text cut short (the shorter has 20 characters or more and is the start of the other) counts as a near match. A field that is right only on such pairs is review, with the note `near match: white space or text cut short in N pairs`. This needs no flag.
 
 A two-step chain takes the kind of the step that is not on the auto list.
 
@@ -145,6 +151,7 @@ This is the table the reviewer reads. The report prints the row of each field th
 | Other one-step transforms | `split`, `title`, `to_string`, `parse_number`, `parse_range` | review | The same text as the row above. |
 | Prefix strip | `strip_prefix` | auto | A record with a different prefix keeps it, so the value comes out with that prefix still on. |
 | Suffix strip | `strip_suffix` | auto | A record with a different suffix keeps it, so the value comes out with that suffix still on. |
+| Prefix or suffix add | `format` | auto | A record that needs a different prefix or suffix gets this one, so the text comes out wrong without an error. |
 | Empty array or null, from the default's samples | `empty` | auto (review for samples that disagree) | The default provider itself is inconsistent (sometimes null, sometimes `[]`). The schema flags fields where samples disagree, and those fields go to review. |
 | Coalesce order | `coalesce` | auto | The second source has different meaning on records the samples did not cover. |
 | Join separator | `join` | auto | A record with one part missing, or with a different separator, maps to a wrong or partial value. |

@@ -108,3 +108,18 @@ def used(a: Any, b: Any, tol: Tolerance) -> list[str]:
     singles = [Tolerance(num=tol.num), Tolerance(url_query=tol.url_query), Tolerance(space=tol.space)]
     hit = [t.flags()[0] for t in singles if t != Tolerance() and match(a, b, t) == "tolerated"]
     return hit or tol.flags()
+
+
+NEAR_CUT = 20  # the shorter text of a cut-short pair has at least this many characters
+
+
+def near(a: Any, b: Any) -> bool:
+    """Two different texts that are the same after trim and white-space collapse, or where the
+    shorter, of at least `NEAR_CUT` characters, is a strict prefix of the other."""
+    if not (isinstance(a, str) and isinstance(b, str)) or same(a, b):
+        return False
+    x, y = " ".join(fffd(a).split()), " ".join(fffd(b).split())
+    if x == y:
+        return True
+    lo, hi = sorted((x, y), key=len)
+    return len(lo) >= NEAR_CUT and hi.startswith(lo)
