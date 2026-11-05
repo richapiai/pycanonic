@@ -3,6 +3,8 @@
 import json
 import math
 
+import pytest
+
 import pycanonic
 
 NUM = {"type": "object", "properties": {"n": {"type": "number"}}}
@@ -37,3 +39,13 @@ def test_overflowing_sum_is_null_and_an_error():
     assert a.map({"xs": [1e308, 1e308]}) == {"n": None}
     assert a.map_json(b'{"xs": [1e308, 1e308]}') == b'{"n":null}'
     assert a.stats_snapshot()["fields"]["n"]["errors"] == 2
+
+
+def test_shared_children_in_context_hit_the_node_budget():
+    # x = [x, x] twenty-five times has 2^25 paths: past the budget, it fails fast.
+    a = pycanonic.compile_spec(_spec({"n": "$input.page"}, language=2), NUM)
+    x = []
+    for _ in range(25):
+        x = [x, x]
+    with pytest.raises(TypeError, match="too large"):
+        a.map({}, context={"page": 1, "blob": x})

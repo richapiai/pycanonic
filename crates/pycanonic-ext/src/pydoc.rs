@@ -173,11 +173,22 @@ impl Doc for PyDoc<'_, '_> {
 /// Deep enough for any spec, schema or request context. A cyclic object fails instead of overflowing the stack.
 const MAX_DEPTH: usize = 256;
 
+/// Most values `json` copies. An object that shares its children (`x = [x, x]` in a loop) has
+/// exponentially many paths though it is small, and this bounds the walk.
+const MAX_NODES: usize = 1_000_000;
+
 /// A Python value as JSON, `dict` key order kept.
 pub(crate) fn json(o: &Bound<'_, PyAny>, depth: usize) -> PyResult<J> {
+    json_in(o, depth, &mut { MAX_NODES })
+}
+
+fn json_in(o: &Bound<'_, PyAny>, depth: usize, budget: &mut usize) -> PyResult<J> {
     if depth > MAX_DEPTH {
         return Err(PyValueError::new_err("nested too deeply (or cyclic)"));
     }
+    *budget = budget
+        .checked_sub(1)
+        .ok_or_else(|| PyValueError::new_err("too large (or cyclic)"))?;
     if o.is_none() {
         Ok(J::Null)
     } else if let Ok(s) = o.cast::<PyString>() {
@@ -201,11 +212,11 @@ pub(crate) fn json(o: &Bound<'_, PyAny>, depth: usize) -> PyResult<J> {
             let k = k
                 .cast::<PyString>()
                 .map_err(|_| PyTypeError::new_err("JSON object keys must be str"))?;
-            m.insert(text(k).into_owned(), json(&v, depth + 1)?);
+            m.insert(text(k).into_owned(), json_in(&v, depth + 1, budget)?);
         }
         Ok(J::Object(m))
     } else if o.is_instance_of::<PyList>() || o.is_instance_of::<PyTuple>() {
-        let items = o.try_iter()?.map(|x| json(&x?, depth + 1));
+        let items = o.try_iter()?.map(|x| json_in(&x?, depth + 1, budget));
         Ok(J::Array(items.collect::<PyResult<_>>()?))
     } else {
         Err(PyTypeError::new_err(format!(
