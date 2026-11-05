@@ -24,6 +24,30 @@
             "image"
           ]
         }
+      },
+      "total": {
+        "aggregate": "sum",
+        "from": "media[].size",
+        "filter": {
+          "path": "type",
+          "eq": "document"
+        }
+      },
+      "has_doc": {
+        "aggregate": "any",
+        "from": "media[].ok",
+        "filter": {
+          "path": "type",
+          "eq": "document"
+        }
+      },
+      "all_ok": {
+        "aggregate": "all",
+        "from": "media[].ok",
+        "filter": {
+          "path": "type",
+          "eq": "document"
+        }
       }
     }
   },
@@ -35,6 +59,15 @@
       },
       "n": {
         "type": "number"
+      },
+      "total": {
+        "type": "number"
+      },
+      "has_doc": {
+        "type": "boolean"
+      },
+      "all_ok": {
+        "type": "boolean"
       }
     }
   },
@@ -44,22 +77,57 @@
         "media": [
           {
             "type": "image",
-            "url": "https://x.example/a.png"
+            "url": "https://x.example/a.png",
+            "size": 5,
+            "ok": false
           },
           {
             "type": "document",
-            "url": "https://x.example/d.pdf"
+            "url": "https://x.example/d.pdf",
+            "size": 10,
+            "ok": true
           },
           {
             "type": "document",
-            "url": "https://x.example/e.pdf"
+            "url": "https://x.example/e.pdf",
+            "size": 20,
+            "ok": false
           }
         ]
       },
       "context": null,
       "expected": {
         "doc": "https://x.example/d.pdf",
-        "n": 3
+        "n": 3,
+        "total": 30,
+        "has_doc": true,
+        "all_ok": false
+      }
+    },
+    {
+      "body": {
+        "media": [
+          {
+            "type": "document",
+            "url": "https://x.example/d.pdf",
+            "size": 7,
+            "ok": true
+          },
+          {
+            "type": "image",
+            "url": "https://x.example/a.png",
+            "size": 9,
+            "ok": false
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "doc": "https://x.example/d.pdf",
+        "n": 2,
+        "total": 7,
+        "has_doc": true,
+        "all_ok": true
       }
     },
     {
@@ -77,7 +145,10 @@
       "context": null,
       "expected": {
         "doc": null,
-        "n": 1
+        "n": 1,
+        "total": 0,
+        "has_doc": false,
+        "all_ok": true
       }
     },
     {
@@ -87,7 +158,10 @@
       "context": null,
       "expected": {
         "doc": null,
-        "n": 0
+        "n": 0,
+        "total": 0,
+        "has_doc": false,
+        "all_ok": true
       }
     },
     {
@@ -95,7 +169,10 @@
       "context": null,
       "expected": {
         "doc": null,
-        "n": 0
+        "n": 0,
+        "total": 0,
+        "has_doc": false,
+        "all_ok": true
       }
     },
     {
@@ -105,7 +182,10 @@
       "context": null,
       "expected": {
         "doc": null,
-        "n": null
+        "n": null,
+        "total": null,
+        "has_doc": null,
+        "all_ok": null
       }
     }
   ]
