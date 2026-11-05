@@ -22,8 +22,8 @@
 use crate::doc::{Key, KeyPath, KeyStep, read};
 use crate::exec::{transform, transform_many};
 use crate::json::{ALL, Filter, Node, parse, simd, unescape};
-use crate::plan::{Plan, Scalar, TxRef};
-use crate::spec::{Source, Step};
+use crate::plan::{Plan, Scalar, Source, TxRef};
+use crate::spec::Step;
 use crate::transforms::Transform;
 use crate::value::Value;
 use memchr::memmem::Finder;

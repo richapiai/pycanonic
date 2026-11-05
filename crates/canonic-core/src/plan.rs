@@ -3,7 +3,7 @@
 
 use crate::canonical::{Empty, Node, Semantic};
 use crate::cond::{Cmp, Cond, Operand};
-use crate::spec::{Aggregate, Path, Source, SourceItem, Status, Step, TransformRef};
+use crate::spec::{Aggregate, Path, Status, Step};
 use crate::transforms::Builtin;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -41,14 +41,51 @@ pub enum TxRef {
     },
 }
 
+/// Where a scalar reads. The same shapes as the spec's source, with computed entries (R52) that
+/// hold their resolved transforms.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Source {
+    From(Path),
+    FromMany(Vec<Path>),
+    Coalesce(Vec<Path>),
+    Computed(Vec<Item>),
+}
+
+/// An entry of a computed `from` list.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Item {
+    Path(Path),
+    Rule(Box<Computed>),
+}
+
+/// A computed entry: a scalar rule with no stat. `from` is `From`, `FromMany` or `Computed`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Computed {
+    pub from: Source,
+    pub tx: Vec<TxRef>,
+}
+
+impl Source {
+    /// Every path the source reads, in order, through computed entries too.
+    pub fn paths(&self) -> Vec<&Path> {
+        match self {
+            Source::From(p) => vec![p],
+            Source::FromMany(ps) | Source::Coalesce(ps) => ps.iter().collect(),
+            Source::Computed(items) => items
+                .iter()
+                .flat_map(|i| match i {
+                    Item::Path(p) => vec![p],
+                    Item::Rule(r) => r.from.paths(),
+                })
+                .collect(),
+        }
+    }
+}
+
 /// Read a field, then `tx` in order, then the routing `validator`. Null or a rejection gives `default`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Scalar {
     pub source: Source,
-    /// R52: the transforms of the computed entries of `source`, depth first, each entry before the
-    /// ones nested in it. Empty for any other source.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub inner: Vec<Vec<TxRef>>,
     pub tx: Vec<TxRef>,
     pub validator: Option<Semantic>,
     /// A string, number or boolean. The grammar rejects `default: null`.
@@ -523,34 +560,23 @@ fn line(out: &mut String, name: &str, field: &Field) {
     }
 }
 
-/// A scalar source. A computed entry prints as `(source | transform)`.
+/// A scalar source. A computed entry prints as `(source | transform)`, from the transforms that run.
 fn source(s: &Source) -> String {
-    let items = |items: &[SourceItem]| {
-        let all: Vec<String> = items
-            .iter()
-            .map(|i| match i {
-                SourceItem::Path(p) => path(p),
-                SourceItem::Rule(r) => format!("({}{})", source(&r.source), refs(&r.transform)),
-            })
-            .collect();
-        all.join(", ")
-    };
     match s {
         Source::From(p) => path(p),
         Source::FromMany(ps) => format!("from({})", list(ps)),
         Source::Coalesce(ps) => format!("coalesce({})", list(ps)),
-        Source::Computed(xs) => format!("from({})", items(xs)),
+        Source::Computed(xs) => {
+            let all: Vec<String> = xs
+                .iter()
+                .map(|i| match i {
+                    Item::Path(p) => path(p),
+                    Item::Rule(r) => format!("({}{})", source(&r.from), pipe(&r.tx)),
+                })
+                .collect();
+            format!("from({})", all.join(", "))
+        }
     }
-}
-
-/// Transforms as written in the spec, for a computed entry.
-fn refs(tx: &[TransformRef]) -> String {
-    tx.iter()
-        .map(|t| match &t.arg {
-            Some(a) => format!(" | {} {a}", t.name),
-            None => format!(" | {}", t.name),
-        })
-        .collect()
 }
 
 /// A source path, then `[]` and each flatten path.

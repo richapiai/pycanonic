@@ -4,7 +4,7 @@
 
 use crate::canonical::{Empty, Kind, Node, load_schema};
 use crate::plan::{
-    CompileError, Field, Format, ListKind, ListOps, Meta, Named, Plan, Reject, RoutingField,
+    self, CompileError, Field, Format, ListKind, ListOps, Meta, Named, Plan, Reject, RoutingField,
     Scalar, TxRef,
 };
 use crate::spec::{
@@ -79,21 +79,30 @@ impl Resolver<'_> {
         Ok(tx)
     }
 
-    /// R52: the transforms of each computed entry of `source`, depth first, each entry before the
-    /// ones nested in it. An entry is a scalar rule with its own source count. `at` is the
-    /// location of the `from` list.
-    fn inner(&self, source: &Source, at: &str, out: &mut Vec<Vec<TxRef>>) -> Result<(), String> {
-        let Source::Computed(items) = source else {
-            return Ok(());
-        };
-        for (i, item) in items.iter().enumerate() {
-            if let SourceItem::Rule(r) = item {
-                let at = format!("{at}[{i}]");
-                out.push(self.tx(&r.transform, &at, source_count(&r.source))?);
-                self.inner(&r.source, &format!("{at}.from"), out)?;
-            }
-        }
-        Ok(())
+    /// The plan's source for `source`. A computed entry is a scalar rule with its own source count
+    /// and its transforms resolved in place. `at` is the location of the `from`.
+    fn plan_source(&self, source: &Source, at: &str) -> Result<plan::Source, String> {
+        Ok(match source {
+            Source::From(p) => plan::Source::From(p.clone()),
+            Source::FromMany(ps) => plan::Source::FromMany(ps.clone()),
+            Source::Coalesce(ps) => plan::Source::Coalesce(ps.clone()),
+            Source::Computed(items) => plan::Source::Computed(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, item)| match item {
+                        SourceItem::Path(p) => Ok(plan::Item::Path(p.clone())),
+                        SourceItem::Rule(r) => {
+                            let at = format!("{at}[{i}]");
+                            Ok(plan::Item::Rule(Box::new(plan::Computed {
+                                tx: self.tx(&r.transform, &at, source_count(&r.source))?,
+                                from: self.plan_source(&r.source, &format!("{at}.from"))?,
+                            })))
+                        }
+                    })
+                    .collect::<Result<_, String>>()?,
+            ),
+        })
     }
 
     fn scalar(
@@ -113,8 +122,7 @@ impl Resolver<'_> {
             Kind::Object { .. } => return Err(format!("{at}: canonical field is an object")),
         };
         let tx = self.tx(&r.transform, at, source_count(&r.source))?;
-        let mut inner = Vec::new();
-        self.inner(&r.source, &format!("{at}.from"), &mut inner)?;
+        let plan_source = self.plan_source(&r.source, &format!("{at}.from"))?;
         // The validator step every routing field ends with.
         let validator = if routing {
             if matches!(r.source, Source::Computed(_)) {
@@ -146,10 +154,9 @@ impl Resolver<'_> {
         let input = Step::Key("$input".into());
         self.context |=
             self.language == 2 && r.source.paths().iter().any(|p| p.first() == Some(&input));
-        let (source, default) = (r.source.clone(), r.default.clone());
+        let default = r.default.clone();
         Ok(Scalar {
-            source,
-            inner,
+            source: plan_source,
             tx,
             validator,
             default,
@@ -623,7 +630,7 @@ fn check_anchor(field: Option<&Option<Scalar>>, key: &str, token: &str) -> Resul
     else {
         return Err(format!("{at}: only routing fields take anchors"));
     };
-    let Source::From(p) = source else {
+    let plan::Source::From(p) = source else {
         return Err(format!(
             "{at}: anchored fields need a single from path ending in a key"
         ));

@@ -33,9 +33,9 @@ use crate::canonical::{Empty, Node, Semantic};
 use crate::cond::{Cond, Operand, Rank, holds, key_text};
 use crate::doc::{Doc, Key, KeyPath as Path, KeyStep as Step, read, step as step_of};
 use crate::group::{Agg, AggOp, aggregate, groups};
-use crate::plan::{CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, TxRef};
+use crate::plan::{self, CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, Sink, copy};
-use crate::spec::{self, Source, SourceItem, is_group};
+use crate::spec::{self, is_group};
 use crate::stats::Stats;
 use crate::transforms::{Builtin, Transform, conform, validate};
 use crate::value::Value;
@@ -373,29 +373,21 @@ impl Builder<'_> {
         self.scope.at(steps)
     }
 
-    /// The entries of a computed list. `chains` gives each computed entry its transforms in the
-    /// order `Scalar::inner` holds them.
-    fn items(
-        &mut self,
-        items: &[SourceItem],
-        chains: &mut std::slice::Iter<'_, Vec<TxRef>>,
-    ) -> Result<Vec<Item>, CompileError> {
+    /// The entries of a computed list.
+    fn items(&mut self, items: &[plan::Item]) -> Result<Vec<Item>, CompileError> {
         let mut out = Vec::new();
         for item in items {
             out.push(match item {
-                SourceItem::Path(p) => Item::At(self.at(p)),
-                SourceItem::Rule(r) => {
-                    let Some(chain) = chains.next() else {
-                        return Err(self.err("computed source without transforms".into()));
-                    };
-                    let tx = self.tx(chain)?;
-                    let (items, many) = match &r.source {
-                        Source::From(p) => (vec![Item::At(self.at(p))], false),
-                        Source::FromMany(ps) => {
+                plan::Item::Path(p) => Item::At(self.at(p)),
+                plan::Item::Rule(r) => {
+                    let tx = self.tx(&r.tx)?;
+                    let (items, many) = match &r.from {
+                        plan::Source::From(p) => (vec![Item::At(self.at(p))], false),
+                        plan::Source::FromMany(ps) => {
                             (ps.iter().map(|p| Item::At(self.at(p))).collect(), true)
                         }
-                        Source::Computed(xs) => (self.items(xs, chains)?, true),
-                        Source::Coalesce(_) => {
+                        plan::Source::Computed(xs) => (self.items(xs)?, true),
+                        plan::Source::Coalesce(_) => {
                             return Err(self.err("coalesce in a computed source".into()));
                         }
                     };
@@ -408,10 +400,10 @@ impl Builder<'_> {
 
     fn leaf(&mut self, s: &Scalar) -> Result<Leaf, CompileError> {
         let src = match &s.source {
-            Source::Computed(xs) => Src::Computed(self.items(xs, &mut s.inner.iter())?),
-            Source::From(p) => Src::From(self.at(p)),
-            Source::FromMany(ps) => Src::Many(ps.iter().map(|p| self.at(p)).collect()),
-            Source::Coalesce(ps) => Src::Coalesce(ps.iter().map(|p| self.at(p)).collect()),
+            plan::Source::Computed(xs) => Src::Computed(self.items(xs)?),
+            plan::Source::From(p) => Src::From(self.at(p)),
+            plan::Source::FromMany(ps) => Src::Many(ps.iter().map(|p| self.at(p)).collect()),
+            plan::Source::Coalesce(ps) => Src::Coalesce(ps.iter().map(|p| self.at(p)).collect()),
         };
         Ok(Leaf {
             src,

@@ -26,14 +26,13 @@ pub enum Status {
     Deprecated,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TransformRef {
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arg: Option<Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Source {
     From(Path),
     FromMany(Vec<Path>),
@@ -43,7 +42,7 @@ pub enum Source {
 }
 
 /// An entry of a computed `from` list: a path, or `{"from": ..., "transform": ...}`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SourceItem {
     Path(Path),
     Rule(Box<ScalarRule>),
@@ -66,10 +65,9 @@ impl Source {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ScalarRule {
     pub source: Source,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
     pub transform: Vec<TransformRef>,
 }
