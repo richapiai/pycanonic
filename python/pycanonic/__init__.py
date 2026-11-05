@@ -18,7 +18,7 @@ from ._api import (
 from ._core import Artifact, Rejected, ShadowDiff, Stats, fingerprint, shape
 from .registry import Registry
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = [
     "Artifact",

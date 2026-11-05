@@ -18,14 +18,17 @@ A product that gets the same kind of data from several providers ends up with on
 - A routing value that fails its format check becomes `None`. A routing field (email, phone, domain, URL) carries a validator. A provider that answers `"N/A"` gives you `None` and a counted error. The check is on format only, so it cannot tell a personal address from a work one.
 - One contract, any number of providers. Callers get your canonical keys, in a fixed order, whichever provider answered.
 - Bytes in, bytes out. `map_json` takes the raw body and returns canonical JSON without building a Python object. It runs with the GIL (the CPython global interpreter lock) released.
+- 0.2.0 widens spec language 2: computed sources, `format`, `url_part`, number and compare transforms, `not`/`all`/`any` conditions, strict shape and `oneOf` unions. `canonic fit` and `verify` align list items by id, count live-data drift as a match, and take `--allow` for expected gaps. Every 0.1.1 spec still maps the same.
 - Specs live in git. A bad spec fails at compile time, with the field named. `artifact.source` lists the compiled plan, one line per field.
 
 pycanonic is the wrong tool for one provider whose shape you control. It is also the wrong tool for queries or aggregation over JSON (use jq or JSONata). And it does not reject invalid input (use a schema validator). pycanonic maps what it can and counts the rest.
 
 ## Install
 
+Until pycanonic is on PyPI, install the wheel from the GitHub release:
+
 ```sh
-pip install pycanonic
+pip install https://github.com/richapiai/pycanonic/releases/download/v0.2.0/<wheel for your platform>.whl
 ```
 
 This installs the library and the `canonic` command. Wheels are abi3 builds, so one wheel per platform covers CPython 3.10 and later. They cover manylinux x86_64 and aarch64, musllinux x86_64, macOS universal2 and Windows x86_64. The package has no runtime dependencies.
@@ -168,7 +171,7 @@ Eight of the ten interpreted libraries are at least 10 times slower than pycanon
 
 ## CLI
 
-`pip install pycanonic` installs the `canonic` command. Every subcommand has `--help`. Exit code 0 is success, and 1 is a verdict (`test` found a failing case, `diff` found drift). Exit code 2 means the command cannot run: a missing file, an unknown flag, a spec that does not compile. The commands match the TypeScript CLI and write the same output on the shared fixtures.
+The package installs the `canonic` command. Every subcommand has `--help`. Exit code 0 is success, and 1 is a verdict (`test` found a failing case, `diff` found drift). Exit code 2 means the command cannot run: a missing file, an unknown flag, a spec that does not compile. The commands match the TypeScript CLI and write the same output on the shared fixtures.
 
 ### canonic infer
 
@@ -230,7 +233,7 @@ canonic verify globex.json --schema canonical.json --default samples/default/ --
 
 `canonic schema` records the default's shape, key order and empty values. `canonic fit` learns a spec from the pairs and sorts every field into auto, review or manual. Each field in the report has its evidence and what can break on live traffic. `canonic verify` maps every pair and exits 1 on a shape failure or a field below the match bar, so CI can gate the provider. A reviewer locks the fields they checked with `--keep`, and `fit` refits the rest.
 
-`canonic schema`, `fit` and `verify` are experimental in 0.1. Their rules and report format can change in a minor release. With few pairs, most fields land in review. Read every review rule before you keep it.
+`canonic schema`, `fit` and `verify` are experimental in 0.2. Their rules and report format can change in a minor release. With few pairs, most fields land in review. Read every review rule before you keep it.
 
 On 14 invented providers, 75% of the fields land in auto, and no auto field is wrong on fresh pairs. The target is 80%. The specs use spec language 2 (`"language": 2`), which only pycanonic runs. See [docs/fit.md](https://github.com/richapiai/pycanonic/blob/main/docs/fit.md) and the [Language 2](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md#language-2) rules.
 
