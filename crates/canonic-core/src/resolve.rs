@@ -157,6 +157,9 @@ impl Resolver<'_> {
         if r.on_missing && !matches!(r.source, Source::From(_)) {
             return Err(format!("{at}: on_missing needs one from path"));
         }
+        if r.on_missing && r.transform.is_empty() {
+            return Err(format!("{at}: on_missing needs a transform"));
+        }
         let (semantic, routing) = match &node.kind {
             Kind::Scalar {
                 semantic, routing, ..
@@ -226,8 +229,11 @@ impl Resolver<'_> {
         stat: usize,
         at: &str,
     ) -> Result<Field, String> {
+        // A container transform takes `on_missing` before this (`container`).
         if r.on_missing {
-            return Err(format!("{at}: on_missing needs one from path"));
+            return Err(format!(
+                "{at}: on_missing needs a custom container transform on an array"
+            ));
         }
         let Kind::Array { items, nested } = &node.kind else {
             return Err(format!("{at}: canonical field is not an array"));

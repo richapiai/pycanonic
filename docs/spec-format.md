@@ -817,7 +817,7 @@ art = pycanonic.compile_spec(spec, schema, transforms={"by_team": by_team})
 
 #### on_missing
 
-`"on_missing": "transform"` calls the first transform with null when the source is missing or null. The default, `"skip"`, skips the transform for a missing source, as before. It works in language 2 on a scalar rule or a container rule with one `from` path. With `coalesce`, a `from` list, a computed source or an array rule that has list options, the compile fails with `on_missing needs one from path`. A routing field cannot have it.
+`"on_missing": "transform"` calls the first transform with null when the source is missing or null. The default, `"skip"`, skips the transform for a missing source, as before. It works in language 2 on a scalar rule or a container rule with one `from` path. With `coalesce`, a `from` list or a computed source, the compile fails with `on_missing needs one from path`. On an array rule it needs a custom container transform, else the compile fails with `on_missing needs a custom container transform on an array`. A scalar rule with no `transform` fails with `on_missing needs a transform`. A routing field cannot have it.
 
 The rest of the chain runs as usual on the result. A non-null result is a fill. A null result is a miss, not an error, and `default` still applies to it. For a container rule, a result that does not fit the node gives null and counts an error, as before. A function that raises, or returns a list or dict for a scalar field, counts an error and a miss. A plan that uses `on_missing` is format 2.
 

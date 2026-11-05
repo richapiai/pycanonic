@@ -1,0 +1,28 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "t[]": {
+        "from": "xs",
+        "transform": "lower",
+        "on_missing": "transform"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "t": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "error": "acme items v1: fields[\"t[]\"]: on_missing needs a custom container transform on an array"
+}

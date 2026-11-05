@@ -1,0 +1,24 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "slug": {
+        "from": "a",
+        "on_missing": "transform"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "slug": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "acme items v1: fields[\"slug\"]: on_missing needs a transform"
+}
