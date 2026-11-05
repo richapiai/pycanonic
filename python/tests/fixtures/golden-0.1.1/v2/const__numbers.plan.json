@@ -1,0 +1,1 @@
+{"format":2,"meta":{"provider":"acme","endpoint":"orgs","version":1,"status":"promoted"},"fields":[{"name":"rate","name_idx":0,"value":{"Const":[1.5,0]}},{"name":"big","name_idx":1,"value":{"Const":[18446744073709551615,1]}}],"routing":[],"anchors":[],"stat_names":["rate","big"],"custom_names":[],"names":["rate","big"]}

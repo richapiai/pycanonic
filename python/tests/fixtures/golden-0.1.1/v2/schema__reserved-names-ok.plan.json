@@ -1,0 +1,1 @@
+{"format":1,"meta":{"provider":"acme","endpoint":"people","version":1,"status":"promoted"},"fields":[{"name":"toString","name_idx":0,"value":{"Scalar":{"source":{"From":[{"Key":"label"}]},"tx":[],"validator":null,"default":null,"stat":0}}}],"routing":[],"anchors":[],"stat_names":["toString"],"custom_names":[],"names":["toString"]}

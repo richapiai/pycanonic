@@ -1,0 +1,1 @@
+["{\"first\":\"a\",\"last\":\"b\",\"count\":3,\"sum\":3.5,\"any\":true,\"all\":false,\"join\":\"a, b\",\"min\":null}", "{\"first\":\"c\",\"last\":\"c\",\"count\":2,\"sum\":3,\"any\":true,\"all\":true,\"join\":\"c\",\"min\":2}"]

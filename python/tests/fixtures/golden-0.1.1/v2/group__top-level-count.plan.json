@@ -1,0 +1,1 @@
+{"format":2,"meta":{"provider":"acme","endpoint":"people","version":1,"status":"promoted"},"fields":[{"name":"total","name_idx":0,"value":{"Aggregate":[{"op":"count","from":[{"Key":"data"},{"Key":"items"}]},0]}}],"routing":[],"anchors":[],"stat_names":["total"],"custom_names":[],"names":["total"]}

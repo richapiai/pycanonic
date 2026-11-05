@@ -1,0 +1,1 @@
+{"format":1,"meta":{"provider":"acme","endpoint":"people","version":1,"status":"promoted"},"fields":[{"name":"tags","name_idx":0,"value":{"List":{"from":[{"Key":"labels"}],"kind":{"Plain":[]},"stat":0}}}],"routing":[],"anchors":[],"stat_names":["tags[]"],"custom_names":[],"names":["tags"]}

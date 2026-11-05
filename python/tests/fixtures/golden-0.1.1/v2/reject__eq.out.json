@@ -1,0 +1,1 @@
+[{"$rejected": "{\"path\":\"status\",\"eq\":\"none\"}"}, "{\"name\":\"a\"}", {"$rejected": "{\"path\":\"$input.block\",\"eq\":true}"}, "{\"name\":\"a\"}"]
