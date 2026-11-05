@@ -1140,7 +1140,7 @@ def test_fit_union_manual() -> None:
     """A union node is one manual row and a placeholder, no leaf rows below it."""
     from pycanonic.cli.fit import verify
 
-    authors = [{"kind": "person", "name": f"p{i}"} for i in range(3)] + [{"kind": "org", "name": f"o{i}", "size": i} for i in range(3)]
+    authors = [{"kind": "person", "name": f"p{i}", "title": "t"} for i in range(3)] + [{"kind": "org", "name": f"o{i}", "size": i} for i in range(3)]
     pairs = [Pair(f"p{i}.json", {"id": f"x{i}", "author": a}, {"ref": f"x{i}", "by": a}, None) for i, a in enumerate(authors)]
     schema = derive_schema([p.default for p in pairs])
     assert "oneOf" in schema["properties"]["author"]

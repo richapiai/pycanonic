@@ -43,23 +43,23 @@ def _is_open(dicts: list[dict[str, Any]], keys: list[str]) -> bool:
 
 def _union(dicts: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
     """The `oneOf` branches when the objects fall into 2 or more key sets, each seen in 2 or more
-    samples and none left over (R55). A branch is titled by a scalar key that is one string within
-    each set and differs across sets, lowercased, else `branch<n>`."""
+    samples, none left over, no set inside another (that is an optional key, R25), and a scalar key
+    that is one string within each set and differs across sets: it titles the branches, lowercased (R55)."""
     groups: dict[frozenset[str], list[dict[str, Any]]] = {}
     for d in dicts:
         groups.setdefault(frozenset(d), []).append(d)
-    sets = list(groups.values())
-    if len(sets) < 2 or any(len(g) < 2 for g in sets):
+    sets = list(groups)
+    if len(sets) < 2 or any(len(g) < 2 for g in groups.values()) or any(a < b for a in sets for b in sets):
         return None
-    titles = [f"branch{i}" for i in range(1, len(sets) + 1)]
     for k in dict.fromkeys(k for d in dicts for k in d):
-        if all(k in g[0] for g in sets):
-            vals = [{d[k] for d in g} for g in sets]
-            names = [re.sub(r"\W", "_", str(next(iter(v))).lower()) for v in vals]
-            if all(len(v) == 1 and isinstance(next(iter(v)), str) for v in vals) and len(set(names)) == len(names) and all(_IDENT.match(n) for n in names):
-                titles = names
-                break
-    return [{"title": t, "properties": {k: _node([d[k] for d in g], 0) for k in dict.fromkeys(k for d in g for k in d)}} for t, g in zip(titles, sets)]
+        if all(k in s for s in sets):
+            vals = [{d[k] for d in groups[s]} for s in sets]
+            if not all(len(v) == 1 and isinstance(next(iter(v)), str) for v in vals):
+                continue
+            names = [re.sub(r"\W", "_", next(iter(v)).lower()) for v in vals]
+            if len(set(names)) == len(names) and all(_IDENT.match(n) for n in names):
+                return [{"title": t, "properties": {c: _node([d[c] for d in g], 0) for c in dict.fromkeys(c for d in g for c in d)}} for t, g in zip(names, groups.values())]
+    return None
 
 
 def _node(values: list[Any], absent: int) -> dict[str, Any]:

@@ -211,12 +211,20 @@ def test_schema_proposes_union() -> None:
     assert list(author["oneOf"][0]["properties"]) == ["kind", "name", "title"]
     assert list(author["oneOf"][1]["properties"]) == ["kind", "name", "size"]
     assert ("author", "oneOf proposed") in flags(s)
-    # no discriminating scalar: numbered branches
-    plain = derive([{"a": {"x": 1}}, {"a": {"x": 2}}, {"a": {"y": 1}}, {"a": {"y": 2}}])
-    assert [b["title"] for b in plain["properties"]["a"]["oneOf"]] == ["branch1", "branch2"]
 
 
 def test_schema_no_union_for_noise() -> None:
     s = derive([{"author": a} for a in [*PEOPLE, {**PEOPLE[0], "extra": 1}]])
     assert "oneOf" not in s["properties"]["author"] and "extra" in s["properties"]["author"]["properties"]
     assert "oneOf" not in derive([{"author": a} for a in PEOPLE])["properties"]["author"]
+
+
+def test_schema_optional_key_is_not_a_union() -> None:
+    s = derive([{"o": {"a": 1, "b": 2}}] * 3 + [{"o": {"a": 1, "b": 2, "c": 3}}] * 3)
+    o = s["properties"]["o"]
+    assert "oneOf" not in o and o["properties"]["c"]["x-empty"] == "missing"
+
+
+def test_schema_no_union_without_discriminator() -> None:
+    s = derive([{"o": {"x": 1, "y": 2}}] * 3 + [{"o": {"x": 1, "z": 2}}] * 3)
+    assert "oneOf" not in s["properties"]["o"]
