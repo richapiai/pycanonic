@@ -251,7 +251,7 @@ pycanonic ships these parts:
 - `Registry` for promoted and shadow artifacts
 - per-field `stats`, `FillMonitor`, `fingerprint` and `shape`
 - `ShadowDiff` and `merge_gate`
-- nine default transforms and seven routing validators, and twenty-seven more transforms for language 2
+- nine default transforms and seven routing validators, and twenty-nine more transforms for language 2
 - the CLI: `infer`, `test`, `diff`, `build`, `bench`, `schema`, `fit` and `verify`
 
 Your deployment wires them together:

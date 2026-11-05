@@ -1,0 +1,213 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "first_fw": {
+        "from": "v",
+        "transform": {
+          "split_name": {
+            "part": "first",
+            "mode": "first_word"
+          }
+        }
+      },
+      "last_fw": {
+        "from": "v",
+        "transform": {
+          "split_name": {
+            "part": "last",
+            "mode": "first_word"
+          }
+        }
+      },
+      "first_lw": {
+        "from": "v",
+        "transform": {
+          "split_name": {
+            "part": "first",
+            "mode": "last_word"
+          }
+        }
+      },
+      "last_lw": {
+        "from": "v",
+        "transform": {
+          "split_name": {
+            "part": "last",
+            "mode": "last_word"
+          }
+        }
+      },
+      "last_def": {
+        "from": "v",
+        "transform": {
+          "split_name": {
+            "part": "last"
+          }
+        }
+      },
+      "last_str": {
+        "from": "v",
+        "transform": {
+          "split_name": "last"
+        }
+      },
+      "first_str": {
+        "from": "v",
+        "transform": {
+          "split_name": "first"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "first_fw": {
+        "type": "string"
+      },
+      "last_fw": {
+        "type": "string"
+      },
+      "first_lw": {
+        "type": "string"
+      },
+      "last_lw": {
+        "type": "string"
+      },
+      "last_def": {
+        "type": "string"
+      },
+      "last_str": {
+        "type": "string"
+      },
+      "first_str": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "v": "Mary Ann Smith"
+      },
+      "context": null,
+      "expected": {
+        "first_fw": "Mary",
+        "last_fw": "Ann Smith",
+        "first_lw": "Mary",
+        "last_lw": "Smith",
+        "last_def": "Smith",
+        "last_str": "Smith",
+        "first_str": "Mary"
+      }
+    },
+    {
+      "body": {
+        "v": "  Mary   Ann  "
+      },
+      "context": null,
+      "expected": {
+        "first_fw": "Mary",
+        "last_fw": "Ann",
+        "first_lw": "Mary",
+        "last_lw": "Ann",
+        "last_def": "Ann",
+        "last_str": "Ann",
+        "first_str": "Mary"
+      }
+    },
+    {
+      "body": {
+        "v": "Ada"
+      },
+      "context": null,
+      "expected": {
+        "first_fw": "Ada",
+        "last_fw": null,
+        "first_lw": "Ada",
+        "last_lw": null,
+        "last_def": null,
+        "last_str": null,
+        "first_str": "Ada"
+      }
+    },
+    {
+      "body": {
+        "v": ""
+      },
+      "context": null,
+      "expected": {
+        "first_fw": null,
+        "last_fw": null,
+        "first_lw": null,
+        "last_lw": null,
+        "last_def": null,
+        "last_str": null,
+        "first_str": null
+      }
+    },
+    {
+      "body": {
+        "v": "   "
+      },
+      "context": null,
+      "expected": {
+        "first_fw": null,
+        "last_fw": null,
+        "first_lw": null,
+        "last_lw": null,
+        "last_def": null,
+        "last_str": null,
+        "first_str": null
+      }
+    },
+    {
+      "body": {
+        "v": 5
+      },
+      "context": null,
+      "expected": {
+        "first_fw": null,
+        "last_fw": null,
+        "first_lw": null,
+        "last_lw": null,
+        "last_def": null,
+        "last_str": null,
+        "first_str": null
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "first_fw": null,
+        "last_fw": null,
+        "first_lw": null,
+        "last_lw": null,
+        "last_def": null,
+        "last_str": null,
+        "first_str": null
+      }
+    },
+    {
+      "body": {
+        "v": null
+      },
+      "context": null,
+      "expected": {
+        "first_fw": null,
+        "last_fw": null,
+        "first_lw": null,
+        "last_lw": null,
+        "last_def": null,
+        "last_str": null,
+        "first_str": null
+      }
+    }
+  ]
+}

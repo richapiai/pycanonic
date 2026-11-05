@@ -6,9 +6,10 @@ use crate::canonical::{Empty, Kind, Node, Semantic};
 use crate::dates::{self, DateOut, Layout, date_from_epoch, date_from_string};
 use crate::numbers::{self, NumOp};
 use crate::strings::{self, Find, Otherwise, Pattern, Template};
+use crate::urls::{self, UrlPart};
 use crate::value::{Value, js_number_to_string};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value as J};
+use serde_json::{Map, Value as J, json};
 use std::borrow::Cow;
 
 pub trait Transform: Send + Sync {
@@ -107,6 +108,11 @@ pub enum Builtin {
     Lower,
     Trim,
     SplitName(NamePart),
+    SplitNameMode {
+        part: NamePart,
+        first_word: bool,
+    },
+    UrlPart(UrlPart),
     Join(Option<String>),
     ParseDate,
     NormalizePhone,
@@ -157,7 +163,7 @@ pub enum ArgError {
 /// How many of the default transforms language 1 has. They come first in the list.
 pub const LANGUAGE_1_TRANSFORMS: usize = 9;
 
-const NAMES: [&str; 37] = [
+const NAMES: [&str; 38] = [
     "cast",
     "lower",
     "trim",
@@ -196,6 +202,7 @@ const NAMES: [&str; 37] = [
     "gt",
     "gte",
     "format",
+    "url_part",
 ];
 
 /// True for a default transform that only a language 2 spec can name.
@@ -229,6 +236,23 @@ pub fn builtin(name: &str, arg: Option<&serde_json::Value>) -> Result<Builtin, A
             Some("boolean") => Ok(Builtin::Cast(CastTo::Boolean)),
             _ => Err(ArgError::InvalidArgument),
         },
+        "split_name" if arg.is_some_and(|a| a.is_object()) => {
+            let o = strings::object(arg, &["part"], &["mode"]).ok_or(ArgError::InvalidArgument)?;
+            let part = match o["part"].as_str() {
+                Some("first") => NamePart::First,
+                Some("last") => NamePart::Last,
+                _ => return Err(ArgError::InvalidArgument),
+            };
+            let first_word = match o.get("mode").map(|m| m.as_str()) {
+                None | Some(Some("last_word")) => false,
+                Some(Some("first_word")) => true,
+                _ => return Err(ArgError::InvalidArgument),
+            };
+            Ok(Builtin::SplitNameMode { part, first_word })
+        }
+        "url_part" => url_part_arg(arg)
+            .map(Builtin::UrlPart)
+            .ok_or(ArgError::InvalidArgument),
         "split_name" => match text {
             Some("first") => Ok(Builtin::SplitName(NamePart::First)),
             Some("last") => Ok(Builtin::SplitName(NamePart::Last)),
@@ -331,6 +355,17 @@ impl Transform for Builtin {
                 }
                 _ => None,
             },
+            Builtin::SplitNameMode { part, first_word } if !first_word => {
+                return Builtin::SplitName(*part).apply(v, None);
+            }
+            Builtin::SplitNameMode { part, .. } => match v {
+                Value::Str(s) => split_first_word(&s, *part).map(owned),
+                _ => None,
+            },
+            Builtin::UrlPart(p) => match v {
+                Value::Str(s) => urls::url_part(&s, p).map(owned),
+                _ => None,
+            },
             Builtin::Join(_) => match v {
                 Value::Str(s) if !s.is_empty() => Some(Value::Str(s)),
                 _ => None,
@@ -393,6 +428,14 @@ impl Builtin {
             ),
             Builtin::SplitName(NamePart::First) => ("split_name", text("first")),
             Builtin::SplitName(NamePart::Last) => ("split_name", text("last")),
+            Builtin::SplitNameMode { part, first_word } => (
+                "split_name",
+                Some(json!({
+                    "part": if *part == NamePart::First { "first" } else { "last" },
+                    "mode": if *first_word { "first_word" } else { "last_word" },
+                })),
+            ),
+            Builtin::UrlPart(p) => ("url_part", Some(url_part_json(p))),
             Builtin::Join(sep) => ("join", sep.as_deref().and_then(text)),
             Builtin::Lower => ("lower", None),
             Builtin::Trim => ("trim", None),
@@ -692,6 +735,43 @@ pub(crate) fn to_text(v: Value<'_>) -> Option<Value<'_>> {
         Value::Float(f) if f.is_finite() => owned(js_number_to_string(f)),
         _ => return None,
     })
+}
+
+/// `first_word` mode: the first word, and the rest of the words joined by single spaces.
+fn split_first_word(s: &str, part: NamePart) -> Option<String> {
+    let mut words = s.split(is_js_space).filter(|w| !w.is_empty());
+    let first = words.next()?;
+    match part {
+        NamePart::First => Some(first.to_string()),
+        NamePart::Last => {
+            let rest = words.collect::<Vec<_>>().join(" ");
+            (!rest.is_empty()).then_some(rest)
+        }
+    }
+}
+
+fn url_part_arg(arg: Option<&serde_json::Value>) -> Option<UrlPart> {
+    match arg? {
+        J::String(s) if s == "host" => Some(UrlPart::Host),
+        J::String(s) if s == "path" => Some(UrlPart::Path),
+        J::Object(_) => {
+            if let Some(o) = strings::object(arg, &["path_segment"], &[]) {
+                return o["path_segment"].as_i64().map(UrlPart::Segment);
+            }
+            let o = strings::object(arg, &["query"], &[])?;
+            o["query"].as_str().map(|q| UrlPart::Query(q.to_string()))
+        }
+        _ => None,
+    }
+}
+
+fn url_part_json(p: &UrlPart) -> serde_json::Value {
+    match p {
+        UrlPart::Host => json!("host"),
+        UrlPart::Path => json!("path"),
+        UrlPart::Segment(n) => json!({ "path_segment": n }),
+        UrlPart::Query(q) => json!({ "query": q }),
+    }
 }
 
 fn split_name(s: &str, part: NamePart) -> Option<&str> {

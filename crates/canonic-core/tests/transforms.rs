@@ -2,6 +2,7 @@
 //! JS arrays are `Value::Container` for single-value transforms. `join` over an array uses `apply_list`.
 
 use canonic_core::numbers::NumOp;
+use canonic_core::urls::UrlPart as Up;
 use canonic_core::{
     ArgError, Builtin, CastTo, NamePart, Semantic, Transform, Value, builtin,
     default_transform_names, validate,
@@ -397,7 +398,7 @@ fn builtin_arguments() {
         };
         assert!(b(name, a).is_ok(), "{name}");
     }
-    assert_eq!(default_transform_names().len(), 37);
+    assert_eq!(default_transform_names().len(), 38);
 }
 
 #[test]
@@ -480,6 +481,21 @@ fn all_builtins() -> Vec<Builtin> {
         Trim,
         SplitName(NamePart::First),
         SplitName(NamePart::Last),
+        SplitNameMode {
+            part: NamePart::First,
+            first_word: true,
+        },
+        SplitNameMode {
+            part: NamePart::Last,
+            first_word: true,
+        },
+        SplitNameMode {
+            part: NamePart::First,
+            first_word: false,
+        },
+        Builtin::UrlPart(Up::Host),
+        Builtin::UrlPart(Up::Segment(-1)),
+        Builtin::UrlPart(Up::Query("k".into())),
         Join(None),
         Join(Some(", ".into())),
         ParseDate,
@@ -533,7 +549,11 @@ fn accepts(b: &Builtin, j: &Value) -> bool {
         }
         Builtin::Cast(_) => finite(j),
         Builtin::Lower | Builtin::Trim => is_str,
-        Builtin::SplitName(NamePart::First) => matches!(j, Value::Str(x) if !x.trim().is_empty()),
+        Builtin::SplitName(NamePart::First)
+        | Builtin::SplitNameMode {
+            part: NamePart::First,
+            ..
+        } => matches!(j, Value::Str(x) if !x.trim().is_empty()),
         Builtin::Join(_) => matches!(j, Value::Str(x) if !x.is_empty()),
         // `len` counts any string. `add 1` reads numbers and strings that hold one (not "1e400").
         Builtin::Len => is_str,

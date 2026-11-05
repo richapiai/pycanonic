@@ -19,6 +19,7 @@ pub mod spec;
 pub mod stats;
 pub mod strings;
 pub mod transforms;
+pub mod urls;
 pub mod value;
 pub mod write;
 

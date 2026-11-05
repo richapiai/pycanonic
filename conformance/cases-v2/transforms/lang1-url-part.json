@@ -1,0 +1,26 @@
+{
+  "spec": {
+    "language": 1,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "f": {
+        "from": "v",
+        "transform": {
+          "url_part": "host"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "f": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "acme items v1: fields[\"f\"]: unknown transform \"url_part\""
+}

@@ -2,7 +2,7 @@
 
 pycanonic ships nine default transforms and seven routing validators. They live in `crates/canonic-core/src/transforms.rs`, and Python sees them as `default_transforms` and `validators`. Each one is a port of the TypeScript function, and the conformance corpus checks them against it.
 
-A spec with `"language": 2` can also use the twenty-seven transforms in [Language 2 transforms](#language-2-transforms), and `parse_date` with a list of formats. A language 1 spec that names one of them fails the compile with `unknown transform "regex"`.
+A spec with `"language": 2` can also use the twenty-nine transforms in [Language 2 transforms](#language-2-transforms), and `parse_date` with a list of formats. A language 1 spec that names one of them fails the compile with `unknown transform "regex"`.
 
 Every one returns null for input it cannot handle and never raises. A transform that gets a value and returns null sets the field to `None`, or to its `default`. It also adds one to that field's `errors` in `artifact.stats.snapshot()`. Property tests in `crates/canonic-core/tests/` run each transform on junk input and random values.
 
@@ -50,6 +50,33 @@ Argument, required: `"first"` or `"last"`. It trims the string and splits on spa
 | `"   "` | null | null |
 
 Middle names are dropped. Suffixes and multi-word surnames come out wrong (`"Ada Lovelace Jr."` gives last name `"Jr."`). Register your own transform for data that has them.
+
+Language 2 also takes an object: `{"part": "first" | "last", "mode": "last_word" | "first_word"}`. `mode` is optional, and `"last_word"` is the rule above, so `{"part": "last"}` gives the same result as `"last"`. `first_word` splits on any JavaScript white space, takes the first word as the first name, and joins the other words with single spaces as the last name. A string that is not text gives null. An unknown key or value fails the compile.
+
+| Input | `first`, `first_word` | `last`, `first_word` |
+|---|---|---|
+| `"Mary Ann Smith"` | `"Mary"` | `"Ann Smith"` |
+| `"  Mary   Ann  "` | `"Mary"` | `"Ann"` |
+| `"Ada"` | `"Ada"` | null |
+| `""` or `"   "` | null | null |
+| `5` or null | null | null |
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "properties": {"last_name": {"type": "string"}}},
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"last_name": {"from": "name", "transform": {"split_name": {"part": "last", "mode": "first_word"}}}}
+  },
+  "body": {"name": "Mary Ann  Smith"},
+  "expected": {"last_name": "Ann Smith"}
+}
+```
 
 ### join
 
@@ -325,6 +352,57 @@ These arguments fail the compile, with the field and an example: a template with
   },
   "body": {"org": "acme", "slug": "ada"},
   "expected": {"url": "https://x.example/acme/people/ada"}
+}
+```
+
+### url_part
+
+Argument, required: `"host"`, `"path"`, `{"path_segment": <integer>}` or `{"query": "<name>"}`. It reads one part of a URL. Only a string that holds `scheme://` counts. Anything else gives null: no `://`, a scheme with characters other than letters, digits, `+`, `-` and `.`, or a value that is not a string.
+
+- `host` is the host as written (case is kept), without userinfo and without the port. An IPv6 literal keeps its brackets. An empty host gives null.
+- `path` is the percent-decoded path, from the first `/` after the host to the `?` or `#`. No path gives null. `+` stays `+`.
+- `path_segment` is the n-th non-empty segment of the path, decoded. Zero is the first, and a negative count goes from the end (`-1` is the last). A segment past either end gives null.
+- `query` is the value of the first parameter with that name, from the text between `?` and `#`. Pairs split on `&` and names split on the first `=`. Names are compared after decoding. `+` is a space in the name and the value. A parameter with no `=` has the value `""`.
+- A bad escape in the part that is read gives null: `%zz`, a lone `%` or `%4`, or bytes that are not UTF-8 after decoding. A bad escape in another path segment or another parameter does not matter.
+
+A null from a string counts one error.
+
+The examples read `https://x.example/people/ada%20lovelace/?ref=a%2Fb&q=1+2#top`.
+
+| Rule | Output |
+|---|---|
+| `"host"` | `"x.example"` |
+| `"path"` | `"/people/ada lovelace/"` |
+| `{"path_segment": 0}` | `"people"` |
+| `{"path_segment": -1}` | `"ada lovelace"` |
+| `{"path_segment": 5}` | null |
+| `{"query": "ref"}` | `"a/b"` |
+| `{"query": "q"}` | `"1 2"` |
+| `{"query": "zz"}` | null |
+| `{"query": "top"}` | null (the fragment is not the query) |
+| `"host"` on `"x.example/people"` | null (no `://`) |
+| `"host"` on `"https://u:pw@X.Example:8080/p"` | `"X.Example"` |
+| `"path"` on `"https://x.example/%zz"` | null |
+
+A bad argument fails the compile with the argument that was given and a valid example.
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "properties": {"slug": {"type": "string"}, "ref": {"type": "string"}}},
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "slug": {"from": "link", "transform": {"url_part": {"path_segment": -1}}},
+      "ref": {"from": "link", "transform": {"url_part": {"query": "ref"}}}
+    }
+  },
+  "body": {"link": "https://x.example/people/ada%20lovelace/?ref=a%2Fb&q=1+2#top"},
+  "expected": {"slug": "ada lovelace", "ref": "a/b"}
 }
 ```
 

@@ -1,0 +1,356 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "host": {
+        "from": "v",
+        "transform": {
+          "url_part": "host"
+        }
+      },
+      "path": {
+        "from": "v",
+        "transform": {
+          "url_part": "path"
+        }
+      },
+      "seg_last": {
+        "from": "v",
+        "transform": {
+          "url_part": {
+            "path_segment": -1
+          }
+        }
+      },
+      "seg0": {
+        "from": "v",
+        "transform": {
+          "url_part": {
+            "path_segment": 0
+          }
+        }
+      },
+      "seg5": {
+        "from": "v",
+        "transform": {
+          "url_part": {
+            "path_segment": 5
+          }
+        }
+      },
+      "seg_neg5": {
+        "from": "v",
+        "transform": {
+          "url_part": {
+            "path_segment": -5
+          }
+        }
+      },
+      "q_ref": {
+        "from": "v",
+        "transform": {
+          "url_part": {
+            "query": "ref"
+          }
+        }
+      },
+      "q_q": {
+        "from": "v",
+        "transform": {
+          "url_part": {
+            "query": "q"
+          }
+        }
+      },
+      "q_zz": {
+        "from": "v",
+        "transform": {
+          "url_part": {
+            "query": "zz"
+          }
+        }
+      },
+      "q_top": {
+        "from": "v",
+        "transform": {
+          "url_part": {
+            "query": "top"
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "host": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "seg_last": {
+        "type": "string"
+      },
+      "seg0": {
+        "type": "string"
+      },
+      "seg5": {
+        "type": "string"
+      },
+      "seg_neg5": {
+        "type": "string"
+      },
+      "q_ref": {
+        "type": "string"
+      },
+      "q_q": {
+        "type": "string"
+      },
+      "q_zz": {
+        "type": "string"
+      },
+      "q_top": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "v": "https://x.example/people/ada%20lovelace/?ref=a%2Fb&q=1+2#top"
+      },
+      "context": null,
+      "expected": {
+        "host": "x.example",
+        "path": "/people/ada lovelace/",
+        "seg_last": "ada lovelace",
+        "seg0": "people",
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": "a/b",
+        "q_q": "1 2",
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": "HTTPS://User:pw@X.Example:8080/a//b?q=1&q=2&ref=%41"
+      },
+      "context": null,
+      "expected": {
+        "host": "X.Example",
+        "path": "/a//b",
+        "seg_last": "b",
+        "seg0": "a",
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": "A",
+        "q_q": "1",
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": "https://x.example"
+      },
+      "context": null,
+      "expected": {
+        "host": "x.example",
+        "path": null,
+        "seg_last": null,
+        "seg0": null,
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": null,
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": "https://x.example?q=7"
+      },
+      "context": null,
+      "expected": {
+        "host": "x.example",
+        "path": null,
+        "seg_last": null,
+        "seg0": null,
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": "7",
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": "https://x.example/a+b?q"
+      },
+      "context": null,
+      "expected": {
+        "host": "x.example",
+        "path": "/a+b",
+        "seg_last": "a+b",
+        "seg0": "a+b",
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": "",
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": "https://[::1]:80/p"
+      },
+      "context": null,
+      "expected": {
+        "host": "[::1]",
+        "path": "/p",
+        "seg_last": "p",
+        "seg0": "p",
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": null,
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": "https:///p"
+      },
+      "context": null,
+      "expected": {
+        "host": null,
+        "path": "/p",
+        "seg_last": "p",
+        "seg0": "p",
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": null,
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": "x.example/people/ada"
+      },
+      "context": null,
+      "expected": {
+        "host": null,
+        "path": null,
+        "seg_last": null,
+        "seg0": null,
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": null,
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": "mailto:a@b.example"
+      },
+      "context": null,
+      "expected": {
+        "host": null,
+        "path": null,
+        "seg_last": null,
+        "seg0": null,
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": null,
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": ""
+      },
+      "context": null,
+      "expected": {
+        "host": null,
+        "path": null,
+        "seg_last": null,
+        "seg0": null,
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": null,
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": 5
+      },
+      "context": null,
+      "expected": {
+        "host": null,
+        "path": null,
+        "seg_last": null,
+        "seg0": null,
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": null,
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {
+        "v": null
+      },
+      "context": null,
+      "expected": {
+        "host": null,
+        "path": null,
+        "seg_last": null,
+        "seg0": null,
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": null,
+        "q_zz": null,
+        "q_top": null
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "host": null,
+        "path": null,
+        "seg_last": null,
+        "seg0": null,
+        "seg5": null,
+        "seg_neg5": null,
+        "q_ref": null,
+        "q_q": null,
+        "q_zz": null,
+        "q_top": null
+      }
+    }
+  ]
+}

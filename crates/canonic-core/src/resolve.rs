@@ -69,10 +69,13 @@ impl Resolver<'_> {
                     ArgError::UnknownTransform => {
                         format!("{at}: unknown transform {}", json(&t.name))
                     }
-                    ArgError::InvalidArgument if t.name == "format" => {
+                    ArgError::InvalidArgument if arg_example(t, self.language).is_some() => {
                         let got = t.arg.as_ref().map_or("none".into(), |a| a.to_string());
-                        let want = r#"{"format": "urn:example:item:{}"}"#;
-                        format!("{at}: invalid argument for format: got {got}, expected {want}")
+                        let want = arg_example(t, self.language).unwrap_or_default();
+                        format!(
+                            "{at}: invalid argument for {}: got {got}, expected {want}",
+                            t.name
+                        )
                     }
                     ArgError::InvalidArgument => {
                         format!("{at}: invalid argument for {}", t.name)
@@ -804,4 +807,17 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
         plan.format = Format(2);
     }
     Ok(plan)
+}
+
+/// The valid example for a transform whose language 2 argument error says what was given (R61).
+/// `split_name` only gets it for an object argument, so the string form keeps its old text.
+fn arg_example(t: &TransformRef, language: u8) -> Option<&'static str> {
+    match t.name.as_str() {
+        "format" => Some(r#"{"format": "urn:example:item:{}"}"#),
+        "url_part" => Some(r#"{"url_part": {"query": "ref"}}"#),
+        "split_name" if language == 2 && t.arg.as_ref().is_some_and(|a| a.is_object()) => {
+            Some(r#"{"split_name": {"part": "last", "mode": "first_word"}}"#)
+        }
+        _ => None,
+    }
 }
