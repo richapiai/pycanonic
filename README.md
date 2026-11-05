@@ -1,7 +1,6 @@
 # pycanonic
 
 [![CI](https://github.com/richapiai/pycanonic/actions/workflows/ci.yml/badge.svg)](https://github.com/richapiai/pycanonic/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/pycanonic)](https://pypi.org/project/pycanonic/)
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/richapiai/pycanonic/blob/main/LICENSE)
 
 pycanonic maps a data provider's JSON response to your own canonical shape. It compiles a JSON mapping spec into a plan and runs it in Rust. The mapping stays a JSON file that you review in a pull request. pycanonic is the Python version of [canonic](https://github.com/richapiai/canonic), the TypeScript package, and it reads the same spec files.
@@ -18,7 +17,6 @@ A product that gets the same kind of data from several providers ends up with on
 - A routing value that fails its format check becomes `None`. A routing field (email, phone, domain, URL) carries a validator. A provider that answers `"N/A"` gives you `None` and a counted error. The check is on format only, so it cannot tell a personal address from a work one.
 - One contract, any number of providers. Callers get your canonical keys, in a fixed order, whichever provider answered.
 - Bytes in, bytes out. `map_json` takes the raw body and returns canonical JSON without building a Python object. It runs with the GIL (the CPython global interpreter lock) released.
-- 0.2.0 widens spec language 2: computed sources, `format`, `url_part`, number and compare transforms, `not`/`all`/`any` conditions, strict shape and `oneOf` unions. `canonic fit` and `verify` align list items by id, count live-data drift as a match, and take `--allow` for expected gaps. Every 0.1.1 spec still maps the same.
 - Specs live in git. A bad spec fails at compile time, with the field named. `artifact.source` lists the compiled plan, one line per field.
 
 pycanonic is the wrong tool for one provider whose shape you control. It is also the wrong tool for queries or aggregation over JSON (use jq or JSONata). And it does not reject invalid input (use a schema validator). pycanonic maps what it can and counts the rest.
@@ -28,7 +26,14 @@ pycanonic is the wrong tool for one provider whose shape you control. It is also
 Until pycanonic is on PyPI, install the wheel from the GitHub release:
 
 ```sh
-pip install https://github.com/richapiai/pycanonic/releases/download/v0.2.0/<wheel for your platform>.whl
+gh release download v0.2.0 --repo richapiai/pycanonic --pattern '*manylinux_2_17_x86_64*'   # pick your platform
+pip install pycanonic-0.2.0-*.whl
+```
+
+The patterns per platform are `*manylinux_2_17_x86_64*`, `*manylinux_2_17_aarch64*`, `*musllinux_1_2_x86_64*`, `*universal2*` (macOS) and `*win_amd64*`. Without `gh`, install a wheel by its URL, for example:
+
+```sh
+pip install https://github.com/richapiai/pycanonic/releases/download/v0.2.0/pycanonic-0.2.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 This installs the library and the `canonic` command. Wheels are abi3 builds, so one wheel per platform covers CPython 3.10 and later. They cover manylinux x86_64 and aarch64, musllinux x86_64, macOS universal2 and Windows x86_64. The package has no runtime dependencies.

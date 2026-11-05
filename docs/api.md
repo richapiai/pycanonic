@@ -237,4 +237,4 @@ class RoutingTap:                       # an async iterator over source, chunks 
 
 ## The CLI
 
-`pip install pycanonic` installs the `canonic` command, with the subcommands `infer`, `test`, `diff`, `build` and `bench`. See [inference.md](inference.md) and the README.
+The package installs the `canonic` command, with the subcommands `infer`, `test`, `diff`, `build` and `bench`. See [inference.md](inference.md) and the README.

@@ -226,7 +226,7 @@ Grammar errors come back together in one message, each with its location:
 invalid spec: spec.status: must be one of draft, shadow, promoted, deprecated; spec.fields["email"]: needs exactly one of from, coalesce; spec.fields["skills[]"]: item and pluck can't be combined
 ```
 
-Errors against the canonical schema stop at the first one. This is the language 1 text. The language 2 form of an argument error is shown below. Each names the field path, nested items included:
+Errors against the canonical schema stop at the first one. This is the language 1 text. A language 2 argument error also shows what was given and a valid form: `fields["slug"]: invalid argument for replace: got [" ","_"], expected {"replace": {"from": " ", "to": "_"}}`. Each names the field path, nested items included:
 
 ```
 acme person.enrich v2: fields["nickname"]: canonical schema has no field "nickname"
