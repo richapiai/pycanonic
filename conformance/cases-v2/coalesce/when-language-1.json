@@ -1,0 +1,27 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "ref": {
+        "coalesce": [
+          {
+            "from": "a"
+          },
+          "b"
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "ref": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"ref\"].coalesce[0]: \"when\" needs \"language\": 2"
+}

@@ -81,6 +81,27 @@ The object form takes exactly one of `from` or `coalesce`, plus optional `defaul
 }
 ```
 
+In language 2, a `coalesce` entry can be `{"from": <path>, "when": <condition>}`. The entry is taken when its value is present, not null, and the condition holds. A condition with no `path` tests the entry's own value. A condition with a `path` reads that path of the response, or of the element inside an item map. It takes the tests and combinators of [Request inputs and conditions](#request-inputs-and-conditions), but not `missing` or `empty`. An entry without `when` is a path. A failed condition moves to the next entry, and if every entry fails the field is missing. Routing fields cannot use `when` in an entry (`routing fields can't have when`), because `extract` has no conditions. A plan that uses it is format 2.
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "properties": {"ref": {"type": "string"}}},
+  "spec": {"language": 2, "provider": "acme", "endpoint": "posts", "version": 1, "status": "draft",
+    "fields": {"ref": {"coalesce": [{"from": "share", "when": {"starts_with": "urn:example:post:"}}, "id"]}}},
+  "body": {"share": "urn:example:user:7", "id": "urn:example:post:7"},
+  "expected": {"ref": "urn:example:post:7"}
+}
+```
+
+| Input | `share` entry | Result |
+|---|---|---|
+| `share` is `"urn:example:post:1"` | taken | `share` |
+| `share` has another prefix | condition fails | `id` |
+| `share` missing or null | skipped | `id` |
+| `share` is `5` | the string test fails | `id` |
+| `share` is `""` | the string test fails | `id` |
+
 `from` with an array of paths passes a list of their values to the transforms, with `None` for a missing one. The value is `None` only for all paths missing. This form exists for `join`. From `globex.json`:
 
 ```json
@@ -136,6 +157,7 @@ Rules:
 - `item` cannot take `transform`. Put transforms on the item's own fields.
 - `item` needs a canonical array of objects. `pluck` and plain values need a canonical array of scalars.
 - A missing or null `from` gives `None`. A `from` that is present but is not an array gives `None` and counts an error.
+- In language 2, `coalesce` can replace `from` (see [Coalesce on arrays](#coalesce-on-arrays)).
 - Arrays are never collapsed. A one-element array stays an array. A single object where an array was expected is `None`.
 
 ## Transforms
@@ -376,6 +398,28 @@ With `"if_empty": "null"`, an object whose leaves are all null is null. It needs
 | `[]` | `[]` |
 | `{}` | `[{}]`, or with `item` an object of nulls |
 | `"x"` or `5` | `["x"]` or `[5]` |
+
+### Coalesce on arrays
+
+An array rule can take `coalesce` in place of `from`: two or more paths, or entries `{"from": <path>, "when": <condition>}` as in [scalar rules](#scalar-rules). Neither `from` and `coalesce` together nor a `[]` in a coalesce path is allowed, and an entry cannot read `$group` or `$input`. The first entry that is present, not null and not `[]`, and whose condition holds, is the source. Then every other option acts on it as it would on `from`: `wrap`, `item`, `pluck`, the list operations and `missing`. An entry of `""` is taken, so with `wrap` it gives `[""]`. If every entry is skipped, the field is missing: it follows `missing` and `x-empty` and counts a miss. A plan that uses it is format 2.
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "properties": {"industries": {"type": "array", "items": {"type": "string"}}}},
+  "spec": {"language": 2, "provider": "acme", "endpoint": "org.enrich", "version": 1, "status": "draft",
+    "fields": {"industries[]": {"coalesce": ["kind_v2", "kind"], "wrap": true}}},
+  "body": {"kind_v2": [], "kind": "software"},
+  "expected": {"industries": ["software"]}
+}
+```
+
+| Input | Result with `"wrap": true` |
+|---|---|
+| both present | the first, wrapped |
+| `kind_v2` missing, null or `[]` | `kind`, wrapped |
+| `kind_v2` is `""` | `[""]` |
+| both missing, null or `[]` | null, or `[]` with `"missing": "[]"` |
 
 ### List operations
 

@@ -94,6 +94,7 @@ impl Resolver<'_> {
             Source::From(p) => plan::Source::From(p.clone()),
             Source::FromMany(ps) => plan::Source::FromMany(ps.clone()),
             Source::Coalesce(ps) => plan::Source::Coalesce(ps.clone()),
+            Source::CoalesceWhen(es) => plan::Source::CoalesceWhen(es.clone()),
             Source::Computed(items) => plan::Source::Computed(
                 items
                     .iter()
@@ -135,6 +136,10 @@ impl Resolver<'_> {
         let validator = if routing {
             if matches!(r.source, Source::Computed(_)) {
                 return Err(format!("{at}: routing fields can't read a computed source"));
+            }
+            // `extract` has no conditions.
+            if matches!(&r.source, Source::CoalesceWhen(es) if es.iter().any(|e| e.1.is_some())) {
+                return Err(format!("{at}: routing fields can't have when"));
             }
             let paths = r.source.paths();
             if paths.iter().any(|p| p.is_empty()) {
@@ -229,11 +234,17 @@ impl Resolver<'_> {
             group: r.group.clone(),
             from_group: self.language == 2 && is_group(&r.from),
         };
+        let input = Step::Key("$input".into());
+        let conds = r.coalesce.iter().filter_map(|e| e.1.as_ref());
+        self.context |= conds
+            .flat_map(|c| c.paths())
+            .any(|p| p.first() == Some(&input));
         Ok(Field::List {
             from: r.from.clone(),
             kind,
             stat,
             ops,
+            coalesce: r.coalesce.clone(),
         })
     }
 
@@ -256,7 +267,8 @@ impl Resolver<'_> {
                 transform,
             }) => (p, transform, false),
             Rule::Array(r) if r.item.is_none() && r.item_ref.is_none() && r.pluck.is_none() => {
-                let ops = r.missing.is_some()
+                let ops = !r.coalesce.is_empty()
+                    || r.missing.is_some()
                     || r.empty.is_some()
                     || r.wrap
                     || !r.flatten.is_empty()
@@ -538,7 +550,7 @@ impl Resolver<'_> {
 /// How many values a scalar rule's source gives its first transform. A `coalesce` gives one.
 pub(crate) fn source_count(source: &Source) -> usize {
     match source {
-        Source::From(_) | Source::Coalesce(_) => 1,
+        Source::From(_) | Source::Coalesce(_) | Source::CoalesceWhen(_) => 1,
         Source::FromMany(ps) => ps.len(),
         Source::Computed(items) => items.len(),
     }

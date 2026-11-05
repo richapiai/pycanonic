@@ -1,0 +1,76 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "posts[]": {
+        "from": "posts",
+        "item": {
+          "ref": {
+            "coalesce": [
+              {
+                "from": "share",
+                "when": {
+                  "starts_with": "urn:example:post:"
+                }
+              },
+              "id"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "posts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "posts": [
+          {
+            "share": "urn:example:post:1",
+            "id": "a"
+          },
+          {
+            "share": "zz",
+            "id": "b"
+          },
+          {
+            "id": "c"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "posts": [
+          {
+            "ref": "urn:example:post:1"
+          },
+          {
+            "ref": "b"
+          },
+          {
+            "ref": "c"
+          }
+        ]
+      }
+    }
+  ]
+}

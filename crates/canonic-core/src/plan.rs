@@ -48,6 +48,9 @@ pub enum Source {
     From(Path),
     FromMany(Vec<Path>),
     Coalesce(Vec<Path>),
+    /// R56 (plan format 2): entries with an optional condition, on the entry's value or on
+    /// another path of the response.
+    CoalesceWhen(Vec<(Path, Option<Cond>)>),
     Computed(Vec<Item>),
 }
 
@@ -71,6 +74,7 @@ impl Source {
         match self {
             Source::From(p) => vec![p],
             Source::FromMany(ps) | Source::Coalesce(ps) => ps.iter().collect(),
+            Source::CoalesceWhen(es) => crate::spec::entry_paths(es),
             Source::Computed(items) => items
                 .iter()
                 .flat_map(|i| match i {
@@ -194,6 +198,10 @@ pub enum Field {
         stat: usize,
         #[serde(default, skip_serializing_if = "ListOps::is_default")]
         ops: ListOps,
+        /// R57 (plan format 2): `coalesce` in place of `from`, which is then its first path. The
+        /// first entry that is present, not null, not `[]` and whose condition holds is the source.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        coalesce: Vec<(Path, Option<Cond>)>,
     },
     /// Language 2 (`x-empty: "missing"`): the key is left out of its object when the field maps to
     /// null. An object field is left out when no leaf inside it is written as something other
@@ -389,7 +397,9 @@ impl Plan {
         fn field(f: &Field) -> bool {
             match f {
                 Field::Null => false,
-                Field::Scalar(s) => tx(&s.tx) || matches!(s.source, Source::Computed(_)),
+                Field::Scalar(s) => {
+                    tx(&s.tx) || matches!(s.source, Source::Computed(_) | Source::CoalesceWhen(_))
+                }
                 Field::Const(..)
                 | Field::OmitNull(_)
                 | Field::Empty(_)
@@ -405,8 +415,14 @@ impl Plan {
                         || if_empty.is_some()
                         || members.iter().any(|n| field(&n.value))
                 }
-                Field::List { kind, ops, .. } => {
+                Field::List {
+                    kind,
+                    ops,
+                    coalesce,
+                    ..
+                } => {
                     !ops.is_default()
+                        || !coalesce.is_empty()
                         || match kind {
                             ListKind::Item(c) => c.iter().any(|n| field(&n.value)),
                             ListKind::Pluck(_, t) | ListKind::Plain(t) => tx(t),
@@ -516,9 +532,16 @@ fn line(out: &mut String, name: &str, field: &Field) {
             _ = writeln!(out, "{line}");
         }
         Field::List {
-            from, kind, ops, ..
+            from,
+            kind,
+            ops,
+            coalesce,
+            ..
         } => {
-            let from = flat(from, &ops.flatten);
+            let from = match coalesce.is_empty() {
+                true => flat(from, &ops.flatten),
+                false => format!("coalesce({})", entries(coalesce)),
+            };
             let mut opts = String::new();
             if ops.wrap {
                 opts += " | wrap";
@@ -566,6 +589,7 @@ fn source(s: &Source) -> String {
         Source::From(p) => path(p),
         Source::FromMany(ps) => format!("from({})", list(ps)),
         Source::Coalesce(ps) => format!("coalesce({})", list(ps)),
+        Source::CoalesceWhen(es) => format!("coalesce({})", entries(es)),
         Source::Computed(xs) => {
             let all: Vec<String> = xs
                 .iter()
@@ -625,6 +649,15 @@ fn cond(c: &Cond) -> String {
             format!("{} {name} {rhs}", path(p))
         }
     }
+}
+
+/// Coalesce entries: a path, then ` when <condition>` for an entry that has one.
+fn entries(es: &[(Path, Option<Cond>)]) -> String {
+    let entry = |(p, c): &(Path, Option<Cond>)| match c {
+        Some(c) => format!("{} when {}", path(p), cond(c)),
+        None => path(p),
+    };
+    es.iter().map(entry).collect::<Vec<_>>().join(", ")
 }
 
 fn list(ps: &[Path]) -> String {

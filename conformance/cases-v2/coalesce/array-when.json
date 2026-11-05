@@ -1,0 +1,85 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "industries[]": {
+        "coalesce": [
+          {
+            "from": "kind_v2",
+            "when": {
+              "path": "ver",
+              "gte": 2
+            }
+          },
+          "kind"
+        ],
+        "wrap": true
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "industries": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "kind_v2": "a",
+        "kind": "b",
+        "ver": 2
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "a"
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind_v2": "a",
+        "kind": "b",
+        "ver": 1
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "b"
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind_v2": "a",
+        "kind": "b"
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "b"
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind_v2": "a",
+        "ver": 1
+      },
+      "context": null,
+      "expected": {
+        "industries": null
+      }
+    }
+  ]
+}

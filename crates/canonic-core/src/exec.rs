@@ -138,8 +138,13 @@ enum Src {
     From(At),
     Many(Vec<At>),
     Coalesce(Vec<At>),
+    /// R56: an entry is taken when it is present and its condition holds.
+    CoalesceWhen(Vec<Entry2>),
     Computed(Vec<Item>),
 }
+
+/// A `coalesce` entry (R56, R57): where it reads, and the condition it must pass.
+type Entry2 = (At, Option<Cond<Path>>);
 
 /// An entry of a computed `from` list (R52).
 enum Item {
@@ -215,6 +220,8 @@ enum Op {
         kind: Kind,
         stat: usize,
         ops: Box<ListOps<Path>>,
+        /// R57: when set, the source is the first entry that passes (`pick`), not `from`.
+        coalesce: Vec<Entry2>,
     },
     /// Written as it is. Counts no miss, so it is always a fill. The stat slot is `None` for an
     /// unmapped field's `x-empty`, a placeholder that does not make its object filled.
@@ -373,6 +380,13 @@ impl Builder<'_> {
         self.scope.at(steps)
     }
 
+    fn entries(&mut self, es: &[(spec::Path, Option<Cond>)]) -> Vec<Entry2> {
+        let entry = |b: &mut Self, (p, c): &(spec::Path, Option<Cond>)| {
+            (b.at(p), c.as_ref().map(|c| b.cond(c)))
+        };
+        es.iter().map(|e| entry(self, e)).collect()
+    }
+
     /// The entries of a computed list.
     fn items(&mut self, items: &[plan::Item]) -> Result<Vec<Item>, CompileError> {
         let mut out = Vec::new();
@@ -387,7 +401,7 @@ impl Builder<'_> {
                             (ps.iter().map(|p| Item::At(self.at(p))).collect(), true)
                         }
                         plan::Source::Computed(xs) => (self.items(xs)?, true),
-                        plan::Source::Coalesce(_) => {
+                        plan::Source::Coalesce(_) | plan::Source::CoalesceWhen(_) => {
                             return Err(self.err("coalesce in a computed source".into()));
                         }
                     };
@@ -404,6 +418,7 @@ impl Builder<'_> {
             plan::Source::From(p) => Src::From(self.at(p)),
             plan::Source::FromMany(ps) => Src::Many(ps.iter().map(|p| self.at(p)).collect()),
             plan::Source::Coalesce(ps) => Src::Coalesce(ps.iter().map(|p| self.at(p)).collect()),
+            plan::Source::CoalesceWhen(es) => Src::CoalesceWhen(self.entries(es)),
         };
         Ok(Leaf {
             src,
@@ -502,6 +517,7 @@ impl Builder<'_> {
                 kind,
                 stat,
                 ops,
+                coalesce,
             } => Op::List {
                 from: match ops.from_group {
                     true => Input::Group,
@@ -519,6 +535,7 @@ impl Builder<'_> {
                 },
                 stat: self.stat(*stat)?,
                 ops: Box::new(self.ops(ops)),
+                coalesce: self.entries(coalesce),
             },
         })
     }
@@ -628,6 +645,18 @@ impl<'s, D: Doc> Frame<'s, D> {
         };
         v.filter(|d| !d.is_null())
     }
+}
+
+/// R56, R57: the first entry that is present, not null and whose condition holds. A list skips
+/// an entry that is `[]` too. A condition reads the response (the element, in an item map).
+fn pick<D: Doc>(es: &[Entry2], f: &mut Frame<'_, D>, list: bool) -> Option<D> {
+    es.iter().find_map(|(at, c)| {
+        let d = f.read(*at).filter(|d| !(list && d.len() == Some(0)))?;
+        let ok = c
+            .as_ref()
+            .is_none_or(|c| holds(c, f.doc.as_ref(), None, f.ctx.as_ref()));
+        ok.then_some(d)
+    })
 }
 
 /// A `default` as a borrowed `Value`.
@@ -1019,7 +1048,8 @@ impl<S: Sink> Exec<'_, S> {
                 kind,
                 stat,
                 ops,
-            } => self.list(from, kind, *stat, ops, f),
+                coalesce,
+            } => self.list(from, kind, *stat, ops, coalesce, f),
             Op::Const(v, stat) => {
                 self.filled += (stat.is_some() && !v.is_null()) as usize;
                 self.sink.passthrough(&v)
@@ -1080,6 +1110,7 @@ impl<S: Sink> Exec<'_, S> {
                 .iter()
                 .find_map(|p| f.read(*p))
                 .map(|d| self.single(l, &d)),
+            Src::CoalesceWhen(es) => pick(es, f, false).map(|d| self.single(l, &d)),
             Src::Many(ps) => self.many(l, f, ps),
             Src::Computed(xs) => self.computed(l, f, xs),
         };
@@ -1192,6 +1223,7 @@ impl<S: Sink> Exec<'_, S> {
         kind: &Kind,
         stat: usize,
         ops: &ListOps<Path>,
+        coalesce: &[Entry2],
         f: &mut Frame<'_, D>,
     ) -> S::Out {
         let xs = match (from, f.group) {
@@ -1201,7 +1233,11 @@ impl<S: Sink> Exec<'_, S> {
                 return self.empty(ops.missing, false);
             }
             (Input::At(at), _) => {
-                let Some(x) = f.read(*at) else {
+                let x = match coalesce.is_empty() {
+                    true => f.read(*at),
+                    false => pick(coalesce, f, true),
+                };
+                let Some(x) = x else {
                     self.stats.miss(stat);
                     return self.empty(ops.missing, false);
                 };

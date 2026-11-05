@@ -1,0 +1,39 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "industries[]": {
+        "coalesce": [
+          "kind_v2",
+          "kind"
+        ],
+        "wrap": true,
+        "missing": "[]"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "industries": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "industries": []
+      }
+    }
+  ]
+}

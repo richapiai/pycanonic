@@ -37,6 +37,9 @@ pub enum Source {
     From(Path),
     FromMany(Vec<Path>),
     Coalesce(Vec<Path>),
+    /// Language 2 (R56): a `coalesce` list that holds an entry object `{"from": p, "when": c}`.
+    /// A condition left out of `when` is `None`. One without a `path` tests the entry's path.
+    CoalesceWhen(Vec<(Path, Option<Cond>)>),
     /// Language 2 (R52): a `from` list that holds at least one computed entry.
     Computed(Vec<SourceItem>),
 }
@@ -54,6 +57,7 @@ impl Source {
         match self {
             Source::From(p) => vec![p],
             Source::FromMany(ps) | Source::Coalesce(ps) => ps.iter().collect(),
+            Source::CoalesceWhen(es) => entry_paths(es),
             Source::Computed(items) => items
                 .iter()
                 .flat_map(|i| match i {
@@ -63,6 +67,16 @@ impl Source {
                 .collect(),
         }
     }
+}
+
+/// The paths of coalesce entries, each entry's own, then those its condition reads.
+pub fn entry_paths(es: &[(Path, Option<Cond>)]) -> Vec<&Path> {
+    let mut out = Vec::new();
+    for (p, c) in es {
+        out.push(p);
+        out.extend(c.iter().flat_map(Cond::paths));
+    }
+    out
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -75,6 +89,8 @@ pub struct ScalarRule {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayRule {
     pub from: Path,
+    /// Language 2 (R57): `coalesce` in place of `from`, whose path is then the first entry.
+    pub coalesce: Vec<(Path, Option<Cond>)>,
     pub item: Option<FieldMap>,
     /// Language 2: `"item": {"$ref": <name>}`, a definition the resolver inlines as `item`.
     pub item_ref: Option<String>,
@@ -422,6 +438,35 @@ impl Checker {
             _ => self.fail(at, "must be an array of at least 2 paths"),
         }
     }
+    /// R56, R57: a `coalesce` list of at least 2 entries. An entry is a path, or in language 2
+    /// `{"from": <path>, "when": <condition>}`. For an array rule a path reads the body only.
+    fn coalesce(&mut self, v: &Value, at: &str, array: bool) {
+        let Some(a) = v.as_array().filter(|a| a.len() >= 2) else {
+            return self.fail(at, "must be an array of at least 2 paths");
+        };
+        for (i, e) in a.iter().enumerate() {
+            let at = format!("{at}[{i}]");
+            let Some(o) = e.as_object() else {
+                match array {
+                    true => self.key_path(Some(e), &at),
+                    false => self.source(Some(e), &at),
+                }
+                continue;
+            };
+            self.lang2(&at, "when");
+            self.keys(o, &at, &["from", "when"]);
+            let from = o.get("from");
+            match array {
+                true => self.key_path(from, &format!("{at}.from")),
+                false => self.source(from, &format!("{at}.from")),
+            }
+            let own = from.and_then(Value::as_str).and_then(parse_path);
+            if let (Some(w), Some(p)) = (o.get("when"), own) {
+                let w = cond::parse_relative(w, &p);
+                self.parsed(w, &format!("{at}.when"));
+            }
+        }
+    }
     /// R52: `{"from": <path or list>, "transform": <t>}` and nothing else.
     fn computed(&mut self, o: &Map<String, Value>, at: &str) {
         if o.keys().any(|k| k != "from" && k != "transform") {
@@ -491,7 +536,7 @@ impl Checker {
             }
         }
         if let Some(c) = r.get("coalesce") {
-            self.paths(c, &format!("{at}.coalesce"), false);
+            self.coalesce(c, &format!("{at}.coalesce"), false);
         }
         if r.get("default")
             .is_some_and(|d| !(d.is_string() || d.is_number() || d.is_boolean()))
@@ -509,7 +554,13 @@ impl Checker {
         let Some(r) = r.as_object() else {
             return self.fail(at, "array fields need a rule object with from");
         };
-        self.keys(r, at, &[&ARRAY_KEYS[..], &WHEN].concat());
+        // `coalesce` is a language 2 key. Language 1 reports it as unknown, as 0.1.1 does.
+        let coalesce: &[&str] = if self.language == 2 {
+            &["coalesce"]
+        } else {
+            &[]
+        };
+        self.keys(r, at, &[&ARRAY_KEYS[..], &WHEN, coalesce].concat());
         self.when(r, at);
         for k in &ARRAY_KEYS[4..] {
             if r.contains_key(*k) {
@@ -555,18 +606,25 @@ impl Checker {
     /// The language 2 options of an array rule, and its `from`.
     fn list_ops(&mut self, r: &Map<String, Value>, at: &str) {
         let from = r.get("from").and_then(Value::as_str);
-        match from.and_then(parse_from) {
-            Some(s) if s.len() > 1 && self.language == 2 => {
-                if !s.last().unwrap().is_empty() {
-                    self.fail(&format!("{at}.from"), "a path with [] must end in []");
-                }
-                self.group_source(&s[0], &format!("{at}.from"));
+        if let Some(c) = r.get("coalesce").filter(|_| self.language == 2) {
+            if r.contains_key("from") {
+                self.fail(at, "needs exactly one of from, coalesce");
             }
-            Some(s) if s.len() > 1 => self.fail(at, "\"from\" with [] needs \"language\": 2"),
-            _ => self.path(r.get("from"), &format!("{at}.from")),
-        }
-        if let Some(p) = from.and_then(parse_path) {
-            self.group_source(&p, &format!("{at}.from"));
+            self.coalesce(c, &format!("{at}.coalesce"), true);
+        } else {
+            match from.and_then(parse_from) {
+                Some(s) if s.len() > 1 && self.language == 2 => {
+                    if !s.last().unwrap().is_empty() {
+                        self.fail(&format!("{at}.from"), "a path with [] must end in []");
+                    }
+                    self.group_source(&s[0], &format!("{at}.from"));
+                }
+                Some(s) if s.len() > 1 => self.fail(at, "\"from\" with [] needs \"language\": 2"),
+                _ => self.path(r.get("from"), &format!("{at}.from")),
+            }
+            if let Some(p) = from.and_then(parse_path) {
+                self.group_source(&p, &format!("{at}.from"));
+            }
         }
         if r.get("wrap").is_some_and(|v| !v.is_boolean()) {
             self.fail(&format!("{at}.wrap"), "must be true or false");
@@ -968,6 +1026,19 @@ fn paths(v: &Value) -> Vec<Path> {
     v.as_array().unwrap().iter().map(path).collect()
 }
 
+/// The entries of a `coalesce` list. A condition without `path` tests the entry's path.
+fn entries(v: &Value) -> Vec<(Path, Option<Cond>)> {
+    let entry = |e: &Value| match e.as_object() {
+        None => (path(e), None),
+        Some(o) => {
+            let p = path(&o["from"]);
+            let when = o.get("when").map(|w| cond::parse_relative(w, &p).unwrap());
+            (p, when)
+        }
+    };
+    v.as_array().unwrap().iter().map(entry).collect()
+}
+
 /// A scalar `from`. A list that holds an object is computed, a list of paths stays `FromMany`.
 fn from_source(f: &Value) -> Source {
     match f {
@@ -1053,13 +1124,18 @@ fn bare_rule(key: &str, r: &Value) -> Rule {
         };
     }
     if key.ends_with("[]") {
-        let mut from = parse_from(r["from"].as_str().unwrap()).unwrap();
+        let coalesce = r.get("coalesce").map(entries).unwrap_or_default();
+        let mut from = match coalesce.first() {
+            Some((p, _)) => vec![p.clone()],
+            None => parse_from(r["from"].as_str().unwrap()).unwrap(),
+        };
         if from.len() > 1 {
             from.pop(); // the empty path after the last `[]`
         }
         let first = from.remove(0);
         return Rule::Array(ArrayRule {
             from: first,
+            coalesce,
             flatten: from,
             wrap: r.get("wrap") == Some(&Value::Bool(true)),
             filter: r.get("filter").map(conds),
@@ -1106,6 +1182,9 @@ fn bare_rule(key: &str, r: &Value) -> Rule {
         Value::String(_) => Source::From(path(r)),
         _ => match (r.get("from"), r.get("coalesce")) {
             (Some(f), _) => from_source(f),
+            (None, c) if c.unwrap().as_array().unwrap().iter().any(Value::is_object) => {
+                Source::CoalesceWhen(entries(c.unwrap()))
+            }
             (None, c) => Source::Coalesce(paths(c.unwrap())),
         },
     };

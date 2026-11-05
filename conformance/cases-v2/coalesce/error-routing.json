@@ -1,0 +1,33 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "email": {
+        "coalesce": [
+          {
+            "from": "a",
+            "when": {
+              "contains": "@"
+            }
+          },
+          "b"
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "email": {
+        "type": "string",
+        "semantic": "email",
+        "routing": true
+      }
+    }
+  },
+  "error": "acme posts v1: fields[\"email\"]: routing fields can't have when"
+}

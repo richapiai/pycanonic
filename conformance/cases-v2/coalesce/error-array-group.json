@@ -1,0 +1,33 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "industries[]": {
+        "coalesce": [
+          "$group",
+          "b"
+        ],
+        "group_by": "k",
+        "item": {
+          "k": "k"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "industries": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"industries[]\"].coalesce[0]: $group is only a list or aggregate from"
+}

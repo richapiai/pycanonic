@@ -1,0 +1,31 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "ref": {
+        "coalesce": [
+          {
+            "from": "a",
+            "when": {
+              "nope": 1
+            }
+          },
+          "b"
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "ref": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"ref\"].coalesce[0].when.nope: unknown property; spec.fields[\"ref\"].coalesce[0].when: needs exactly one of eq, in, present, matches, starts_with, ends_with, contains, lt, lte, gt, gte"
+}

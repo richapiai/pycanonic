@@ -1,0 +1,102 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "industries[]": {
+        "coalesce": [
+          "kind_v2",
+          "kind"
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "industries": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "kind_v2": [],
+        "kind": [
+          "a"
+        ]
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "a"
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind_v2": [
+          "z"
+        ],
+        "kind": [
+          "a"
+        ]
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "z"
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind_v2": null,
+        "kind": [
+          "a"
+        ]
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "a"
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind_v2": "x",
+        "kind": [
+          "a"
+        ]
+      },
+      "context": null,
+      "expected": {
+        "industries": null
+      }
+    },
+    {
+      "body": {
+        "kind": "a"
+      },
+      "context": null,
+      "expected": {
+        "industries": null
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "industries": null
+      }
+    }
+  ]
+}

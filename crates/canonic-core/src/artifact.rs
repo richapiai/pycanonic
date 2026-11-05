@@ -276,7 +276,11 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
                 elements(f, &a.from, &a.flatten, false, is_group(&a.from), e);
             }
             Field::List {
-                from, kind, ops, ..
+                from,
+                kind,
+                ops,
+                coalesce,
+                ..
             } => {
                 let mut e = Filter::default();
                 match kind {
@@ -291,7 +295,16 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
                 for p in filter.chain(keys).chain(group) {
                     node(&mut e, p).all = true;
                 }
-                elements(f, from, &ops.flatten, ops.wrap, ops.from_group, e);
+                // Every coalesce entry is a source, and its condition compares whole values.
+                let first = std::iter::once((from, None)).take((coalesce.is_empty()) as usize);
+                let entries = coalesce.iter().map(|(p, c)| (p, c.as_ref()));
+                for (p, c) in first.chain(entries) {
+                    for q in c.into_iter().flat_map(cond_paths) {
+                        node(f, q).all = true;
+                    }
+                    let (flatten, group) = (&ops.flatten, ops.from_group);
+                    elements(f, p, flatten, ops.wrap, group, e.clone());
+                }
             }
         }
     }
@@ -338,6 +351,12 @@ fn scalar(f: &mut Filter, s: &Scalar) {
     let whole = whole || matches!(s.source, Source::Computed(_));
     for p in s.source.paths() {
         node(f, p).all |= whole;
+    }
+    // A condition can compare whole values.
+    if let Source::CoalesceWhen(es) = &s.source {
+        for q in es.iter().flat_map(|(_, c)| c).flat_map(cond_paths) {
+            node(f, q).all = true;
+        }
     }
 }
 

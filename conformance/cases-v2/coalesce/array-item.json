@@ -1,0 +1,108 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "people[]": {
+        "coalesce": [
+          "staff",
+          "team"
+        ],
+        "item": {
+          "name": "n"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "people": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "staff": [],
+        "team": [
+          {
+            "n": "a"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "people": [
+          {
+            "name": "a"
+          }
+        ]
+      }
+    },
+    {
+      "body": {
+        "staff": [
+          {
+            "n": "s"
+          }
+        ],
+        "team": [
+          {
+            "n": "a"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "people": [
+          {
+            "name": "s"
+          }
+        ]
+      }
+    },
+    {
+      "body": {
+        "team": [
+          {
+            "n": "a"
+          },
+          {
+            "n": "b"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "people": [
+          {
+            "name": "a"
+          },
+          {
+            "name": "b"
+          }
+        ]
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "people": null
+      }
+    }
+  ]
+}

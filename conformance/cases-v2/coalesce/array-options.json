@@ -1,0 +1,63 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "industries[]": {
+        "coalesce": [
+          "kind_v2",
+          "kind"
+        ],
+        "filter": {
+          "path": "v",
+          "eq": 1
+        },
+        "sort_by": "v",
+        "pluck": "n",
+        "limit": 2
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "industries": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "kind_v2": [],
+        "kind": [
+          {
+            "v": 1,
+            "n": "b"
+          },
+          {
+            "v": 2,
+            "n": "x"
+          },
+          {
+            "v": 1,
+            "n": "a"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "b",
+          "a"
+        ]
+      }
+    }
+  ]
+}

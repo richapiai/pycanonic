@@ -1,0 +1,133 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "industries[]": {
+        "coalesce": [
+          "kind_v2",
+          "kind"
+        ],
+        "wrap": true
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "industries": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "kind_v2": "a",
+        "kind": "b"
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "a"
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind": "b"
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "b"
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind_v2": "",
+        "kind": "b"
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          ""
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind_v2": null,
+        "kind": "b"
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "b"
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind_v2": [],
+        "kind": "b"
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "b"
+        ]
+      }
+    },
+    {
+      "body": {
+        "kind_v2": [
+          "a",
+          "c"
+        ],
+        "kind": "b"
+      },
+      "context": null,
+      "expected": {
+        "industries": [
+          "a",
+          "c"
+        ]
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "industries": null
+      }
+    },
+    {
+      "body": {
+        "kind_v2": null,
+        "kind": null
+      },
+      "context": null,
+      "expected": {
+        "industries": null
+      }
+    },
+    {
+      "body": {
+        "kind_v2": [],
+        "kind": []
+      },
+      "context": null,
+      "expected": {
+        "industries": null
+      }
+    }
+  ]
+}

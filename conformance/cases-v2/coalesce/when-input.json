@@ -1,0 +1,67 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "ref": {
+        "coalesce": [
+          {
+            "from": "share",
+            "when": {
+              "path": "$input.mode",
+              "eq": "share"
+            }
+          },
+          "id"
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "ref": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "share": "s",
+        "id": "x"
+      },
+      "context": {
+        "mode": "share"
+      },
+      "expected": {
+        "ref": "s"
+      }
+    },
+    {
+      "body": {
+        "share": "s",
+        "id": "x"
+      },
+      "context": {
+        "mode": "other"
+      },
+      "expected": {
+        "ref": "x"
+      }
+    },
+    {
+      "body": {
+        "share": "s",
+        "id": "x"
+      },
+      "context": null,
+      "expected": {
+        "ref": "x"
+      }
+    }
+  ]
+}
