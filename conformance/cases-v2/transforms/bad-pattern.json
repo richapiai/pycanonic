@@ -8,5 +8,5 @@
     "fields": {"slug": {"from": "url", "transform": {"regex": "(unclosed"}}}
   },
   "schema": {"type": "object", "properties": {"slug": {"type": "string"}}},
-  "error": "acme orgs v1: fields[\"slug\"]: invalid argument for regex"
+  "error": "acme orgs v1: fields[\"slug\"]: invalid argument for regex: got \"(unclosed\", expected {\"regex\": \"/people/([^/?#]+)\"}"
 }

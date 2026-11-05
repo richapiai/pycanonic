@@ -214,6 +214,53 @@ pub(crate) fn language_2_only(name: &str) -> bool {
     NAMES[LANGUAGE_1_TRANSFORMS..].contains(&name)
 }
 
+/// One valid form of a default transform, as a spec writes it (R61). The language 2 argument
+/// errors quote it, and a unit test compiles each one.
+pub fn example(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "cast" => r#"{"cast": "integer"}"#,
+        "split_name" => r#"{"split_name": {"part": "last", "mode": "first_word"}}"#,
+        "join" => r#"{"join": ", "}"#,
+        "parse_date" => r#"{"parse_date": {"formats": ["%d/%m/%Y"]}}"#,
+        "format_date" => r#"{"format_date": "%Y-%m-%d"}"#,
+        "parse_number" => r#"{"parse_number": {"units": true}}"#,
+        "parse_range" => r#"{"parse_range": "max"}"#,
+        "regex" => r#"{"regex": "/people/([^/?#]+)"}"#,
+        "strip_prefix" => r#"{"strip_prefix": "https://"}"#,
+        "strip_suffix" => r#"{"strip_suffix": "/"}"#,
+        "replace" => r#"{"replace": {"from": " ", "to": "_"}}"#,
+        "lookup" => r#"{"lookup": {"table": {"a": "alpha"}, "else": "keep"}}"#,
+        "null_if" => r#"{"null_if": ["n/a", ""]}"#,
+        "split" => r#"{"split": {"sep": ",", "index": 0}}"#,
+        "format" => r#"{"format": "urn:example:item:{}"}"#,
+        "url_part" => r#"{"url_part": {"query": "ref"}}"#,
+        "add" => r#"{"add": 10}"#,
+        "sub" => r#"{"sub": 10}"#,
+        "mul" => r#"{"mul": 10}"#,
+        "div" => r#"{"div": 10}"#,
+        "ceil_div" => r#"{"ceil_div": 10}"#,
+        "floor_div" => r#"{"floor_div": 10}"#,
+        "min" => r#"{"min": 10}"#,
+        "max" => r#"{"max": 10}"#,
+        "eq" => r#"{"eq": 10}"#,
+        "lt" => r#"{"lt": 10}"#,
+        "lte" => r#"{"lte": 10}"#,
+        "gt" => r#"{"gt": 10}"#,
+        "gte" => r#"{"gte": 10}"#,
+        // These take no argument. The form is the bare name.
+        "lower" => r#""lower""#,
+        "trim" => r#""trim""#,
+        "normalize_phone" => r#""normalize_phone""#,
+        "normalize_linkedin" => r#""normalize_linkedin""#,
+        "to_domain" => r#""to_domain""#,
+        "upper" => r#""upper""#,
+        "title" => r#""title""#,
+        "to_string" => r#""to_string""#,
+        "len" => r#""len""#,
+        _ => return None,
+    })
+}
+
 pub fn default_transform_names() -> &'static [&'static str] {
     &NAMES
 }

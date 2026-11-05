@@ -238,7 +238,13 @@ acme person.enrich v2: fields["experiences[]"].item["title"]: unknown transform 
 acme person.enrich v2: anchors["title"]: only routing fields take anchors
 ```
 
-The error text is the same as in the TypeScript package. The conformance corpus checks every message. `validate_spec(spec)` returns the grammar issues as `Issue` objects without a compile, for editors and CI.
+The error text is the same as in the TypeScript package. In a language 2 spec, an argument error also says what was given and shows one valid form. The given argument is compact JSON, cut to 80 characters, and `none` when absent:
+
+```
+acme person.enrich v2: fields["slug"]: invalid argument for replace: got [" ","_"], expected {"replace": {"from": " ", "to": "_"}}
+```
+
+A language 1 spec keeps `invalid argument for replace`. The conformance corpus checks every message. `validate_spec(spec)` returns the grammar issues as `Issue` objects without a compile, for editors and CI.
 
 ## Language 2
 

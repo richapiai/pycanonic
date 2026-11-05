@@ -1,0 +1,29 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "f": {
+        "from": "v",
+        "transform": {
+          "replace": [
+            " ",
+            "_"
+          ]
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "f": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "acme items v1: fields[\"f\"]: invalid argument for replace: got [\" \",\"_\"], expected {\"replace\": {\"from\": \" \", \"to\": \"_\"}}"
+}

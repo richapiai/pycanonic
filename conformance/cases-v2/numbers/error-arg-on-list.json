@@ -25,5 +25,5 @@
       }
     }
   },
-  "error": "acme bad v1: fields[\"pages\"]: invalid argument for ceil_div: got 10, expected no argument on a from list, or one source in from"
+  "error": "acme bad v1: fields[\"pages\"]: invalid argument for ceil_div: got 10, expected no argument on a from list, as in {\"from\": [\"a\", \"b\"], \"transform\": \"ceil_div\"}, or one source in from"
 }

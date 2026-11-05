@@ -11,9 +11,21 @@ use crate::spec::{
     ArrayRule, Branch, FieldMap, Rule, ScalarRule, Source, SourceItem, Step, TransformRef,
     field_key, is_group, parse_spec,
 };
-use crate::transforms::{ArgError, Builtin, builtin, language_2_only};
+use crate::transforms::{ArgError, Builtin, builtin, example, language_2_only};
 use serde_json::Value;
 use std::collections::HashMap;
+
+/// The argument as compact JSON, cut to 80 characters. An absent one is `none`.
+fn given(arg: Option<&Value>) -> String {
+    let Some(a) = arg else {
+        return "none".into();
+    };
+    let s = a.to_string();
+    match s.char_indices().nth(80) {
+        Some((i, _)) => format!("{}…", &s[..i]),
+        None => s,
+    }
+}
 
 /// `JSON.stringify` of a string.
 fn json(s: &str) -> String {
@@ -91,7 +103,7 @@ impl Resolver<'_> {
                         format!("{at}: unknown transform {}", json(&t.name))
                     }
                     ArgError::InvalidArgument if arg_example(t, self.language).is_some() => {
-                        let got = t.arg.as_ref().map_or("none".into(), |a| a.to_string());
+                        let got = given(t.arg.as_ref());
                         let want = arg_example(t, self.language).unwrap_or_default();
                         format!(
                             "{at}: invalid argument for {}: got {got}, expected {want}",
@@ -718,7 +730,9 @@ fn source_args(tx: &[TxRef], sources: usize, at: &str) -> Result<(), String> {
                 return fail(
                     name,
                     k.to_string(),
-                    "no argument on a from list, or one source in from".into(),
+                    format!(
+                        "no argument on a from list, as in {{\"from\": [\"a\", \"b\"], \"transform\": \"{name}\"}}, or one source in from"
+                    ),
                 );
             }
             (false, None) if sources > 1 => {
@@ -969,15 +983,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
     Ok(plan)
 }
 
-/// The valid example for a transform whose language 2 argument error says what was given (R61).
-/// `split_name` only gets it for an object argument, so the string form keeps its old text.
+/// The valid example for a language 2 argument error (R61). Language 1 keeps the bare text.
 fn arg_example(t: &TransformRef, language: u8) -> Option<&'static str> {
-    match t.name.as_str() {
-        "format" => Some(r#"{"format": "urn:example:item:{}"}"#),
-        "url_part" => Some(r#"{"url_part": {"query": "ref"}}"#),
-        "split_name" if language == 2 && t.arg.as_ref().is_some_and(|a| a.is_object()) => {
-            Some(r#"{"split_name": {"part": "last", "mode": "first_word"}}"#)
-        }
-        _ => None,
-    }
+    example(&t.name).filter(|_| language == 2)
 }

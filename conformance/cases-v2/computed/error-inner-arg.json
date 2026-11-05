@@ -31,5 +31,5 @@
       }
     }
   },
-  "error": "acme items v1: fields[\"n\"].from[0]: invalid argument for add: got 1, expected no argument on a from list, or one source in from"
+  "error": "acme items v1: fields[\"n\"].from[0]: invalid argument for add: got 1, expected no argument on a from list, as in {\"from\": [\"a\", \"b\"], \"transform\": \"add\"}, or one source in from"
 }

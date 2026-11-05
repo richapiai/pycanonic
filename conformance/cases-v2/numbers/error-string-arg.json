@@ -22,5 +22,5 @@
       }
     }
   },
-  "error": "acme bad v1: fields[\"pages\"]: invalid argument for add"
+  "error": "acme bad v1: fields[\"pages\"]: invalid argument for add: got \"1\", expected {\"add\": 10}"
 }

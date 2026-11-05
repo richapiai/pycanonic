@@ -560,7 +560,7 @@ fn a_bad_pattern_is_a_compile_error() {
     let err = compile(&spec(Some(2), json!({"regex": "("})), &schema(), &[]).unwrap_err();
     assert_eq!(
         err.message,
-        "acme orgs v1: fields[\"slug\"]: invalid argument for regex"
+        "acme orgs v1: fields[\"slug\"]: invalid argument for regex: got \"(\", expected {\"regex\": \"/people/([^/?#]+)\"}"
     );
 }
 
@@ -721,4 +721,19 @@ fn number_transforms() {
     assert_eq!(run("add", None, Int(1)), Null);
     assert!(builtin("add", Some(&json!("1"))).is_err());
     assert!(builtin("len", Some(&json!(1))).is_err());
+}
+
+/// Every example the argument errors quote is itself a valid transform.
+#[test]
+fn every_error_example_compiles() {
+    let names = canonic_core::transforms::default_transform_names();
+    for name in names {
+        let ex: serde_json::Value = serde_json::from_str(
+            canonic_core::transforms::example(name)
+                .unwrap_or_else(|| panic!("no example for {name}")),
+        )
+        .unwrap();
+        compile(&spec(Some(2), ex.clone()), &schema(), &[])
+            .unwrap_or_else(|e| panic!("example for {name} {ex} does not compile: {}", e.message));
+    }
 }
