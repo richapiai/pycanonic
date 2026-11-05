@@ -1,6 +1,7 @@
 //! Port of canonic/packages/canonic/test/transforms.test.ts plus the tables in docs/transforms.md.
 //! JS arrays are `Value::Container` for single-value transforms. `join` over an array uses `apply_list`.
 
+use canonic_core::numbers::NumOp;
 use canonic_core::{
     ArgError, Builtin, CastTo, NamePart, Semantic, Transform, Value, builtin,
     default_transform_names, validate,
@@ -485,6 +486,9 @@ fn all_builtins() -> Vec<Builtin> {
         NormalizePhone,
         NormalizeLinkedin,
         ToDomain,
+        Len,
+        Num(NumOp::Add, Some(1.0)),
+        Num(NumOp::Gte, None),
     ]
 }
 
@@ -530,6 +534,12 @@ fn accepts(b: &Builtin, j: &Value) -> bool {
         Builtin::Lower | Builtin::Trim => is_str,
         Builtin::SplitName(NamePart::First) => matches!(j, Value::Str(x) if !x.trim().is_empty()),
         Builtin::Join(_) => matches!(j, Value::Str(x) if !x.is_empty()),
+        // `len` counts any string. `add 1` reads numbers and strings that hold one (not "1e400").
+        Builtin::Len => is_str,
+        Builtin::Num(_, Some(_)) => {
+            finite(j)
+                || matches!(j, Value::Str(x) if x.trim().parse::<f64>().is_ok_and(f64::is_finite) && !x.trim().is_empty())
+        }
         _ => false,
     }
 }
