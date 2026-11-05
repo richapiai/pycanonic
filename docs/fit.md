@@ -332,12 +332,12 @@ verify: failed (10 pairs, 0 rejected)
 
 ## How well fit does
 
-`python/tests/fit_eval/` is the evaluation suite. It has 13 invented provider pairs with known true specs. They include grouping with gaps and repeats, optional objects, dropped keys, renamed enums, nested pages, inconsistent empty values and key-case drift. `fit` learns each spec from 15 pairs. Then 60 fresh pairs go through the spec it wrote. An auto field that differs from the default on a fresh pair counts as wrong.
+`python/tests/fit_eval/` is the evaluation suite. It has 14 invented provider pairs with known true specs. They include grouping with gaps and repeats, optional objects, dropped keys, renamed enums, nested pages, inconsistent empty values and key-case drift. `fit` learns each spec from 15 pairs. Then 60 fresh pairs go through the spec it wrote. An auto field that differs from the default on a fresh pair counts as wrong.
 
 Results on 2026-10-24 (`python/tests/fit_eval/RESULTS.md`):
 
 | | Fields | Auto | Review | Manual | Auto share | Wrong auto |
 |---|---|---|---|---|---|---|
-| 13 providers | 432 | 325 | 100 | 7 | 75% | 0 |
+| 14 providers | 435 | 328 | 99 | 8 | 75% | 0 |
 
 Zero wrong auto fields is a release gate, and the suite fails on any. The auto share is a target, not a gate: the target is 80%, and `fit` does not meet it yet. Most review rows are review by design: optional objects, fields where the default sent fewer than two values in 15 pairs, learned lookups, groups and case-insensitive keys.
