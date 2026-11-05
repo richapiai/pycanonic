@@ -1,0 +1,322 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "totalPages": {
+        "from": [
+          "total",
+          "$input.size"
+        ],
+        "transform": "ceil_div"
+      },
+      "offset": {
+        "from": [
+          "$input.page",
+          "$input.size"
+        ],
+        "transform": "mul"
+      },
+      "first": {
+        "from": "$input.page",
+        "transform": {
+          "eq": 0
+        }
+      },
+      "last": {
+        "from": [
+          {
+            "from": [
+              {
+                "from": "$input.page",
+                "transform": {
+                  "add": 1
+                }
+              },
+              "$input.size"
+            ],
+            "transform": "mul"
+          },
+          "total"
+        ],
+        "transform": "gte"
+      },
+      "numberOfElements": {
+        "from": "content",
+        "transform": "len"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "totalPages": {
+        "type": "integer"
+      },
+      "offset": {
+        "type": "integer"
+      },
+      "first": {
+        "type": "boolean"
+      },
+      "last": {
+        "type": "boolean"
+      },
+      "numberOfElements": {
+        "type": "integer"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "total": 45,
+        "content": [
+          {
+            "id": "urn:example:item:0"
+          },
+          {
+            "id": "urn:example:item:1"
+          },
+          {
+            "id": "urn:example:item:2"
+          },
+          {
+            "id": "urn:example:item:3"
+          },
+          {
+            "id": "urn:example:item:4"
+          },
+          {
+            "id": "urn:example:item:5"
+          },
+          {
+            "id": "urn:example:item:6"
+          },
+          {
+            "id": "urn:example:item:7"
+          },
+          {
+            "id": "urn:example:item:8"
+          },
+          {
+            "id": "urn:example:item:9"
+          }
+        ]
+      },
+      "context": {
+        "page": 0,
+        "size": 10
+      },
+      "expected": {
+        "totalPages": 5,
+        "offset": 0,
+        "first": true,
+        "last": false,
+        "numberOfElements": 10
+      }
+    },
+    {
+      "body": {
+        "total": 45,
+        "content": [
+          {
+            "id": "urn:example:item:0"
+          },
+          {
+            "id": "urn:example:item:1"
+          },
+          {
+            "id": "urn:example:item:2"
+          },
+          {
+            "id": "urn:example:item:3"
+          },
+          {
+            "id": "urn:example:item:4"
+          }
+        ]
+      },
+      "context": {
+        "page": 4,
+        "size": 10
+      },
+      "expected": {
+        "totalPages": 5,
+        "offset": 40,
+        "first": false,
+        "last": true,
+        "numberOfElements": 5
+      }
+    },
+    {
+      "body": {
+        "total": "45",
+        "content": [
+          {
+            "id": "urn:example:item:0"
+          },
+          {
+            "id": "urn:example:item:1"
+          },
+          {
+            "id": "urn:example:item:2"
+          },
+          {
+            "id": "urn:example:item:3"
+          },
+          {
+            "id": "urn:example:item:4"
+          }
+        ]
+      },
+      "context": {
+        "page": "4",
+        "size": "10"
+      },
+      "expected": {
+        "totalPages": 5,
+        "offset": 40,
+        "first": false,
+        "last": true,
+        "numberOfElements": 5
+      }
+    },
+    {
+      "body": {
+        "content": [
+          {
+            "id": "urn:example:item:0"
+          },
+          {
+            "id": "urn:example:item:1"
+          },
+          {
+            "id": "urn:example:item:2"
+          }
+        ]
+      },
+      "context": {
+        "page": 0,
+        "size": 10
+      },
+      "expected": {
+        "totalPages": null,
+        "offset": 0,
+        "first": true,
+        "last": null,
+        "numberOfElements": 3
+      }
+    },
+    {
+      "body": {
+        "total": 45,
+        "content": [
+          {
+            "id": "urn:example:item:0"
+          },
+          {
+            "id": "urn:example:item:1"
+          },
+          {
+            "id": "urn:example:item:2"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "totalPages": null,
+        "offset": null,
+        "first": null,
+        "last": null,
+        "numberOfElements": 3
+      }
+    },
+    {
+      "body": {
+        "total": 45,
+        "content": [
+          {
+            "id": "urn:example:item:0"
+          },
+          {
+            "id": "urn:example:item:1"
+          },
+          {
+            "id": "urn:example:item:2"
+          }
+        ]
+      },
+      "context": {
+        "page": true,
+        "size": 10
+      },
+      "expected": {
+        "totalPages": 5,
+        "offset": null,
+        "first": null,
+        "last": null,
+        "numberOfElements": 3
+      }
+    },
+    {
+      "body": {
+        "total": [
+          1
+        ],
+        "content": [
+          {
+            "id": "urn:example:item:0"
+          },
+          {
+            "id": "urn:example:item:1"
+          },
+          {
+            "id": "urn:example:item:2"
+          }
+        ]
+      },
+      "context": {
+        "page": 0,
+        "size": 10
+      },
+      "expected": {
+        "totalPages": null,
+        "offset": 0,
+        "first": true,
+        "last": null,
+        "numberOfElements": 3
+      }
+    },
+    {
+      "body": {
+        "total": 45,
+        "content": [
+          {
+            "id": "urn:example:item:0"
+          },
+          {
+            "id": "urn:example:item:1"
+          },
+          {
+            "id": "urn:example:item:2"
+          }
+        ]
+      },
+      "context": {
+        "page": 0,
+        "size": 0
+      },
+      "expected": {
+        "totalPages": null,
+        "offset": 0,
+        "first": true,
+        "last": false,
+        "numberOfElements": 3
+      }
+    }
+  ]
+}

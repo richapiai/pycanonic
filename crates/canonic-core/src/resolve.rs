@@ -8,8 +8,8 @@ use crate::plan::{
     Scalar, TxRef,
 };
 use crate::spec::{
-    ArrayRule, FieldMap, Rule, ScalarRule, Source, Step, TransformRef, field_key, is_group,
-    parse_spec,
+    ArrayRule, FieldMap, Rule, ScalarRule, Source, SourceItem, Step, TransformRef, field_key,
+    is_group, parse_spec,
 };
 use crate::transforms::{ArgError, Builtin, builtin, language_2_only};
 use serde_json::Value;
@@ -79,6 +79,23 @@ impl Resolver<'_> {
         Ok(tx)
     }
 
+    /// R52: the transforms of each computed entry of `source`, depth first, each entry before the
+    /// ones nested in it. An entry is a scalar rule with its own source count. `at` is the
+    /// location of the `from` list.
+    fn inner(&self, source: &Source, at: &str, out: &mut Vec<Vec<TxRef>>) -> Result<(), String> {
+        let Source::Computed(items) = source else {
+            return Ok(());
+        };
+        for (i, item) in items.iter().enumerate() {
+            if let SourceItem::Rule(r) = item {
+                let at = format!("{at}[{i}]");
+                out.push(self.tx(&r.transform, &at, source_count(&r.source))?);
+                self.inner(&r.source, &format!("{at}.from"), out)?;
+            }
+        }
+        Ok(())
+    }
+
     fn scalar(
         &mut self,
         r: &ScalarRule,
@@ -96,13 +113,15 @@ impl Resolver<'_> {
             Kind::Object { .. } => return Err(format!("{at}: canonical field is an object")),
         };
         let tx = self.tx(&r.transform, at, source_count(&r.source))?;
+        let mut inner = Vec::new();
+        self.inner(&r.source, &format!("{at}.from"), &mut inner)?;
         // The validator step every routing field ends with.
         let validator = if routing {
-            let paths = match &r.source {
-                Source::From(p) => std::slice::from_ref(p),
-                Source::FromMany(ps) | Source::Coalesce(ps) => ps.as_slice(),
-            };
-            if paths.iter().any(Vec::is_empty) {
+            if matches!(r.source, Source::Computed(_)) {
+                return Err(format!("{at}: routing fields can't read a computed source"));
+            }
+            let paths = r.source.paths();
+            if paths.iter().any(|p| p.is_empty()) {
                 return Err(format!(
                     "{at}: routing fields can't read the whole response ($)"
                 ));
@@ -124,15 +143,13 @@ impl Resolver<'_> {
         } else {
             None
         };
-        let paths = match &r.source {
-            Source::From(p) => std::slice::from_ref(p),
-            Source::FromMany(ps) | Source::Coalesce(ps) => ps.as_slice(),
-        };
         let input = Step::Key("$input".into());
-        self.context |= self.language == 2 && paths.iter().any(|p| p.first() == Some(&input));
+        self.context |=
+            self.language == 2 && r.source.paths().iter().any(|p| p.first() == Some(&input));
         let (source, default) = (r.source.clone(), r.default.clone());
         Ok(Scalar {
             source,
+            inner,
             tx,
             validator,
             default,
@@ -508,6 +525,7 @@ pub(crate) fn source_count(source: &Source) -> usize {
     match source {
         Source::From(_) | Source::Coalesce(_) => 1,
         Source::FromMany(ps) => ps.len(),
+        Source::Computed(items) => items.len(),
     }
 }
 

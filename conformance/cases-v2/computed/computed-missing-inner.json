@@ -1,0 +1,88 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "n": {
+        "from": [
+          {
+            "from": "a",
+            "transform": {
+              "add": 1
+            }
+          },
+          "b"
+        ],
+        "transform": "mul"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "integer"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "a": 1,
+        "b": 3
+      },
+      "context": null,
+      "expected": {
+        "n": 6
+      }
+    },
+    {
+      "body": {
+        "b": 3
+      },
+      "context": null,
+      "expected": {
+        "n": null
+      }
+    },
+    {
+      "body": {
+        "a": null,
+        "b": 3
+      },
+      "context": null,
+      "expected": {
+        "n": null
+      }
+    },
+    {
+      "body": {
+        "a": "x",
+        "b": 3
+      },
+      "context": null,
+      "expected": {
+        "n": null
+      }
+    },
+    {
+      "body": {
+        "a": 1
+      },
+      "context": null,
+      "expected": {
+        "n": null
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "n": null
+      }
+    }
+  ]
+}

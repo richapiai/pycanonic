@@ -1,0 +1,31 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "n": {
+        "from": [
+          {
+            "from": "a",
+            "transform": {
+              "add": 1
+            }
+          },
+          "b"
+        ],
+        "transform": "mul"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "integer"
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"n\"].from[0]: must be a path like a.b[0][\"c d\"]"
+}

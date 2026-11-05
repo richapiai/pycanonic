@@ -1,0 +1,30 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "n": {
+        "from": [
+          {
+            "from": "a",
+            "transform": "add"
+          },
+          "c"
+        ],
+        "transform": "mul"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "integer"
+      }
+    }
+  },
+  "error": "acme items v1: fields[\"n\"].from[0]: invalid argument for add: got none, expected two or more sources in from, or {\"add\": 10}"
+}

@@ -666,23 +666,18 @@ A definition cannot read `$group` at its top level, because a definition does no
 
 ### Page envelopes
 
-A page envelope such as `{total, page, size, items}` needs no new rule. Build it from an aggregate, `$input` and an array rule:
+A page envelope carries the page counts next to the items. Build it from the number transforms, `len`, `$input` and an array rule. Each of `ceil_div`, `mul`, `add`, `eq` and `gte` takes one number argument on one source, or no argument on a `from` list, where it folds the sources left to right.
+
+An entry of a `from` list can be a computed source, `{"from": <path or list>, "transform": <transform>}`. It nests to any depth. Below, `last` is true when `(page + 1) * size >= total`. A computed entry takes only `from` and `transform`. Without `transform`, write the plain path. A computed entry that gives null counts as a missing source for the outer transform, and a list with every entry missing leaves the field null as a miss, not an error. A routing field can't read a computed source, and language 1 does not have the form.
 
 <!-- run -->
 ```json
 {
-  "schema": {"type": "object", "properties": {
-    "total": {"type": "number"}, "page": {"type": "number"}, "size": {"type": "number"},
-    "items": {"type": "array", "x-empty": "[]", "items": {"type": "object", "properties": {"name": {"type": "string"}}}}}},
-  "spec": {"language": 2, "provider": "acme", "endpoint": "person.search", "version": 1, "status": "draft",
-    "fields": {
-      "total": {"aggregate": "count", "from": "results"},
-      "page": "$input.page",
-      "size": "$input.size",
-      "items[]": {"from": "results", "item": {"name": "full_name"}}}},
-  "body": {"results": [{"full_name": "Ada"}, {"full_name": "Bo"}]},
-  "context": {"page": 1, "size": 25},
-  "expected": {"total": 2, "page": 1, "size": 25, "items": [{"name": "Ada"}, {"name": "Bo"}]}
+  "schema": {"type": "object", "properties": {"totalPages": {"type": "integer"}, "offset": {"type": "integer"}, "first": {"type": "boolean"}, "last": {"type": "boolean"}, "numberOfElements": {"type": "integer"}, "items": {"type": "array", "x-empty": "[]", "items": {"type": "object", "properties": {"name": {"type": "string"}}}}}},
+  "spec": {"language": 2, "provider": "acme", "endpoint": "person.search", "version": 1, "status": "draft", "fields": {"totalPages": {"from": ["total", "$input.size"], "transform": "ceil_div"}, "offset": {"from": ["$input.page", "$input.size"], "transform": "mul"}, "first": {"from": "$input.page", "transform": {"eq": 0}}, "last": {"from": [{"from": [{"from": "$input.page", "transform": {"add": 1}}, "$input.size"], "transform": "mul"}, "total"], "transform": "gte"}, "numberOfElements": {"from": "results", "transform": "len"}, "items[]": {"from": "results", "item": {"name": "full_name"}}}},
+  "body": {"total": 45, "results": [{"full_name": "Ada"}, {"full_name": "Bo"}, {"full_name": "Cy"}, {"full_name": "Di"}, {"full_name": "Ed"}]},
+  "context": {"page": 4, "size": 10},
+  "expected": {"totalPages": 5, "offset": 40, "first": false, "last": true, "numberOfElements": 5, "items": [{"name": "Ada"}, {"name": "Bo"}, {"name": "Cy"}, {"name": "Di"}, {"name": "Ed"}]}
 }
 ```
 

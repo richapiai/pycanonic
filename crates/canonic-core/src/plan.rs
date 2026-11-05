@@ -3,7 +3,7 @@
 
 use crate::canonical::{Empty, Node, Semantic};
 use crate::cond::{Cmp, Cond, Operand};
-use crate::spec::{Aggregate, Path, Source, Status, Step};
+use crate::spec::{Aggregate, Path, Source, SourceItem, Status, Step, TransformRef};
 use crate::transforms::Builtin;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -45,6 +45,10 @@ pub enum TxRef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Scalar {
     pub source: Source,
+    /// R52: the transforms of the computed entries of `source`, depth first, each entry before the
+    /// ones nested in it. Empty for any other source.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inner: Vec<Vec<TxRef>>,
     pub tx: Vec<TxRef>,
     pub validator: Option<Semantic>,
     /// A string, number or boolean. The grammar rejects `default: null`.
@@ -348,7 +352,7 @@ impl Plan {
         fn field(f: &Field) -> bool {
             match f {
                 Field::Null => false,
-                Field::Scalar(s) => tx(&s.tx),
+                Field::Scalar(s) => tx(&s.tx) || matches!(s.source, Source::Computed(_)),
                 Field::Const(..)
                 | Field::OmitNull(_)
                 | Field::Empty(_)
@@ -440,11 +444,7 @@ fn line(out: &mut String, name: &str, field: &Field) {
             lines(out, &format!("{name}."), members)
         }
         Field::Scalar(s) => {
-            let src = match &s.source {
-                Source::From(p) => path(p),
-                Source::FromMany(ps) => format!("from({})", list(ps)),
-                Source::Coalesce(ps) => format!("coalesce({})", list(ps)),
-            };
+            let src = source(&s.source);
             let mut line = format!("{name} <- {src}{}", pipe(&s.tx));
             if let Some(v) = s.validator {
                 line += &format!(" | validate {}", v.name());
@@ -521,6 +521,36 @@ fn line(out: &mut String, name: &str, field: &Field) {
             }
         }
     }
+}
+
+/// A scalar source. A computed entry prints as `(source | transform)`.
+fn source(s: &Source) -> String {
+    let items = |items: &[SourceItem]| {
+        let all: Vec<String> = items
+            .iter()
+            .map(|i| match i {
+                SourceItem::Path(p) => path(p),
+                SourceItem::Rule(r) => format!("({}{})", source(&r.source), refs(&r.transform)),
+            })
+            .collect();
+        all.join(", ")
+    };
+    match s {
+        Source::From(p) => path(p),
+        Source::FromMany(ps) => format!("from({})", list(ps)),
+        Source::Coalesce(ps) => format!("coalesce({})", list(ps)),
+        Source::Computed(xs) => format!("from({})", items(xs)),
+    }
+}
+
+/// Transforms as written in the spec, for a computed entry.
+fn refs(tx: &[TransformRef]) -> String {
+    tx.iter()
+        .map(|t| match &t.arg {
+            Some(a) => format!(" | {} {a}", t.name),
+            None => format!(" | {}", t.name),
+        })
+        .collect()
 }
 
 /// A source path, then `[]` and each flatten path.

@@ -35,7 +35,7 @@ use crate::doc::{Doc, Key, KeyPath as Path, KeyStep as Step, read, step as step_
 use crate::group::{Agg, AggOp, aggregate, groups};
 use crate::plan::{CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, TxRef};
 use crate::sink::{Out, Sink, copy};
-use crate::spec::{self, Source, is_group};
+use crate::spec::{self, Source, SourceItem, is_group};
 use crate::stats::Stats;
 use crate::transforms::{Builtin, Transform, conform, validate};
 use crate::value::Value;
@@ -138,6 +138,28 @@ enum Src {
     From(At),
     Many(Vec<At>),
     Coalesce(Vec<At>),
+    Computed(Vec<Item>),
+}
+
+/// An entry of a computed `from` list (R52).
+enum Item {
+    At(At),
+    Rule(Box<Inner>),
+}
+
+/// A computed entry: a scalar rule with no stat. `many`: `items` is a list the first transform
+/// folds, otherwise it holds the one path.
+struct Inner {
+    items: Vec<Item>,
+    many: bool,
+    tx: Vec<TxRef>,
+}
+
+/// What an entry of a computed list gave. `Val` is a computed entry that gave a value.
+enum Entry<D> {
+    Missing,
+    Doc(D),
+    Val(Value<'static>),
 }
 
 struct Leaf {
@@ -351,8 +373,42 @@ impl Builder<'_> {
         self.scope.at(steps)
     }
 
+    /// The entries of a computed list. `chains` gives each computed entry its transforms in the
+    /// order `Scalar::inner` holds them.
+    fn items(
+        &mut self,
+        items: &[SourceItem],
+        chains: &mut std::slice::Iter<'_, Vec<TxRef>>,
+    ) -> Result<Vec<Item>, CompileError> {
+        let mut out = Vec::new();
+        for item in items {
+            out.push(match item {
+                SourceItem::Path(p) => Item::At(self.at(p)),
+                SourceItem::Rule(r) => {
+                    let Some(chain) = chains.next() else {
+                        return Err(self.err("computed source without transforms".into()));
+                    };
+                    let tx = self.tx(chain)?;
+                    let (items, many) = match &r.source {
+                        Source::From(p) => (vec![Item::At(self.at(p))], false),
+                        Source::FromMany(ps) => {
+                            (ps.iter().map(|p| Item::At(self.at(p))).collect(), true)
+                        }
+                        Source::Computed(xs) => (self.items(xs, chains)?, true),
+                        Source::Coalesce(_) => {
+                            return Err(self.err("coalesce in a computed source".into()));
+                        }
+                    };
+                    Item::Rule(Box::new(Inner { items, many, tx }))
+                }
+            });
+        }
+        Ok(out)
+    }
+
     fn leaf(&mut self, s: &Scalar) -> Result<Leaf, CompileError> {
         let src = match &s.source {
+            Source::Computed(xs) => Src::Computed(self.items(xs, &mut s.inner.iter())?),
             Source::From(p) => Src::From(self.at(p)),
             Source::FromMany(ps) => Src::Many(ps.iter().map(|p| self.at(p)).collect()),
             Source::Coalesce(ps) => Src::Coalesce(ps.iter().map(|p| self.at(p)).collect()),
@@ -752,24 +808,98 @@ pub(crate) fn transform_many<'d, D: Doc>(
     validator: Option<Semantic>,
     docs: &'d [Option<D>],
 ) -> Value<'d> {
-    let vals: Vec<Value> = docs
+    let vals = docs
         .iter()
         .map(|d| d.as_ref().map_or(Value::Null, |d| d.leaf()))
         .collect();
+    let items = || {
+        let mut budget = MAX_NODES;
+        let items = docs.iter().map(|d| {
+            d.as_ref()
+                .map_or(Some(J::Null), |d| json(d, 1, &mut budget))
+        });
+        items.collect::<Option<_>>().map(J::Array)
+    };
+    fold_list(custom, tx, validator, vals, items)
+}
+
+/// `transform_many` for the entries of a computed list.
+fn transform_entries<'d, D: Doc>(
+    custom: &[Arc<dyn Transform>],
+    tx: &[TxRef],
+    validator: Option<Semantic>,
+    entries: &'d [Entry<D>],
+) -> Value<'d> {
+    let vals = (entries.iter())
+        .map(|e| match e {
+            Entry::Missing => Value::Null,
+            Entry::Doc(d) => d.leaf(),
+            Entry::Val(v) => v.clone(),
+        })
+        .collect();
+    let items = || {
+        let mut budget = MAX_NODES;
+        let items = entries.iter().map(|e| match e {
+            Entry::Missing => Some(J::Null),
+            Entry::Doc(d) => json(d, 1, &mut budget),
+            Entry::Val(v) => Some(value_json(v)),
+        });
+        items.collect::<Option<_>>().map(J::Array)
+    };
+    fold_list(custom, tx, validator, vals, items)
+}
+
+fn value_json(v: &Value<'_>) -> J {
+    match v {
+        Value::Bool(b) => J::Bool(*b),
+        Value::Int(i) => J::from(*i),
+        Value::BigInt(s) => s.parse::<f64>().map_or(J::Null, J::from),
+        Value::Float(f) => J::from(*f),
+        Value::Str(s) => J::String(s.to_string()),
+        Value::Null | Value::Container => J::Null,
+    }
+}
+
+/// The first step over a list of values, then the rest. `items` gives the list as JSON for a
+/// custom first step.
+fn fold_list<'d>(
+    custom: &[Arc<dyn Transform>],
+    tx: &[TxRef],
+    validator: Option<Semantic>,
+    vals: Vec<Value<'d>>,
+    items: impl FnOnce() -> Option<J>,
+) -> Value<'d> {
     let v = match tx.split_first() {
         None => Value::Null, // a routing validator alone rejects a list
         Some((TxRef::Builtin(b), rest)) => pipe(custom, rest, b.apply_list(&vals)),
-        Some((first, rest)) => {
-            let mut budget = MAX_NODES;
-            let items = docs.iter().map(|d| {
-                d.as_ref()
-                    .map_or(Some(J::Null), |d| json(d, 1, &mut budget))
-            });
-            let items = items.collect::<Option<_>>().map(J::Array);
-            pipe(custom, rest, container(custom, first, items))
-        }
+        Some((first, rest)) => pipe(custom, rest, container(custom, first, items())),
     };
     check(validator, v)
+}
+
+/// An entry of a computed list. A computed entry that gives null (or a container) is missing.
+fn entry<D: Doc>(custom: &[Arc<dyn Transform>], item: &Item, f: &mut Frame<'_, D>) -> Entry<D> {
+    let r = match item {
+        Item::At(p) => return f.read(*p).map_or(Entry::Missing, Entry::Doc),
+        Item::Rule(r) => r,
+    };
+    let v = match r.items.as_slice() {
+        [Item::At(p)] if !r.many => match f.read(*p) {
+            Some(d) => transform(custom, &r.tx, None, &d).into_owned(),
+            None => return Entry::Missing,
+        },
+        items => {
+            let es: Vec<Entry<D>> = items.iter().map(|i| entry(custom, i, f)).collect();
+            if es.iter().all(|e| matches!(e, Entry::Missing)) {
+                return Entry::Missing;
+            }
+            transform_entries(custom, &r.tx, None, &es).into_owned()
+        }
+    };
+    match v {
+        Value::Null | Value::Container => Entry::Missing,
+        v => Entry::Val(v),
+    }
 }
 
 /// Runs `program` over `doc` (`None` reads as absent everywhere) and counts one response in `stats`.
@@ -959,6 +1089,7 @@ impl<S: Sink> Exec<'_, S> {
                 .find_map(|p| f.read(*p))
                 .map(|d| self.single(l, &d)),
             Src::Many(ps) => self.many(l, f, ps),
+            Src::Computed(xs) => self.computed(l, f, xs),
         };
         match out {
             Some(Some(o)) => {
@@ -1002,6 +1133,43 @@ impl<S: Sink> Exec<'_, S> {
             })
             .collect();
         self.sink.list(items)
+    }
+
+    /// `many` for a computed list: every entry missing is a miss, not an error.
+    fn computed<D: Doc>(
+        &mut self,
+        l: &Leaf,
+        f: &mut Frame<'_, D>,
+        items: &[Item],
+    ) -> Option<Option<S::Out>> {
+        let es: Vec<Entry<D>> = items.iter().map(|i| entry(self.custom, i, f)).collect();
+        if es.iter().all(|e| matches!(e, Entry::Missing)) {
+            return None;
+        }
+        let tuple = |this: &mut Self| {
+            this.sink.open(false);
+            let out = (es.iter().enumerate())
+                .map(|(n, e)| {
+                    this.sink.next(None, n == 0);
+                    match e {
+                        Entry::Doc(d) => this.sink.passthrough(d),
+                        Entry::Val(v) => this.sink.scalar(v.clone()),
+                        Entry::Missing => this.sink.scalar(Value::Null),
+                    }
+                })
+                .collect();
+            this.sink.list(out)
+        };
+        if l.bare() {
+            return Some(Some(tuple(self)));
+        }
+        Some(
+            match transform_entries(self.custom, &l.tx, l.validator, &es) {
+                Value::Null => None,
+                Value::Container => Some(tuple(self)),
+                v => Some(self.sink.scalar(v)),
+            },
+        )
     }
 
     fn many<D: Doc>(

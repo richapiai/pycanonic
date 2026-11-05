@@ -26,9 +26,10 @@ pub enum Status {
     Deprecated,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransformRef {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arg: Option<Value>,
 }
 
@@ -37,11 +38,38 @@ pub enum Source {
     From(Path),
     FromMany(Vec<Path>),
     Coalesce(Vec<Path>),
+    /// Language 2 (R52): a `from` list that holds at least one computed entry.
+    Computed(Vec<SourceItem>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// An entry of a computed `from` list: a path, or `{"from": ..., "transform": ...}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SourceItem {
+    Path(Path),
+    Rule(Box<ScalarRule>),
+}
+
+impl Source {
+    /// Every path the source reads, in order, through computed entries too.
+    pub fn paths(&self) -> Vec<&Path> {
+        match self {
+            Source::From(p) => vec![p],
+            Source::FromMany(ps) | Source::Coalesce(ps) => ps.iter().collect(),
+            Source::Computed(items) => items
+                .iter()
+                .flat_map(|i| match i {
+                    SourceItem::Path(p) => vec![p],
+                    SourceItem::Rule(r) => r.source.paths(),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScalarRule {
     pub source: Source,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
     pub transform: Vec<TransformRef>,
 }
@@ -381,15 +409,42 @@ impl Checker {
             _ => {}
         }
     }
-    fn paths(&mut self, v: &Value, at: &str) {
+    /// `computed`: a language 2 `from` list, where an entry can be a computed source.
+    fn paths(&mut self, v: &Value, at: &str, computed: bool) {
         match v.as_array() {
             Some(a) if a.len() >= 2 => {
                 for (i, p) in a.iter().enumerate() {
-                    self.source(Some(p), &format!("{at}[{i}]"));
+                    let at = format!("{at}[{i}]");
+                    match p.as_object() {
+                        Some(o) if computed && self.language == 2 => self.computed(o, &at),
+                        _ => self.source(Some(p), &at),
+                    }
                 }
             }
             _ => self.fail(at, "must be an array of at least 2 paths"),
         }
+    }
+    /// R52: `{"from": <path or list>, "transform": <t>}` and nothing else.
+    fn computed(&mut self, o: &Map<String, Value>, at: &str) {
+        if o.keys().any(|k| k != "from" && k != "transform") {
+            return self.fail(at, "a computed source takes only from and transform");
+        }
+        let Some(from) = o.get("from") else {
+            return self.fail(at, "a computed source needs from");
+        };
+        let Some(t) = o.get("transform") else {
+            return self.fail(
+                at,
+                "a computed source needs transform; write the plain path instead",
+            );
+        };
+        let from_at = format!("{at}.from");
+        if from.is_array() {
+            self.paths(from, &from_at, true);
+        } else {
+            self.source(Some(from), &from_at);
+        }
+        self.transform(t, &format!("{at}.transform"));
     }
     fn step(&mut self, v: &Value, at: &str) {
         match v {
@@ -432,13 +487,13 @@ impl Checker {
         }
         if let Some(from) = r.get("from") {
             if from.is_array() {
-                self.paths(from, &format!("{at}.from"));
+                self.paths(from, &format!("{at}.from"), true);
             } else {
                 self.source(Some(from), &format!("{at}.from"));
             }
         }
         if let Some(c) = r.get("coalesce") {
-            self.paths(c, &format!("{at}.coalesce"));
+            self.paths(c, &format!("{at}.coalesce"), false);
         }
         if r.get("default")
             .is_some_and(|d| !(d.is_string() || d.is_number() || d.is_boolean()))
@@ -915,6 +970,26 @@ fn paths(v: &Value) -> Vec<Path> {
     v.as_array().unwrap().iter().map(path).collect()
 }
 
+/// A scalar `from`. A list that holds an object is computed, a list of paths stays `FromMany`.
+fn from_source(f: &Value) -> Source {
+    match f {
+        Value::Array(a) if a.iter().any(Value::is_object) => Source::Computed(
+            a.iter()
+                .map(|x| match x {
+                    Value::Object(o) => SourceItem::Rule(Box::new(ScalarRule {
+                        source: from_source(&o["from"]),
+                        default: None,
+                        transform: transform(o.get("transform")),
+                    })),
+                    p => SourceItem::Path(path(p)),
+                })
+                .collect(),
+        ),
+        Value::Array(_) => Source::FromMany(paths(f)),
+        p => Source::From(path(p)),
+    }
+}
+
 fn transform(v: Option<&Value>) -> Vec<TransformRef> {
     let step = |s: &Value| match s {
         Value::String(name) => TransformRef {
@@ -1032,8 +1107,7 @@ fn bare_rule(key: &str, r: &Value) -> Rule {
     let source = match r {
         Value::String(_) => Source::From(path(r)),
         _ => match (r.get("from"), r.get("coalesce")) {
-            (Some(f @ Value::Array(_)), _) => Source::FromMany(paths(f)),
-            (Some(f), _) => Source::From(path(f)),
+            (Some(f), _) => from_source(f),
             (None, c) => Source::Coalesce(paths(c.unwrap())),
         },
     };

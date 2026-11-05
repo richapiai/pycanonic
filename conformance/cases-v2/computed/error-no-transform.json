@@ -1,0 +1,29 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "n": {
+        "from": [
+          {
+            "from": "a"
+          },
+          "b"
+        ],
+        "transform": "add"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "integer"
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"n\"].from[0]: a computed source needs transform; write the plain path instead"
+}

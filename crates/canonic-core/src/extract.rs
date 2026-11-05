@@ -138,9 +138,14 @@ impl Extractor {
             }
         };
         let slots: Vec<Vec<usize>> = (plan.routing.iter())
-            .map(|r| match &r.scalar.source {
-                Source::From(p) => vec![slot(p)],
-                Source::FromMany(ps) | Source::Coalesce(ps) => ps.iter().map(|p| slot(p)).collect(),
+            // A routing field never has a computed source (the resolver refuses it).
+            .map(|r| {
+                r.scalar
+                    .source
+                    .paths()
+                    .into_iter()
+                    .map(|p| slot(p))
+                    .collect()
             })
             .collect();
         let anchors = (plan.anchors.iter())

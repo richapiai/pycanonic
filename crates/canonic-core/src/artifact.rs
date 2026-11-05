@@ -332,11 +332,10 @@ fn scalar(f: &mut Filter, s: &Scalar) {
     // `len` first in line counts an array's elements, so the array is read whole.
     let len = matches!(s.tx.first(), Some(TxRef::Builtin(Builtin::Len)));
     let whole = (s.validator.is_none() && s.tx.is_empty()) || custom(&s.tx) || len;
-    let paths = match &s.source {
-        Source::From(p) => std::slice::from_ref(p),
-        Source::FromMany(ps) | Source::Coalesce(ps) => ps.as_slice(),
-    };
-    for p in paths {
+    // a computed entry may run a custom transform or `len`, so all its paths are read
+    // whole. Narrow it to the entries that need it if the artifact size matters.
+    let whole = whole || matches!(s.source, Source::Computed(_));
+    for p in s.source.paths() {
         node(f, p).all |= whole;
     }
 }
