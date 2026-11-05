@@ -365,13 +365,10 @@ fn on_str<D: Doc>(d: Option<D>, f: impl Fn(&str) -> bool) -> bool {
     d.is_some_and(|d| matches!(d.leaf(), V::Str(s) if f(&s)))
 }
 
-/// A finite number: an `Int` or `Float` value. A string or a `BigInt` is not one.
+/// A finite number. An integer past 64 bits (`BigInt`) reads through a double, as for `eq`. A
+/// string is not a number.
 fn finite<D: Doc>(d: &D) -> Option<f64> {
-    match d.leaf() {
-        V::Int(i) => Some(i as f64),
-        V::Float(f) if f.is_finite() => Some(f),
-        _ => None,
-    }
+    number(&d.leaf()).filter(|f| f.is_finite())
 }
 
 /// `""`, `[]` or `{}`.
