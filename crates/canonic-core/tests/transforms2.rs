@@ -207,7 +207,7 @@ fn dates_numbers_and_ranges() {
     let formats = |f: J| Some(json!({ "formats": f }));
     let units = || Some(json!({"units": true}));
     let cases: Vec<(&str, Option<J>, Value<'static>, Value<'static>)> = vec![
-        // The rows of the brief.
+        // Documented examples.
         (
             "format_date",
             dms(),
@@ -426,7 +426,7 @@ fn dates_numbers_and_ranges() {
     }
 }
 
-/// a time part format_date cannot read is null on every output, never midnight.
+/// A time part `format_date` cannot read is null on every output, never midnight.
 #[test]
 fn format_date_rejects_unreadable_times() {
     let times = [

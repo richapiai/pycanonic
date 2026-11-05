@@ -2,7 +2,7 @@
 
 ## 0.2.0
 
-pycanonic 0.2.0 widens spec language 2, adds strict and union canonical schemas, and makes `canonic fit` and `canonic verify` handle list items, live-data drift and expected gaps. Every 0.1.1 spec and plan maps the same. The new behavior is opt-in. `canonic verify` is experimental and can now fail a spec that passed 0.1.1, because it scores more fields.
+pycanonic 0.2.0 widens spec language 2, adds strict and union canonical schemas, and makes `canonic fit` and `canonic verify` handle list items, live-data drift and expected gaps. `canonic verify` is experimental and can now fail a spec that passed 0.1.1, because it scores more fields.
 
 ### Spec language
 
@@ -32,7 +32,7 @@ pycanonic 0.2.0 widens spec language 2, adds strict and union canonical schemas,
 - `canonic schema` writes `"x-shape": "strict"` into every schema it derives, and proposes a `oneOf` union for an object whose samples fall into two or more key sets that each appear in two or more samples. `canonic fit` writes one manual `union` row and the empty form for a union node, and `canonic verify` scores union leaves per branch.
 - A `canonic fit` draft has every canonical key. Each manual field (`none` or `disagree`), at the top level or inside an item map, gets a placeholder `{"const": <empty form>}`: the node's `x-empty`, else what strict shape writes, else null. Its report row starts with `placeholder:`. `canonic verify` lists a placeholder as not mapped, as before. `verify` also no longer reports a missing key on a leaf whose schema says `x-empty: "missing"`, because that is the leaf's null. Against a value, it is a value miss. So a fresh draft whose provider lacks such a leaf, inside list items too, no longer fails the shape check.
 - An `if_empty` row of the fit report says once that the object's empty form is a guess.
-- `canonic verify` lists a leaf that the spec leaves out below an object with `when`, `omit`, `present` or `if_empty`, or in a union branch, as unmapped (R43), so `--allow` covers it and `--fail-unmapped` gates it.
+- `canonic verify` lists a leaf that the spec leaves out below an object with `when`, `omit`, `present` or `if_empty`, or in a union branch, as unmapped, so `--allow` covers it and `--fail-unmapped` gates it.
 
 ### Compatibility
 

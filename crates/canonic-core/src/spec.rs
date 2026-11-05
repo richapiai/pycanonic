@@ -141,7 +141,7 @@ pub struct Aggregate {
     /// `join` only. The default is a space, as for the `join` transform.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sep: Option<String>,
-    /// Language 2 (R50 style): elements that pass, before `pluck` and the op. Element-relative.
+    /// Language 2: elements that pass, before `pluck` and the op. Element-relative.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<Cond>,
     /// The spec's `transform`, which runs on the result. `resolve` turns it into `tx`.
@@ -174,7 +174,7 @@ pub enum Rule {
         omit: bool,
         rule: Box<Rule>,
     },
-    /// Language 2 (R55), on a `oneOf` node: the branches in spec order. The first whose `when`
+    /// Language 2, on a `oneOf` node: the branches in spec order. The first whose `when`
     /// holds is written. Only the last can leave out `when`.
     OneOf(Vec<Branch>),
 }
@@ -928,7 +928,7 @@ impl Checker {
             }
         }
     }
-    /// Language 2 (R55): `{"one_of": [{"branch": <name>, "when": <condition>, "fields": {...}}]}`.
+    /// Language 2: `{"one_of": [{"branch": <name>, "when": <condition>, "fields": {...}}]}`.
     fn one_of(&mut self, o: &Map<String, Value>, at: &str) {
         self.lang2(at, "one_of");
         self.keys(o, at, &["one_of", "when", "omit"]);

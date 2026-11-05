@@ -255,7 +255,7 @@ pub enum Field {
     /// Language 2: a canonical field the spec does not map, written as its `x-empty`:
     /// `List` (`[]`) or `Object` (`{}`). An unmapped null or left-out field is `Null` or `OmitNull`.
     Empty(Empty),
-    /// Language 2 (R55): a `oneOf` node. The first branch whose `when` holds (none: always) is
+    /// Language 2: a `oneOf` node. The first branch whose `when` holds (none: always) is
     /// written, its members in that branch's schema order. No branch holding, or a branch that
     /// writes nothing but null, writes `empty` (`Object`: `{}`, else null). Every field in a
     /// branch that is not written is a miss.
@@ -395,7 +395,7 @@ pub struct Plan {
     /// whole output.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub array: bool,
-    /// Language 2 (R48): the schema has `"x-shape": "strict"`. The resolver has put each node's
+    /// Language 2: the schema has `"x-shape": "strict"`. The resolver has put each node's
     /// empty form into the fields, so the executor does not read this.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub strict: bool,

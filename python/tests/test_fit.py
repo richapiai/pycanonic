@@ -798,7 +798,7 @@ def test_end_to_end_fixture(tmp_path: Path) -> None:
 
 
 def test_array_root_field_key() -> None:
-    """an array root is the field key `[]`."""
+    """An array root is the field key `[]`."""
     pairs = [Pair(f"p{i}.json", [{"name": f"n{i}{k}"} for k in range(i % 3 + 1)], {"results": [{"n": f"n{i}{k}"} for k in range(i % 3 + 1)]}, None) for i in range(6)]
     result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
     assert result.spec is not None and result.spec["fields"] == {"[]": {"from": "results", "item": {"name": "n"}}}
@@ -806,7 +806,7 @@ def test_array_root_field_key() -> None:
 
 
 def test_reject_failover() -> None:
-    """p0 lacks full_name, the reject fails it over, and no field counts it."""
+    """P0 lacks full_name, the reject fails it over, and no field counts it."""
     pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "email": f"e{i}@x.test"}, {**({"full_name": f"n{i}"} if i else {}), "mail": f"e{i}@x.test"}, None) for i in range(30)]
     result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
     assert result.spec is not None and result.spec["reject"] == [{"missing": "full_name"}]
@@ -821,7 +821,7 @@ def test_reject_failover() -> None:
 
 
 def test_open_map_fitted_as_path() -> None:
-    """an x-open node maps to the provider object that equals it."""
+    """An x-open node maps to the provider object that equals it."""
     attrs = [{f"k{i}{j}": j for j in range(3)} for i in range(10)]
     pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "attrs": a}, {"n": f"n{i}", "meta": {"extra": a, "id": i}}, None) for i, a in enumerate(attrs)]
     schema = derive_schema([p.default for p in pairs])
@@ -835,7 +835,7 @@ def test_open_map_fitted_as_path() -> None:
 
 
 def test_stub_escapes_quotes_and_backslashes(tmp_path: Path) -> None:
-    """provider text with triple quotes and backslashes still gives a module that imports."""
+    """Provider text with triple quotes and backslashes still gives a module that imports."""
     pairs = [replace(p, provider={**p.provider, "note": 'say """hi""" \\ back\\slash \n "end"'}) for p in handle_pairs()]
     result = fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e"))
     (tmp_path / "stubs2.py").write_text(result.transforms)

@@ -155,7 +155,7 @@ pub(crate) fn format_date(v: &Value, out: DateOut) -> Option<Value<'static>> {
 }
 
 /// Milliseconds since 1970 for a string `date_from_string` accepts. Text after the T or space must
-/// read as a time, else `None` (no guessed midnight).
+/// read as a time, else `None`, never a guessed midnight.
 fn instant(s: &str) -> Option<i64> {
     let b = date_from_string(s)?.as_bytes();
     let field = |at: usize| digits_at(b, at, 2).map_or(1, i64::from);

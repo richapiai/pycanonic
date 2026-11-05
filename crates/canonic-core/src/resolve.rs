@@ -187,7 +187,7 @@ impl Resolver<'_> {
                     "{at}: routing fields can't read the whole response ($)"
                 ));
             }
-            // `extract` has no context.
+            // `extract` has no request context.
             let input = Step::Key("$input".into());
             if self.language == 2 && paths.iter().any(|p| p.first() == Some(&input)) {
                 return Err(format!("{at}: routing fields can't read $input"));

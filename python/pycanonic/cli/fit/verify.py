@@ -1,5 +1,5 @@
 """`canonic verify`: maps every pair through a spec and checks shape, values and rejects, so CI can
-gate a provider. Rejects follow , not the design."""
+gate a provider. A pair that a `reject` condition stops is a failover, not a failure."""
 
 from __future__ import annotations
 
@@ -256,7 +256,8 @@ def run(
     reject rules maps it to exactly the default's output, or if over `max_reject` of the pairs are
     rejected. A field counts only pairs where either side has a value, and any
     `skipped` pair fails the run. A leaf the spec does not map but the default fills is
-    listed, and fails the run only with `fail_unmapped`. A list also scores each leaf of its
+    listed, and fails the run only with `fail_unmapped`. A leaf the provider lacks is a review decision,
+    not a mapping error. A list also scores each leaf of its
     items by position and a count row; `ignore` drops a field and all below it.
     `allow` maps a field to the reason its unmapped leaves are expected, itself and all below it, and
     `fail_unmapped` fails only on the leaves it does not cover. A pair that equals the

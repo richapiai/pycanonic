@@ -28,7 +28,7 @@
 //! - Language 2: a path that starts with `$input` reads the request context (`Frame::ctx`),
 //!   in a plan with `context` set, and in every condition. A `when` that fails gives null, or
 //!   leaves the key out with `omit`, before anything under it is read. Its fields are misses.
-//! - Language 2 (R48): under strict shape the resolver has put each node's empty form into the
+//! - Language 2: under strict shape the resolver has put each node's empty form into the
 //!   plan (`ListOps`, `Scalar::empty`, `When::empty`, `Container::strict`). The null paths write
 //!   it as a placeholder that is no fill, and count the same misses and errors.
 
@@ -208,7 +208,7 @@ struct Fold {
     stat: usize,
 }
 
-/// A container transform (A10, `Field::Container`).
+/// A container transform (`Field::Container`).
 struct Whole {
     from: Input,
     tx: TxRef,
@@ -550,23 +550,27 @@ impl Builder<'_> {
                 strict: *strict,
                 empty: empty_form(node, *strict).unwrap_or(J::Null),
             })),
-            Field::Aggregate(a, stat) => Op::Aggregate(Box::new(Fold {
-                op: a.op,
-                input: match is_group(&a.from) {
-                    true => Input::Group,
-                    false => Input::At(self.at(&a.from)),
-                },
-                ops: ListOps {
-                    flatten: a.flatten.iter().map(|p| self.path(p)).collect(),
-                    filter: a.filter.as_ref().map(|c| self.cond(c)),
-                    ..ListOps::default()
-                },
-                pluck: self.path(&a.pluck),
-                tx: self.tx(&a.tx)?,
-                propagate: a.propagate,
-                sep: a.sep.clone().unwrap_or_else(|| " ".into()),
-                stat: self.stat(*stat)?,
-            })),
+            Field::Aggregate(a, stat) => {
+                // A plan reuses `spec::Aggregate`; `resolve` moves `transform` into `tx`.
+                debug_assert!(a.transform.is_empty());
+                Op::Aggregate(Box::new(Fold {
+                    op: a.op,
+                    input: match is_group(&a.from) {
+                        true => Input::Group,
+                        false => Input::At(self.at(&a.from)),
+                    },
+                    ops: ListOps {
+                        flatten: a.flatten.iter().map(|p| self.path(p)).collect(),
+                        filter: a.filter.as_ref().map(|c| self.cond(c)),
+                        ..ListOps::default()
+                    },
+                    pluck: self.path(&a.pluck),
+                    tx: self.tx(&a.tx)?,
+                    propagate: a.propagate,
+                    sep: a.sep.clone().unwrap_or_else(|| " ".into()),
+                    stat: self.stat(*stat)?,
+                }))
+            }
             Field::List {
                 from,
                 kind,

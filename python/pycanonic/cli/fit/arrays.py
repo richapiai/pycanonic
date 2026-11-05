@@ -1,4 +1,4 @@
-"""The rule for one canonical array (the design, step 4): the provider array it comes from, and
+"""The rule for one canonical array: the provider array it comes from, and
 whether it is a plain copy, a `pluck`, an `item` map, `wrap`, `flatten`, `group_by` or `filter`.
 
 The runtime does every mapping here. A candidate's elements come from a compiled rule, and the
@@ -24,7 +24,7 @@ from .leaves import LeafFit, _related, _segs, fit_leaf
 from .pairs import Pair
 
 FLOOR = 0.8
-KINDS = ["path", "wrap", "flatten", "group", "filter"]  # the order the brief tries them in, also the tie-break
+KINDS = ["path", "wrap", "flatten", "group", "filter"]  # the order tried in, also the tie-break
 _ANY: dict[str, Any] = {"type": "array"}  # elements are copied as they are
 _AGG = [(op, nulls) for op in ("first", "last", "min", "max") for nulls in ("skip", "propagate")]
 _G = "g"  # element pairs of a group hold its elements under this key; the rule reads them as $group

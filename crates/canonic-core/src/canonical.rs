@@ -67,7 +67,7 @@ pub enum Kind {
         items: Option<Box<Node>>,
         nested: bool,
     },
-    /// Language 2 (R55): `oneOf`, two or more titled object branches. A spec picks one per record
+    /// Language 2: `oneOf`, two or more titled object branches. A spec picks one per record
     /// with `one_of`. Each branch holds its children in schema order.
     Union { branches: Vec<Branch> },
 }
@@ -101,7 +101,7 @@ pub struct Schema {
     pub root: Vec<(String, Node)>,
     /// Language 2: the root node when it is an array, which a spec maps with the field `"[]"`.
     pub array: Option<Node>,
-    /// Language 2 (R48): `"x-shape": "strict"` at the root. A node with no usable value writes
+    /// Language 2: `"x-shape": "strict"` at the root. A node with no usable value writes
     /// its empty form (`empty_shape`).
     pub strict: bool,
 }

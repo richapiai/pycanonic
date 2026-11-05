@@ -1,5 +1,5 @@
 """The rule for one canonical leaf: the source path and transform chain that reproduce the default's
-value in the most pairs (the design, steps 1-3), with the leave-one-out holdout of step 8."""
+value in the most pairs, with a leave-one-out holdout."""
 
 from __future__ import annotations
 
@@ -264,7 +264,8 @@ def fit_leaf(
     same way, with the provider element as `provider` and `scalars(element)` as its occurrences.
 
     The holdout leaves out one sample pair at a time. For element pairs, `owners[j]` names the
-    sample pair that element `j` came from, so all elements of one response leave together, and the pair holds only if every one of its elements is reproduced."""
+    sample pair that element `j` came from, so all elements of one response leave together, and the pair holds only if every one of its
+    elements is reproduced."""
     s = _Search(field, pairs, targets, sources_by_pair, lookups_allowed, floor, owners, tol)
     every = list(range(len(pairs)))
     live = [j for j in every if targets[j] is not None]

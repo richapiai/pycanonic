@@ -42,7 +42,10 @@ class FitOptions:
     keep: dict[str, Any] = field(default_factory=dict)  # top-level field key to the approved rule
     ask: Ask | None = None
     transforms: Transforms = field(default_factory=dict)  # for kept rules that name private transforms
-    tolerance: Tolerance = field(default_factory=Tolerance)  # def _val(doc: Any, key: str) -> Any:
+    tolerance: Tolerance = field(default_factory=Tolerance)
+
+
+def _val(doc: Any, key: str) -> Any:
     """The value at a field key (`hq.city`, `jobs[]`, `[]`), or MISSING."""
     return get(doc, _segs(key.removesuffix("[]")))
 

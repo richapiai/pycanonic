@@ -71,7 +71,7 @@ def test_shape_null_vs_list() -> None:
 
 
 def test_shape_null_against_container_both_ways() -> None:
-    """an object or array against null is a shape failure in both directions, at any
+    """An object or array against null is a shape failure in both directions, at any
     depth, empty or not. An object of nulls where the default sends null breaks the contract."""
     assert shape({"loc": {"city": None, "country": None}}, {"loc": None}, {}) == [("loc", "null against object")]
     assert shape({"loc": None}, {"loc": {"city": "x"}}, {}) == [("loc", "null against object")]
@@ -177,7 +177,7 @@ def test_verify_passes_on_fit_output(tmp_path: Path) -> None:
     assert main([*args, "--min-match", "0.9"]) == 0
 
 
-# --- fix round: and review ---
+# --- skipped pairs and review ---
 
 
 def test_both_null_pairs_do_not_count() -> None:
@@ -236,7 +236,7 @@ def test_shape_checks_common_keys_when_keys_differ() -> None:
     assert shape(got, want, {}) == [("x.c", "missing key"), ("x.e", "extra key"), ("x", "key order"), ("x.a", "type number against string")]
 
 
-# --- final fix wave: and the miss list ---
+# --- unmapped leaves and the miss list ---
 
 
 def test_unmapped_leaf_listed_and_fail_flag() -> None:
@@ -272,7 +272,7 @@ def test_unmapped_and_misses_in_cli(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert main([*args, "--fail-unmapped"]) == 1
 
 
-# --- Task 12: item leaves, count rows, --ignore ---
+# --- item leaves, count rows, --ignore ---
 
 ITEMS = {
     "type": "object",

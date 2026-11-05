@@ -1,4 +1,4 @@
-"""Structure rules (the design, steps 5-7): optional objects, constants, conditions on
+"""Structure rules: optional objects, constants, conditions on
 the request inputs and proposed reject rules. Each candidate is checked through the
 runtime before it is returned."""
 
