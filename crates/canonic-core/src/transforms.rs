@@ -222,7 +222,7 @@ pub fn example(name: &str) -> Option<&'static str> {
         "split_name" => r#"{"split_name": {"part": "last", "mode": "first_word"}}"#,
         "join" => r#"{"join": ", "}"#,
         "parse_date" => r#"{"parse_date": {"formats": ["%d/%m/%Y"]}}"#,
-        "format_date" => r#"{"format_date": "%Y-%m-%d"}"#,
+        "format_date" => r#"{"format_date": "epoch_s"}"#,
         "parse_number" => r#"{"parse_number": {"units": true}}"#,
         "parse_range" => r#"{"parse_range": "max"}"#,
         "regex" => r#"{"regex": "/people/([^/?#]+)"}"#,

@@ -22,5 +22,5 @@
       }
     }
   },
-  "error": "acme items v1: fields[\"f\"]: invalid argument for format_date: got 5, expected {\"format_date\": \"%Y-%m-%d\"}"
+  "error": "acme items v1: fields[\"f\"]: invalid argument for format_date: got 5, expected {\"format_date\": \"epoch_s\"}"
 }
