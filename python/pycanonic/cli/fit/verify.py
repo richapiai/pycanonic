@@ -113,6 +113,11 @@ def _leaf_rows(node: dict[str, Any], prefix: str) -> Iterator[str]:
             yield p
 
 
+def _copies(rule: Any) -> bool:
+    """Whether a rule copies a whole value. `present`, `if_empty`, `when` and `omit` on an object do not."""
+    return isinstance(rule, str) or (isinstance(rule, dict) and bool({"from", "coalesce", "const"} & set(rule)))
+
+
 def _covers(imap: Any, rel: str, defs: dict[str, Any]) -> bool:
     """Whether an item map maps the leaf `rel`, itself or through an ancestor that copies a whole value."""
     while isinstance(imap, dict) and isinstance(imap.get("$ref"), str):
@@ -124,18 +129,42 @@ def _covers(imap: Any, rel: str, defs: dict[str, Any]) -> bool:
         r = imap.get(".".join(parts[:i]))
         if r is None:
             continue
-        if i == len(parts) or isinstance(r, str) or "item" not in r:
+        if i == len(parts) or isinstance(r, str):
             return True
-        if parts[i - 1].endswith("[]"):
-            return _covers(r["item"], ".".join(parts[i:]), defs)
+        if "item" in r:
+            if parts[i - 1].endswith("[]"):
+                return _covers(r["item"], ".".join(parts[i:]), defs)
+        elif _copies(r):
+            return True
     return False
 
 
-def _item_rows(spec_fields: dict[str, Any], schema: dict[str, Any], defs: dict[str, Any]) -> tuple[dict[str, list[str]], list[str]]:
+Link = tuple[str, str, dict[str, Any], str]  # (union node key, branch, union node, leaf below the branch)
+
+
+def _union_left(key: str, node: dict[str, Any], rule: Any, defs: dict[str, Any]) -> dict[str, Link]:
+    """The leaves of a union node's branches that the `one_of` rule's `fields` leave out, named
+    `<key>(<branch>).<leaf>`. A branch the rule does not write maps nothing."""
+    if not (isinstance(rule, dict) and "one_of" in rule):
+        return {}
+    got = {b.get("branch"): b.get("fields") or {} for b in rule["one_of"] if isinstance(b, dict)}
+    out = {}
+    for b in (b for b in node.get("oneOf") or [] if isinstance(b, dict)):
+        title = str(b.get("title", ""))
+        pre = f"{key}({title})"
+        for leaf in _leaf_rows({"properties": b.get("properties") or {}}, pre):
+            rel = leaf[len(pre) + 1 :]
+            if not leaf.endswith(" (count)") and not _covers(got.get(title, {}), rel, defs):
+                out[leaf] = (key, title, node, rel)
+    return out
+
+
+def _item_rows(spec_fields: dict[str, Any], schema: dict[str, Any], defs: dict[str, Any]) -> tuple[dict[str, list[str]], list[str], dict[str, Link]]:
     """For each list the spec maps, the count row and the leaf rows of its items, and the
-    item leaves the spec's item map leaves out, which are `unmapped` as at the top level."""
+    item leaves the spec's item map leaves out, which are `unmapped` as at the top level,
+    with the leaves that a union's branches leave out as links."""
     nodes = dict(_nodes(schema))
-    out, left = {}, []
+    out, left, links = {}, [], {}
     for k in spec_fields:
         if k.endswith("[]") and k != "[]" and k in nodes:
             items = nodes[k].get("items") or {}
@@ -150,7 +179,12 @@ def _item_rows(spec_fields: dict[str, Any], schema: dict[str, Any], defs: dict[s
                 elif not r.endswith(" (count)"):
                     left.append(r)
             out[k] = keep
-    return out, left
+            while isinstance(imap, dict) and isinstance(imap.get("$ref"), str):
+                imap = defs.get(imap["$ref"])
+            for rel, node in _nodes(items) if isinstance(imap, dict) else ():
+                if "oneOf" in node:
+                    links.update(_union_left(f"{k}.{rel}", node, imap.get(rel), defs))
+    return out, left, links
 
 
 def _walk(g: Any, w: Any, key: str, idx: str = "") -> Iterator[tuple[Any, Any, str]]:
@@ -190,11 +224,10 @@ def _mapped(rule: Any) -> Any:
 
 def _unmapped(spec_fields: dict[str, Any], schema: dict[str, Any]) -> list[str]:
     """The schema's leaves (arrays count as one) that no field key maps, by itself or through an
-    ancestor that copies a whole value (a path or a `from` rule; `present` and `if_empty` do not)."""
+    ancestor that copies a whole value (a path, `from`, `coalesce` or `const`; `present`, `if_empty`, `when` and `omit` do not)."""
 
     def copied(k: str) -> bool:
-        r = spec_fields.get(k)
-        return isinstance(r, str) or (isinstance(r, dict) and "from" in r)
+        return _copies(spec_fields.get(k))
 
     out = []
     for k, node in _nodes(schema):
@@ -235,18 +268,22 @@ def run(
     ignored = set(ignore or ())
     kept = {k: v for k, v in sf.items() if not _under(k, ignored)}
     keys = list(kept)
-    item_rows, left = _item_rows(kept, schema, spec.get("definitions") or {})
+    defs = spec.get("definitions") or {}
+    item_rows, left, links = _item_rows(kept, schema, defs)
     rows = {k: [r for r in rs if not _under(r, ignored)] for k, rs in item_rows.items()}
 
+    unions = {k: n for k, n in _nodes(schema) if k in kept and "oneOf" in n}
+    for k, n in unions.items():
+        links.update(_union_left(k, n, kept[k], defs))
+    unmapped: dict[str, list[str]] = {k: [] for k in [*_unmapped(sf, schema), *left, *links] if not _under(k, ignored)}
+
     def dropped(row: str) -> bool:  # a row with an ignored or unmapped descendant cannot compare its whole value
-        return any(i != row and _under(i, {row}) for i in [*ignored, *left])
+        return row in unmapped or any(i != row and _under(i, {row}) for i in [*ignored, *unmapped])
 
     order = [r for k in keys for r in [k, *rows.get(k, [])] if not dropped(r)]
-    unions = {k: n for k, n in _nodes(schema) if k in kept and "oneOf" in n}
     counts = {k: [0, 0] for k in order}
     near: dict[str, int] = {}
     misses: dict[str, list[str]] = {k: [] for k in order}
-    unmapped: dict[str, list[str]] = {k: [] for k in [*_unmapped(sf, schema), *left] if not _under(k, ignored)}
     failures: list[tuple[str, str, str]] = []
     rejected: list[str] = []
     wrongly: list[str] = []
@@ -280,7 +317,12 @@ def run(
             continue
         failures += [(p.name, at, msg) for at, msg in shape(out, p.default, schema) if not _under(re.sub(r"\[\d+\]", "[]", at), ignored)]
         for k in unmapped:
-            if not all(_empty(w) for _, w, _ in _walk(p.default, p.default, k)):
+            if k in links:  # a union leaf counts where the default's object is of that branch
+                nk, title, node, rel = links[k]
+                filled = any(isinstance(g, dict) and (_branch(node, g) or ("",))[0] == title and not all(_empty(w) for _, w, _ in _walk(g, g, rel)) for g, _, _ in _walk(p.default, p.default, nk))
+            else:
+                filled = not all(_empty(w) for _, w, _ in _walk(p.default, p.default, k))
+            if filled:
                 unmapped[k].append(p.name)
         for k in keys:
             score(k, _val(out, k), _val(p.default, k), p.name)

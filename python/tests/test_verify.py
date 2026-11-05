@@ -448,3 +448,58 @@ def test_verify_union_shape() -> None:
     rule = {"one_of": [{"branch": "org", "when": {"path": "k", "eq": "o"}, "fields": {"kind": {"const": "org"}, "name": "n", "size": "s"}}]}
     r = run(spec({"author": rule}), schema, pairs([({"author": org}, {"k": "o", "n": "o", "s": 1})]), 0.95, None)
     assert r.shape_failures == [] and r.fields["author(org).name"] == (1, 1) and r.ok
+
+
+# --- R43 under rule-bearing objects and union branches ---
+
+WHO = {"type": "object", "properties": {"name": S, "pic": S}}
+UNION = {"type": "object", "oneOf": [{"title": "person", "type": "object", "properties": {"id": S, "pic": S}}, {"title": "org", "type": "object", "properties": {"id": S}}]}
+GATE = {"when": {"path": "ok", "eq": True}}
+BRANCH = {"one_of": [{"branch": "person", "when": {"path": "ok", "eq": True}, "fields": {"id": "i"}}]}
+LEFT_OUT = {
+    "when object at the top": (
+        {"type": "object", "properties": {"hq": WHO}},
+        {"hq": GATE, "hq.name": "n"},
+        {"hq": {"name": "a", "pic": "p"}},
+        {"ok": True, "n": "a"},
+        "hq.pic",
+        ["hq"],
+    ),
+    "when object in items": (
+        {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "object", "properties": {"who": WHO}}}}},
+        {"items[]": {"from": "xs", "item": {"who": GATE, "who.name": "n"}}},
+        {"items": [{"who": {"name": "a", "pic": "p"}}]},
+        {"xs": [{"ok": True, "n": "a"}]},
+        "items[].who.pic",
+        ["items[]", "items[].who"],
+    ),
+    "union branch at the top": (
+        {"type": "object", "properties": {"author": UNION}},
+        {"author": BRANCH},
+        {"author": {"id": "1", "pic": "p"}},
+        {"ok": True, "i": "1"},
+        "author(person).pic",
+        ["author"],
+    ),
+    "union branch in items": (
+        {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "object", "properties": {"author": UNION}}}}},
+        {"items[]": {"from": "xs", "item": {"author": BRANCH}}},
+        {"items": [{"author": {"id": "1", "pic": "p"}}]},
+        {"xs": [{"ok": True, "i": "1"}]},
+        "items[].author(person).pic",
+        ["items[]", "items[].author"],
+    ),
+}
+
+
+@pytest.mark.parametrize("case", LEFT_OUT)
+def test_leaf_a_rule_does_not_copy_is_unmapped(case: str) -> None:
+    schema, fields, default, provider, leaf, whole = LEFT_OUT[case]
+    rows = pairs([(default, provider)] * 2)
+    s = spec(fields)
+    r = run(s, schema, rows, 0.95, None)
+    assert r.unmapped == {leaf: ["p0.json", "p1.json"]} and r.ok and r.stale_allow == []
+    assert leaf not in r.fields and not any(w in r.fields for w in whole)
+    assert not run(s, schema, rows, 0.95, None, fail_unmapped=True).ok
+    r = run(s, schema, rows, 0.95, None, fail_unmapped=True, allow={leaf: "no pic here"})
+    assert r.ok and r.allowed == {leaf: "no pic here"} and r.stale_allow == []
