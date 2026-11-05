@@ -50,7 +50,7 @@ pycanonic 0.2.0 widens spec language 2, adds strict and union canonical schemas,
 
 ### Compatibility
 
-- Every 0.1.1 spec and plan maps the same, except for the bugs listed under Fixed. A plan file that 0.1.1 wrote loads and maps the same, and the language 1 and language 2 conformance corpora pass unchanged.
+- Every 0.1.1 spec and plan maps the same, except for the bugs listed under Fixed. A plan file that 0.1.1 wrote loads and maps the same, and the language 1 and language 2 conformance corpora pass. Three language 2 error texts changed: the condition-grammar messages now list the new condition forms, and argument errors show the given argument and an example.
 - New behavior is opt-in. A language 2 rule in a language 1 spec fails the compile as before, and the CLI flags are off by default.
 - `canonic verify` is experimental. It scores more fields than in 0.1.1, so it can fail a spec that passed 0.1.1.
 

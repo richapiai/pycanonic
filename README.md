@@ -23,7 +23,11 @@ pycanonic is the wrong tool for one provider whose shape you control. It is also
 
 ## Install
 
-Until pycanonic is on PyPI, install the wheel from the GitHub release:
+```sh
+pip install pycanonic
+```
+
+Or download a wheel from the GitHub release:
 
 ```sh
 gh release download v0.2.0 --repo richapiai/pycanonic --pattern '*manylinux_2_17_x86_64*'   # pick your platform

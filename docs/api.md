@@ -50,7 +50,7 @@ This function runs the grammar check alone and returns every problem it finds. I
 
 ### `validate_canonical(schema) -> list[Issue]`
 
-This function returns what `compile_spec` rejects in a canonical schema, without a spec. The list is empty for a schema that loads.
+This function returns what `compile_spec` rejects in a canonical schema, without a spec. The list is empty for a schema that loads. It checks as language 1, so it reports a valid language 2 array of arrays as an error, and it ignores `x-empty`, `x-open`, `x-shape` and `oneOf`. See [known-limits.md](known-limits.md#validate_canonical-checks-as-language-1).
 
 ### `Issue`
 

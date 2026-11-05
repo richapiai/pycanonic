@@ -50,7 +50,11 @@ A routing field cannot sit below an object with `when`, because `extract` has no
 
 ## validate_canonical checks as language 1
 
-`validate_canonical` checks a schema as language 1. It ignores the language 2 keys `x-empty`, `x-open`, `x-shape` and `oneOf`, so it does not check them.
+`validate_canonical` checks a schema as language 1. It reports a valid language 2 array of arrays as an error, and it ignores the language 2 keys `x-empty`, `x-open`, `x-shape` and `oneOf`, so it does not check them.
+
+## A container transform on a union node fails
+
+A container transform on a node that holds a `oneOf` union always fails as a wrong shape: the node gives null and counts one error, even when the transform returns a valid value. Put the transform on the leaves inside the branches.
 
 ## Very long integers become floats
 
