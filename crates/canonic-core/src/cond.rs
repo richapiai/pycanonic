@@ -336,6 +336,7 @@ pub fn holds<D: Doc>(
         Cond::Matches(p, re) => on_str(at(p), |s| re.is_match(s)),
         Cond::StartsWith(p, t) => on_str(at(p), |s| s.starts_with(t.as_str())),
         Cond::EndsWith(p, t) => on_str(at(p), |s| s.ends_with(t.as_str())),
+        // `contains` reads a string or an array. It deliberately skips an object, which has no items.
         Cond::Contains(p, v) => at(p).is_some_and(|d| match (d.leaf(), v) {
             (V::Str(s), Value::String(t)) => s.contains(t.as_str()),
             (V::Container, v) => (0..d.len().unwrap_or(0)).any(|i| equal(d.item(i).as_ref(), v)),

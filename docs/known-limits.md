@@ -32,6 +32,18 @@ JavaScript numbers are doubles, so the TypeScript package rounds an integer abov
 
 `cast: integer` and `cast: number` on a string go through a double, as in TypeScript: `"9007199254740993"` casts to `9007199254740992`. A JSON number that is already an integer keeps its exact value through either cast, and an untransformed value is always exact.
 
+## Compares and number transforms use doubles
+
+The compares (`eq`, `lt`, `lte`, `gt`, `gte`) and the number transforms (`add`, `sub`, `mul`, `div`, `ceil_div`, `floor_div`, `min`, `max`) read an integer above 2^53 through a double. Two such integers that differ by less than one double step compare as equal.
+
+## A union inside list items is verified as a whole
+
+`canonic verify` scores a union inside list items as one whole value, not per branch leaf. A union at the top level or inside an object is scored per leaf.
+
+## validate_canonical checks as language 1
+
+`validate_canonical` checks a schema as language 1. It ignores the language 2 keys `x-empty`, `x-open`, `x-shape` and `oneOf`, so it does not check them.
+
 ## Very long integers become floats
 
 CPython refuses to convert an integer string longer than 4,300 digits. pycanonic returns such an integer as a `float` instead of raising. It is usually `inf`. For numbers that long, raise the limit with `sys.set_int_max_str_digits`.

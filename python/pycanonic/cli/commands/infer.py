@@ -21,7 +21,7 @@ USAGE = """canonic infer --schema <canonical.json> --provider <name> --endpoint 
   --min-score <n>     pairs scoring below this stay unmapped (default 0.4)
   --ask <command>     optional model pass: each unmapped or low-confidence field is sent to this shell
                       command as a JSON question on stdin; it prints one source path or null
-                      (for example --ask "claude -p"). Answers are still marked for review.
+                      (for example --ask "./ask.sh"). Answers are still marked for review.
   --out <file>        write the spec here instead of stdout"""
 
 

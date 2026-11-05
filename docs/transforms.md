@@ -360,9 +360,9 @@ These arguments fail the compile, with the field and an example: a template with
 Argument, required: `"host"`, `"path"`, `{"path_segment": <integer>}` or `{"query": "<name>"}`. It reads one part of a URL. Only a string that holds `scheme://` counts. Anything else gives null: no `://`, a scheme with characters other than letters, digits, `+`, `-` and `.`, or a value that is not a string.
 
 - `host` is the host as written (case is kept), without userinfo and without the port. An IPv6 literal keeps its brackets. An empty host gives null.
-- `path` is the percent-decoded path, from the first `/` after the host to the `?` or `#`. No path gives null. `+` stays `+`.
+- `path` is the percent-decoded path, so `%2F` becomes `/`. Use `path_segment` to read one segment. The path runs from the first `/` after the host to the `?` or `#`. No path gives null. `+` stays `+`.
 - `path_segment` is the n-th non-empty segment of the path, decoded. Zero is the first, and a negative count goes from the end (`-1` is the last). A segment past either end gives null.
-- `query` is the value of the first parameter with that name, from the text between `?` and `#`. Pairs split on `&` and names split on the first `=`. Names are compared after decoding. `+` is a space in the name and the value. A parameter with no `=` has the value `""`.
+- `query` is the value of the first parameter with that name, from the text between `?` and `#`. Pairs split on `&` and names split on the first `=`. Names are compared after decoding. `+` is a space in the name and the value. A parameter that is present but empty (`?q=` or `?q`) gives `""`.
 - A bad escape in the part that is read gives null: `%zz`, a lone `%` or `%4`, or bytes that are not UTF-8 after decoding. A bad escape in another path segment or another parameter does not matter.
 
 A null from a string counts one error.

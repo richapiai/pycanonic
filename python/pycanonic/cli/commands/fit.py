@@ -23,7 +23,8 @@ USAGE = """canonic fit --default <dir> --provider <dir> --provider-name <name> -
   --report <file>         write the report as <file>.md and <file>.json (default: Markdown to stdout)
   --transforms-out <file> write a Python stub per manual field that needs code, with doctests
   --num-tolerance <f>     count two numbers as equal when they differ by at most this share of the
-                          larger one (0.01 is 1%); a top-level field that needs it is review, not auto
+                          larger one (0.01 is 1%); a field that needs it, a leaf inside list items
+                          included, is review, not auto
   --url-ignore-query      compare two scheme:// URLs without their query (the part from ? to before #)
   --text-ignore-space     compare two texts after collapsing white space and trimming
   --align-items <default list> <provider list> --by <default id> <provider id> [--id-pattern <regex>]

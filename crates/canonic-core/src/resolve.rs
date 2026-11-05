@@ -684,7 +684,6 @@ impl Resolver<'_> {
     }
 }
 
-/// The node at a canonical path, through objects that are not open maps only.
 /// How many values a scalar rule's source gives its first transform. A `coalesce` gives one.
 pub(crate) fn source_count(source: &Source) -> usize {
     match source {
@@ -769,6 +768,7 @@ fn routed(children: &[(String, Node)]) -> bool {
     })
 }
 
+/// The node at a canonical path, through objects that are not open maps only.
 fn lookup<'a>(mut children: &'a [(String, Node)], path: &[String]) -> Option<&'a Node> {
     let mut node: Option<&Node> = None;
     for part in path {

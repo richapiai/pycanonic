@@ -92,8 +92,10 @@ An `unmapped` line names the best-scoring source and its score. It does so even 
 
 ```
 canonic infer --schema canonical/person.enrich.json --provider globex --endpoint person.enrich \
-  --ask "claude -p" --out globex.json samples/globex/
+  --ask "./ask.sh" --out globex.json samples/globex/
 ```
+
+`ask.sh` is any command that reads the question on stdin and prints an answer.
 
 The command runs once per field, through the shell, with one JSON question on stdin:
 

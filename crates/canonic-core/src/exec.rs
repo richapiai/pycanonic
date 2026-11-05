@@ -1442,6 +1442,7 @@ impl<S: Sink> Exec<'_, S> {
                 self.sink.passthrough(&&v)
             }
             // A null result for a missing source is a miss, not an error.
+            // Guard: a custom result that is null (not a fill) on a missing source is a miss.
             Some(_) if missing => self.missing_whole(w),
             _ if w.strict => {
                 self.stats.error(w.stat);

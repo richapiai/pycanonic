@@ -226,7 +226,7 @@ Grammar errors come back together in one message, each with its location:
 invalid spec: spec.status: must be one of draft, shadow, promoted, deprecated; spec.fields["email"]: needs exactly one of from, coalesce; spec.fields["skills[]"]: item and pluck can't be combined
 ```
 
-Errors against the canonical schema stop at the first one. Each names the field path, nested items included:
+Errors against the canonical schema stop at the first one. This is the language 1 text. The language 2 form of an argument error is shown below. Each names the field path, nested items included:
 
 ```
 acme person.enrich v2: fields["nickname"]: canonical schema has no field "nickname"
@@ -858,7 +858,7 @@ A definition cannot read `$group` at its top level, because a definition does no
 
 A page envelope carries the page counts next to the items. Build it from the number transforms, `len`, `$input` and an array rule. Each of `ceil_div`, `mul`, `add`, `eq` and `gte` takes one number argument on one source, or no argument on a `from` list, where it folds the sources left to right.
 
-An entry of a `from` list can be a computed source, `{"from": <path or list>, "transform": <transform>}`. It nests to any depth. Below, `last` is true when `(page + 1) * size >= total`. A computed entry takes only `from` and `transform`. Without `transform`, write the plain path. A computed entry that gives null counts as a missing source for the outer transform, and a list with every entry missing leaves the field null as a miss, not an error. A routing field can't read a computed source, and language 1 does not have the form.
+An entry of a `from` list can be a computed source, `{"from": <path or list>, "transform": <transform>}`. It nests to any depth. Below, `last` is true when `(page + 1) * size >= total`. A computed entry takes only `from` and `transform`. Without `transform`, write the plain path. A computed entry that gives null, a list or an object counts as a missing source for the outer transform, and a list with every entry missing leaves the field null as a miss, not an error. A routing field can't read a computed source, and language 1 does not have the form.
 
 <!-- run -->
 ```json

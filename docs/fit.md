@@ -196,7 +196,7 @@ Notes on the table:
 
 - `omit` does not get its own row. It is part of a `when` row. `fit` never proposes `null_if`. The `omit` and `null_if` texts are for rules a person writes.
 - A field can also print a note in front of the text, such as the closest rule for a `disagree` field or `The default's samples disagree on the empty form.` An `if_empty` field's note says that the default sent the object in all N pairs, so its empty form is a guess.
-- A manual field (`none` or `disagree`) gets a placeholder in the draft: `{"const": <empty form>}`, where the empty form is the schema node's `x-empty`, else what strict shape writes, else null. An object node gets no placeholder. The draft then has every canonical key, and `verify` lists the field as not mapped, the same as a field with no rule, until a rule replaces it. `verify` treats any `{"const": null}`, `{"const": []}` or `{"const": {}}` rule that way. The note starts with `placeholder:`.
+- A manual field (`none` or `disagree`) gets a placeholder in the draft: `{"const": <empty form>}`, where the empty form is the schema node's `x-empty`, else what strict shape writes, else null. An object node gets no placeholder. The draft then has every canonical key, and `verify` lists the field as not mapped, the same as a field with no rule, until a rule replaces it. `verify` treats any `{"const": null}`, `{"const": []}` or `{"const": {}}` rule that way, a hand-written one too. It is not scored. It counts as unmapped, so list the field with `--allow` or fail on it with `--fail-unmapped`. The note starts with `placeholder:`.
 
 No tool here catches these problems:
 
