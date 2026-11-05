@@ -207,7 +207,7 @@ def test_key_order_only_in_shape() -> None:
     schema = {"type": "object", "properties": {"jobs": {"type": "array", "items": {"type": "object", "properties": {"b": S, "a": S}}}}}
     rows = pairs([({"jobs": [{"a": "1", "b": "2"}]}, {"x": [{"a": "1", "b": "2"}]})])
     r = run(spec({"jobs[]": {"from": "x", "item": {"a": "a", "b": "b"}}}), schema, rows, 0.95, None)
-    assert r.fields == {"jobs[]": (1, 1)} and r.shape_failures == [("p0.json", "jobs[0]", "key order")]
+    assert r.fields["jobs[]"] == (1, 1) and r.shape_failures == [("p0.json", "jobs[0]", "key order")]
 
 
 def test_shape_checks_common_keys_when_keys_differ() -> None:
@@ -249,3 +249,62 @@ def test_unmapped_and_misses_in_cli(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert out["unmapped"] == {"status": {"pairs": 12}}
     assert out["fields"]["name"]["misses"] == ["p00.json", "p01.json", "p02.json", "p03.json", "p04.json"]
     assert main([*args, "--fail-unmapped"]) == 1
+
+
+# --- Task 12: item leaves, count rows, --ignore ---
+
+ITEMS = {
+    "type": "object",
+    "properties": {"name": S, "items": {"type": "array", "items": {"type": "object", "properties": {"name": S, "url": S}}}},
+}
+ITEM_SPEC = {"name": "n", "items[]": {"from": "xs", "item": {"name": "n", "url": "u"}}}
+
+
+def item_rows(lens: tuple[int, int] = (3, 3)) -> list[Pair]:
+    mk = lambda c, side: [{"name": f"i{j}", "url": f"u{j}" if side == "d" else "other"} for j in range(c)]
+    return pairs([({"name": "a", "items": mk(lens[0], "d")}, {"n": "a", "xs": [{"n": f"i{j}", "u": "other"} for j in range(lens[1])]}) for _ in range(2)])
+
+
+def test_item_leaves_scored() -> None:
+    r = run(spec(ITEM_SPEC), ITEMS, item_rows(), 0.95, None)
+    assert r.fields["items[]"] == (0, 2)
+    assert r.fields["items[].url"] == (0, 6) and r.fields["items[].name"] == (6, 6) and not r.ok
+    assert r.misses["items[].url"] == ["p0.json#0", "p0.json#1", "p0.json#2", "p1.json#0", "p1.json#1"]
+
+
+def test_item_count_row() -> None:
+    r = run(spec(ITEM_SPEC), ITEMS, item_rows((2, 3)), 0.95, None)
+    assert r.fields["items[] (count)"] == (0, 2) and r.fields["items[].name"] == (4, 4)
+
+
+def test_ignore_waives_field() -> None:
+    rows = item_rows((2, 3))
+    assert not run(spec(ITEM_SPEC), ITEMS, rows, 0.95, None).ok
+    r = run(spec(ITEM_SPEC), ITEMS, rows, 0.95, None, ignore=["items"])
+    assert list(r.fields) == ["name"] and r.ok and r.shape_failures == []
+    assert [f for f in run(spec(ITEM_SPEC), ITEMS, rows, 0.95, None).shape_failures if f[1].startswith("items")] == []
+
+
+def test_json_item_rows(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "d").mkdir()
+    (tmp_path / "p").mkdir()
+    for p in item_rows():
+        write(tmp_path / "d" / p.name, p.default)
+        write(tmp_path / "p" / p.name, p.provider)
+    s, sc = write(tmp_path / "s.json", spec(ITEM_SPEC)), write(tmp_path / "sc.json", ITEMS)
+    args = ["verify", s, "--schema", sc, "--default", str(tmp_path / "d"), "--provider", str(tmp_path / "p")]
+    assert main([*args, "--json"]) == 1
+    f = json.loads(capsys.readouterr().out)["fields"]
+    assert {"items[]", "items[] (count)", "items[].name", "items[].url"} <= set(f)
+    assert f["items[].url"]["match"] == 0 and f["items[].url"]["total"] == 6
+    assert main([*args, "--ignore", "items"]) == 0 and "items" not in capsys.readouterr().out
+
+
+def test_nested_list_and_union_leaves() -> None:
+    nested = {"type": "object", "properties": {"a": {"type": "array", "items": {"type": "object", "properties": {"b": {"type": "array", "items": {"type": "object", "properties": {"c": S}}}}}}}}
+    row = ({"a": [{"b": [{"c": "1"}, {"c": "2"}]}]}, {"x": [{"y": [{"c": "1"}, {"c": "z"}]}]})
+    r = run(spec({"a[]": {"from": "x", "item": {"b[]": {"from": "y", "item": {"c": "c"}}}}}), nested, pairs([row]), 0.0, None)
+    assert r.fields["a[].b[].c"] == (1, 2) and r.fields["a[].b[] (count)"] == (1, 1)
+    union = {"type": "object", "properties": {"u": {"type": "object", "oneOf": [{"title": "A", "type": "object", "properties": {"p": S}}, {"title": "B", "type": "object", "properties": {"q": S}}]}}}
+    r = run(spec({"u": {"one_of": [{"branch": "B", "when": {"path": "k", "eq": "b"}, "fields": {"q": "v"}}]}}), union, pairs([({"u": {"q": "1"}}, {"k": "b", "v": "1"})]), 0.95, None)
+    assert r.fields["u(B).q"] == (1, 1) and r.shape_failures == []

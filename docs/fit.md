@@ -191,13 +191,16 @@ For a manual field that needs code, `--transforms-out transforms.py` writes one 
 
 ```
 canonic verify globex.json --schema canonical.json --default samples/default/ --provider samples/new/ \
-  [--inputs samples/inputs/] [--transforms transforms.py] [--min-match 0.95] [--max-reject 0.10] [--fail-unmapped] [--json]
+  [--inputs samples/inputs/] [--transforms transforms.py] [--min-match 0.95] [--max-reject 0.10] [--fail-unmapped] [--ignore <field>] [--json]
 ```
 
 It maps each provider body through the spec and compares the output with the default's body of the same name. It checks:
 
 1. Shape, at every depth: the same keys in the same order, the same JSON types, and null against an object or an array, in both directions. An object of nulls where the default sends null fails as `null against object`. An `x-open` map can differ in keys. A null against a scalar is a value miss, not a shape failure.
 2. Values: for each field the spec maps, the share of pairs that match. Numbers compare by value (`1` equals `1.0`). Everything else compares as JSON, without regard to key order. A pair where both sides are null counts neither way, so a field's total counts only pairs where one side has a value. Fields that the spec does not map are left out of the value check.
+
+   For each list the spec maps, `verify` also scores every leaf inside the items, by position and up to the shorter length (`items[].name`, and `a[].b[].c` for nested lists). A union field is scored per leaf of the branch that fits the default, as `<node>(<branch>).<leaf>`. Each list also gets a count row, `items[] (count)`, which matches when both lengths are equal or both sides are null or empty. The whole-list row stays. Every row gates on `--min-match`, so one item leaf that always differs now fails the run. A miss in an item row is listed as `<pair>#<index>`.
+   `--ignore <field>` takes a field and everything below it out of the scoring and the shape check. `--ignore items` drops `items[]`, `items[].name`, `items[] (count)` and their shape failures. Repeat the flag for more fields.
 3. Rejects: every rejected pair is listed. A rejected pair fails the run in one case: the spec without its reject rules maps that pair to exactly the default's output, so the reject threw away a correct answer. If the spec rejects more than `--max-reject` of the pairs (default 10%), the run fails too.
 4. Skipped pairs: a pair on one side only, or a body that is not JSON, fails the run.
 5. Leaves the spec does not map: each canonical leaf that the spec leaves out but the default fills is listed, for example `not mapped: status (12 pairs with a value)`. They do not fail the run, because the provider can lack a field on purpose. With `--fail-unmapped`, they do.

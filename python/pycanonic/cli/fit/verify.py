@@ -3,7 +3,8 @@ gate a provider. Rejects follow , not the design."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -73,8 +74,60 @@ def shape(got: Any, want: Any, node: dict[str, Any], path: str = "$") -> list[tu
     common = [k for k in want if k in got]
     if [k for k in got if k in want] != common:
         out.append((path, "key order"))
-    props = node.get("properties") or {}
+    props = (_branch(node, want) or ("", {}))[1] if "oneOf" in node else node.get("properties") or {}
     return out + [f for k in common for f in shape(got[k], want[k], props.get(k) or {}, _at(path, k))]
+
+
+def _branch(node: dict[str, Any], obj: Any) -> tuple[str, dict[str, Any]] | None:
+    """(title, properties) of the union branch whose keys equal the object's, else the first branch."""
+    bs = [b for b in node.get("oneOf") or [] if isinstance(b, dict)]
+    hit = next((b for b in bs if isinstance(obj, dict) and set(b.get("properties") or {}) == set(obj)), bs[0] if bs else None)
+    return None if hit is None else (str(hit.get("title", "")), hit.get("properties") or {})
+
+
+def _leaf_rows(node: dict[str, Any], prefix: str) -> Iterator[str]:
+    """Row keys for the leaves of an object node, nested lists as `a[].b[] (count)` and their leaves."""
+    for name, sub in (node.get("properties") or {}).items():
+        sub = sub if isinstance(sub, dict) else {}
+        p = f"{prefix}.{name}"
+        if sub.get("type") == "array":
+            yield p + "[] (count)"
+            items = sub.get("items") or {}
+            if "properties" in items and not items.get("x-open"):
+                yield from _leaf_rows(items, p + "[]")
+            else:
+                yield p + "[]"
+        elif "properties" in sub and not sub.get("x-open"):
+            yield from _leaf_rows(sub, p)
+        else:
+            yield p
+
+
+def _item_rows(spec_fields: dict[str, Any], schema: dict[str, Any]) -> dict[str, list[str]]:
+    """For each list the spec maps, the count row and the leaf rows of its items."""
+    nodes = dict(_nodes(schema))
+    out = {}
+    for k in spec_fields:
+        if k.endswith("[]") and k != "[]" and k in nodes:
+            items = nodes[k].get("items") or {}
+            out[k] = [k + " (count)"] + (list(_leaf_rows(items, k)) if "properties" in items and not items.get("x-open") else [])
+    return out
+
+
+def _walk(g: Any, w: Any, key: str, idx: str = "") -> Iterator[tuple[Any, Any, str]]:
+    """The (default-side, mapped-side, item index) values at `key`, pairing list items by position."""
+    head, sep, rest = key.partition("[]")
+    if not sep or not rest:
+        yield _val(g, key), _val(w, key), idx
+        return
+    gl, wl = _val(g, head), _val(w, head)
+    if isinstance(gl, list) and isinstance(wl, list):
+        for i, (a, b) in enumerate(zip(gl, wl)):
+            yield from _walk(a, b, rest.lstrip("."), f"{idx}.{i}" if idx else str(i))
+
+
+def _under(key: str, ignored: set[str]) -> bool:
+    return any(key == i or (key.startswith(i) and key[len(i)] in ".[ (") for i in ignored)
 
 
 def _sorted(v: Any) -> Any:
@@ -111,21 +164,45 @@ def run(
     max_reject: float = 0.10,
     skipped: list[tuple[str, str]] | None = None,
     fail_unmapped: bool = False,
+    ignore: list[str] | None = None,
 ) -> VerifyResult:
     """Maps every pair. A rejected pair counts in no field. It fails only if the spec without its
     reject rules maps it to exactly the default's output, or if over `max_reject` of the pairs are
     rejected. A field counts only pairs where either side has a value, and any
     `skipped` pair fails the run. A leaf the spec does not map but the default fills is
-    listed, and fails the run only with `fail_unmapped`."""
+    listed, and fails the run only with `fail_unmapped`. A list also scores each leaf of its
+    items by position and a count row; `ignore` drops a field and all below it."""
     art = _api.compile_spec(spec, schema, transforms=transforms)
     loose = _api.compile_spec({k: v for k, v in spec.items() if k != "reject"}, schema, transforms=transforms) if spec.get("reject") else None
-    keys = list(spec.get("fields") or {})
-    counts = {k: [0, 0] for k in keys}
-    misses: dict[str, list[str]] = {k: [] for k in keys}
-    unmapped = dict.fromkeys(_unmapped(spec.get("fields") or {}, schema), 0)
+    sf = spec.get("fields") or {}
+    ignored = set(ignore or ())
+    kept = {k: v for k, v in sf.items() if not _under(k, ignored)}
+    keys = list(kept)
+    rows = {k: [r for r in rs if not _under(r, ignored)] for k, rs in _item_rows(kept, schema).items()}
+    order = [r for k in keys for r in [k, *rows.get(k, [])]]
+    unions = {k: n for k, n in _nodes(schema) if k in kept and "oneOf" in n}
+    counts = {k: [0, 0] for k in order}
+    misses: dict[str, list[str]] = {k: [] for k in order}
+    unmapped = dict.fromkeys((k for k in _unmapped(sf, schema) if not _under(k, ignored)), 0)
     failures: list[tuple[str, str, str]] = []
     rejected: list[str] = []
     wrongly: list[str] = []
+
+    def score(row: str, got: Any, want: Any, tag: str) -> None:
+        if row.endswith(" (count)"):
+            if not (isinstance(got, list) or isinstance(want, list)):
+                return
+            hit = len(got if isinstance(got, list) else []) == len(want if isinstance(want, list) else [])
+        elif (got is None or got is MISSING) and (want is None or want is MISSING):
+            return  # both null: neither a match nor a miss
+        else:
+            hit = _eq(_sorted(got), _sorted(want))
+        c = counts.setdefault(row, [0, 0])
+        c[0] += hit
+        c[1] += 1
+        if not hit and len(misses.setdefault(row, [])) < 5:
+            misses[row].append(tag)
+
     for p in pairs:
         try:
             out = art.map(p.provider, context=p.inputs)
@@ -134,21 +211,26 @@ def run(
             if loose is not None and same(loose.map(p.provider, context=p.inputs), p.default):
                 wrongly.append(p.name)
             continue
-        failures += [(p.name, at, msg) for at, msg in shape(out, p.default, schema)]
+        failures += [(p.name, at, msg) for at, msg in shape(out, p.default, schema) if not _under(re.sub(r"\[\d+\]", "[]", at), ignored)]
         for k in unmapped:
             unmapped[k] += not _empty(_val(p.default, k))
         for k in keys:
-            got, want = _val(out, k), _val(p.default, k)
-            if (got is None or got is MISSING) and (want is None or want is MISSING):
-                continue  # both null: neither a match nor a miss
-            hit = _eq(_sorted(got), _sorted(want))
-            counts[k][0] += hit
-            counts[k][1] += 1
-            if not hit and len(misses[k]) < 5:
-                misses[k].append(p.name)
+            score(k, _val(out, k), _val(p.default, k), p.name)
+            for row in rows.get(k, []):
+                base = row.removesuffix(" (count)")
+                for got, want, idx in _walk(out, p.default, base):
+                    score(row, got, want, f"{p.name}#{idx}" if idx else p.name)
+        for k, node in unions.items():
+            b = _branch(node, _val(p.default, k))
+            if b is not None and isinstance(_val(p.default, k), dict):
+                for leaf in _leaf_rows({"properties": b[1]}, f"{k}({b[0]})"):
+                    if not leaf.endswith(" (count)") and not _under(leaf, ignored):
+                        src = leaf.replace(f"({b[0]})", "", 1)
+                        score(leaf, _val(out, src), _val(p.default, src), p.name)
     fields = {k: (m, t) for k, (m, t) in counts.items()}
+    misses = {k: v for k, v in misses.items() if v}
     unmapped = {k: n for k, n in unmapped.items() if n}
     share = len(rejected) / len(pairs) if pairs else 0.0
     ok = not skipped and not failures and not wrongly and share <= max_reject and all(t == 0 or m / t >= min_match for m, t in fields.values())
     ok = ok and not (fail_unmapped and unmapped)
-    return VerifyResult(failures, fields, rejected, ok, wrongly, {k: v for k, v in misses.items() if v}, unmapped)
+    return VerifyResult(failures, fields, rejected, ok, wrongly, misses, unmapped)

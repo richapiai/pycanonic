@@ -14,7 +14,8 @@ USAGE = """canonic verify <spec.json> --schema <file> --default <dir> --provider
 
   Maps each provider body through the spec and compares the output with the default's body of
   the same name. It checks the shape at every depth (keys, key order, JSON types, null against
-  an object or array; an x-open map may differ in keys) and, per mapped field, the share of pairs that
+  an object or array; an x-open map may differ in keys) and, per mapped field, per leaf inside list items (`items[].name`, by position) and per list
+  length (`items[] (count)`), the share of pairs that
   match. A rejected pair fails only if the spec without its reject rules maps it to exactly the
   default's body, or if too many pairs are rejected. A skipped pair (on one side only, or not
   JSON) fails too. A leaf the spec does not map but the default fills is listed as not mapped.
@@ -25,6 +26,8 @@ USAGE = """canonic verify <spec.json> --schema <file> --default <dir> --provider
   --transforms <file>  the custom transforms the spec names (a Python module)
   --min-match <f>      share of pairs each mapped field must match (default 0.95)
   --max-reject <f>     share of pairs the spec may reject (default 0.10)
+  --ignore <field>     leave a field and everything below it out of the scoring and the shape
+                       check; repeat for more (`items` covers `items[]`, `items[].x`, `items[] (count)`)
   --fail-unmapped      fail when the default fills a leaf the spec does not map
   --json               print the result as JSON instead of a table"""
 
@@ -50,6 +53,7 @@ def run(args: list[str], transforms: Transforms) -> int:
     p.add_argument("--min-match", type=float, default=0.95)
     p.add_argument("--max-reject", type=float, default=0.10)
     p.add_argument("--json", action="store_true")
+    p.add_argument("--ignore", action="append", default=[])
     p.add_argument("--fail-unmapped", action="store_true")
     p.add_argument("spec", nargs="?")
     a = p.parse_intermixed_args(args)
@@ -59,7 +63,7 @@ def run(args: list[str], transforms: Transforms) -> int:
     if not pairs:
         print("verify: no pairs", file=sys.stderr)
         return 2
-    r = verify.run(read_json(a.spec), read_json(a.schema), pairs, a.min_match, transforms, a.max_reject, skipped, a.fail_unmapped)
+    r = verify.run(read_json(a.spec), read_json(a.schema), pairs, a.min_match, transforms, a.max_reject, skipped, a.fail_unmapped, a.ignore)
     if a.json:
         sys.stdout.write(json.dumps(r.to_json(len(pairs), skipped), indent=2, ensure_ascii=False) + "\n")
     else:
