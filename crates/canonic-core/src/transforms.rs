@@ -15,6 +15,12 @@ use std::borrow::Cow;
 pub trait Transform: Send + Sync {
     fn apply<'a>(&self, v: Value<'a>, arg: Option<&serde_json::Value>) -> Value<'a>;
 
+    /// `apply`, but `None` when the transform failed (a Python exception), so a caller can count
+    /// an error. A `Null` result is not a failure. The default cannot fail.
+    fn try_apply<'a>(&self, v: Value<'a>, arg: Option<&serde_json::Value>) -> Option<Value<'a>> {
+        Some(self.apply(v, arg))
+    }
+
     /// A custom transform's object or array input (a several-path `from` is an array), as JSON,
     /// since JavaScript hands the injected function the real object. The default calls `apply` with
     /// `Value::Container`. Integers past i64 inside the container arrive as floats.

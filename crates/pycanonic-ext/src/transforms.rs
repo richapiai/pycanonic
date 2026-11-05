@@ -93,6 +93,11 @@ impl Transform for PyTransform {
         Python::attach(|py| self.scalar(py, value(py, &v), arg))
     }
 
+    fn try_apply<'a>(&self, v: Value<'a>, arg: Option<&J>) -> Option<Value<'a>> {
+        // A dict or list result stays `Container`, so the caller can reject it.
+        Python::attach(|py| self.call(py, value(py, &v), arg, |r| Some(leaf(r).into_owned())))
+    }
+
     fn apply_container(&self, v: &J, arg: Option<&J>) -> Value<'static> {
         Python::attach(|py| self.scalar(py, json_to_py(py, v), arg))
     }

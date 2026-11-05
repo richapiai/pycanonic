@@ -1115,7 +1115,7 @@ impl<S: Sink> Exec<'_, S> {
             Src::From(p) => match f.read(*p) {
                 Some(d) => Some(self.single(l, &d)),
                 // R54: a null result is a miss, not an error.
-                None if l.on_missing => self.on_null(l).map(Some),
+                None if l.on_missing => self.on_null(l),
                 None => None,
             },
             Src::Coalesce(ps) => ps
@@ -1143,12 +1143,22 @@ impl<S: Sink> Exec<'_, S> {
         }
     }
 
-    /// R54: the first transform on null, then the rest as `pipe` runs them. Null is a miss.
-    fn on_null(&mut self, l: &Leaf) -> Option<S::Out> {
+    /// R54: the first transform on null, then the rest as `pipe` runs them. `None`: a null result,
+    /// a miss. `Some(None)`: a raise or a container result, a rejection.
+    fn on_null(&mut self, l: &Leaf) -> Option<Option<S::Out>> {
         let (first, rest) = l.tx.split_first()?;
-        match pipe(self.custom, rest, apply(self.custom, first, Value::Null)) {
-            Value::Null | Value::Container => None,
-            v => Some(self.sink.scalar(v)),
+        let v = match first {
+            TxRef::Builtin(b) => Some(b.apply(Value::Null, None)),
+            TxRef::Custom { index, arg, .. } => self.custom.get(*index).and_then(|f| {
+                catch_unwind(AssertUnwindSafe(|| f.try_apply(Value::Null, arg.as_ref())))
+                    .ok()
+                    .flatten()
+            }),
+        };
+        match v.map(|v| pipe(self.custom, rest, v)) {
+            Some(Value::Null) => None,
+            None | Some(Value::Container) => Some(None),
+            Some(v) => Some(Some(self.sink.scalar(v))),
         }
     }
 

@@ -298,6 +298,18 @@ def test_on_missing_null_result_is_a_miss_not_an_error():
     assert a.stats_snapshot()["fields"]["slug"]["errors"] == 0
 
 
+def test_on_missing_raise_counts_an_error():
+    import pycanonic
+
+    schema = {"type": "object", "properties": {"slug": {"type": "string"}}}
+    spec = _on_missing_spec({"slug": {"from": "name", "transform": "f", "on_missing": "transform"}})
+    for f, errors in [(lambda v: v.upper(), 1), (lambda v: {"a": 1}, 1), (lambda v: None, 0)]:
+        a = pycanonic.compile_spec(spec, schema, transforms={"f": f})
+        assert a.map({}) == {"slug": None}
+        assert a.stats_snapshot()["fields"]["slug"]["errors"] == errors
+    assert "| on_missing" in a.source
+
+
 def test_on_missing_routing_field_fails_compile():
     import pycanonic
 
