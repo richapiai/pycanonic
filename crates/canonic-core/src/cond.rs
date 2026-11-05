@@ -432,6 +432,9 @@ fn text(mut v: Value) -> String {
                 m.values_mut().for_each(canon);
             }
             Value::Array(a) => a.iter_mut().for_each(canon),
+            // An integer keeps its exact text. Two integers past 2^53 that round to the same
+            // double are still different keys.
+            Value::Number(n) if n.is_i64() || n.is_u64() => {}
             Value::Number(n) => {
                 // Past 2^63 an integral float stays float text, so it equals no integer.
                 if let Some(f) = n.as_f64().filter(|f| f.fract() == 0.0 && f.abs() < 9.2e18) {

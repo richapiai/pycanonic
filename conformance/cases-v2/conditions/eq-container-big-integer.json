@@ -1,0 +1,52 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "draft",
+    "fields": {
+      "x": {
+        "const": 1,
+        "when": {
+          "path": "a",
+          "eq": {
+            "id": 1234567890123456789
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "x": {
+        "type": "number"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "a": {
+          "id": 1234567890123456790
+        }
+      },
+      "context": null,
+      "expected": {
+        "x": null
+      }
+    },
+    {
+      "body": {
+        "a": {
+          "id": 1234567890123456789
+        }
+      },
+      "context": null,
+      "expected": {
+        "x": 1
+      }
+    }
+  ]
+}

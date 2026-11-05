@@ -1,0 +1,82 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "draft",
+    "fields": {
+      "l[]": {
+        "from": "xs",
+        "group_by": "k",
+        "consecutive": false,
+        "item": {
+          "id": "k",
+          "n": {
+            "aggregate": "count",
+            "from": "$group"
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "l": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "number"
+            },
+            "n": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "xs": [
+          {
+            "k": 1234567890123456789
+          },
+          {
+            "k": 1234567890123456790
+          },
+          {
+            "k": 1234567890123456789
+          },
+          {
+            "k": 1
+          },
+          {
+            "k": 1.0
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "l": [
+          {
+            "id": 1234567890123456789,
+            "n": 2
+          },
+          {
+            "id": 1234567890123456790,
+            "n": 1
+          },
+          {
+            "id": 1,
+            "n": 2
+          }
+        ]
+      }
+    }
+  ]
+}

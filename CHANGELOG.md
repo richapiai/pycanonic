@@ -34,9 +34,13 @@ pycanonic 0.2.0 widens spec language 2, adds strict and union canonical schemas,
 - An `if_empty` row of the fit report says once that the object's empty form is a guess.
 - `canonic verify` lists a leaf that the spec leaves out below an object with `when`, `omit`, `present` or `if_empty`, or in a union branch, as unmapped, so `--allow` covers it and `--fail-unmapped` gates it.
 
+### Fixed
+
+- `group_by`, `unique` and a condition `eq` against an array or object now compare integers exactly. Before, two integers above 2^53 that round to the same double, such as the IDs `1234567890123456789` and `1234567890123456790`, merged into one group or one `unique` element. An integral float such as `1.0` still equals the integer `1`.
+
 ### Compatibility
 
-- Every 0.1.1 spec and plan maps the same. A plan file that 0.1.1 wrote loads and maps the same, and the language 1 and language 2 conformance corpora pass unchanged.
+- Every 0.1.1 spec and plan maps the same, except for the bugs listed under Fixed. A plan file that 0.1.1 wrote loads and maps the same, and the language 1 and language 2 conformance corpora pass unchanged.
 - New behavior is opt-in. A language 2 rule in a language 1 spec fails the compile as before, and the CLI flags are off by default.
 - `canonic verify` is experimental. It scores more fields than in 0.1.1, so it can fail a spec that passed 0.1.1.
 
