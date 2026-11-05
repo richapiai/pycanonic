@@ -41,7 +41,8 @@ USAGE = """canonic verify <spec.json> --schema <file> --default <dir> --provider
                        verify the items of a list: pair the elements of the two lists by id (the
                        digits of the id, or group 1 of the regex, else the whole match) as pairs named
                        `<pair>#<n>`, and map each provider item through the spec against the item
-                       schema. --schema and the spec are item-level. The report counts matched,
+                       schema. --schema is the whole-response schema (it is cut to the list's items); the spec
+                       is item-level. The report counts matched,
                        default-only and provider-only items per pair
   --json               print the result as JSON instead of a table"""
 

@@ -89,7 +89,7 @@ def item_schema(schema: dict[str, Any], default_list: str) -> dict[str, Any]:
     items = node.get("items") if isinstance(node, dict) and node.get("type") == "array" else None
     if not (isinstance(items, dict) and items.get("type") == "object"):
         raise ValueError(f"--align-items {default_list}: expected a path to an array of objects in the schema, such as data.items")
-    return items
+    return {**items, "x-shape": schema["x-shape"]} if "x-shape" in schema else items
 
 
 def from_args(a: argparse.Namespace, pairs: list[Pair], schema: dict[str, Any]) -> tuple[list[Pair], dict[str, Any], list[AlignCount]]:

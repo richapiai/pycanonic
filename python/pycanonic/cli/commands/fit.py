@@ -31,7 +31,8 @@ USAGE = """canonic fit --default <dir> --provider <dir> --provider-name <name> -
                           lists by id, in the default list's order, as pairs named `<pair>#<n>`. The
                           list paths are dotted (`data.items`), the id paths are relative to an element.
                           The id is its digits (`urn:example:item:7` and "7" match), or group 1 of the
-                          regex, or the whole match. --schema, --keep and the spec are item-level.
+                          regex, or the whole match. --schema is the whole-response schema (it is cut to the list's
+                          items); --keep and the spec are item-level.
                           The report counts matched, default-only and provider-only items per pair"""
 
 

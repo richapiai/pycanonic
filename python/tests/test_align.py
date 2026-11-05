@@ -124,3 +124,23 @@ def test_verify_aligned(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
 def test_bad_flags_exit_2(tmp_path: Path, extra: list[str]) -> None:
     corpus(tmp_path)
     assert main(fit_args(tmp_path, *extra)) == 2
+
+
+def test_item_schema_keeps_strict_and_verify_uses_it(tmp_path: Path) -> None:
+    schema = {"x-shape": "strict", **derive_schema([{"items": [{"id": "1", "tags": ["a"]}]}])}
+    assert item_schema(schema, "items")["x-shape"] == "strict"
+    assert "x-shape" not in item_schema({k: v for k, v in schema.items() if k != "x-shape"}, "items")
+    (tmp_path / "d").mkdir()
+    (tmp_path / "p").mkdir()
+    for i in range(3):
+        (tmp_path / "d" / f"r{i}.json").write_text(json.dumps({"items": [{"id": "urn:example:item:1", "tags": []}]}))
+        (tmp_path / "p" / f"r{i}.json").write_text(json.dumps({"results": [{"id": "1"}]}))
+    spec = {"language": 2, "provider": "g", "endpoint": "e", "version": 1, "status": "draft", "fields": {"id": "id"}}
+    (tmp_path / "spec.json").write_text(json.dumps(spec))
+
+    def code(sch: dict[str, Any]) -> int:
+        (tmp_path / "s.json").write_text(json.dumps(sch))
+        return main(["verify", str(tmp_path / "spec.json"), "--schema", str(tmp_path / "s.json"), "--default", str(tmp_path / "d"), "--provider", str(tmp_path / "p"), "--align-items", "items", "results", "--by", "id", "id", "--ignore", "id"])
+
+    assert code(schema) == 0  # strict: the unmapped tags are []
+    assert code({k: v for k, v in schema.items() if k != "x-shape"}) == 1  # plain: tags is null against []

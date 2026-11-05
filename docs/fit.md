@@ -149,11 +149,11 @@ canonic fit --default samples/default/ --provider samples/new/ --provider-name g
   --align-items data.items results --by id id
 ```
 
-The list paths are dotted (`data.items`) and the id paths are relative to one element. The id is the digits of the id as text, so `urn:example:item:752` and `"752"` match. An id with no digits has no match. With `--id-pattern`, the id is group 1 of the regex if it has one, else the whole match, and a value that does not match has no id. A bad regex exits 2. `--by` is required.
+The list paths are dotted (`data.items`) and the id paths are relative to one element. The id is the digits of the id as text, so `urn:example:item:752` and `"752"` match. Every digit counts: `urn:example:v2:item:752` gives `2752`, so use `--id-pattern 'item:(\d+)'` for ids like that. An id with no digits has no match. With `--id-pattern`, the id is group 1 of the regex if it has one, else the whole match, and a value that does not match has no id. A bad regex exits 2. `--by` is required.
 
 For each sample pair, the first element of each id on each side is paired, in the default list's order, as `<pair>#<n>`. Each item pair keeps the inputs of its response. A second element with the same id on one side counts as unmatched. A list that is missing or not a list on one side gives 0 matched.
 
-The schema and the spec are item-level: `--schema` (or the one derived from the default samples) is cut down to the list's items, which must be an object, and the draft spec maps one item. `verify` maps each provider item through the spec against that item schema. `--num-tolerance`, `--ignore`, `--allow` and the other flags work on the item pairs. The report lists `aligned` per sample pair, with the matched, default-only and provider-only counts, in the text output and in `--json`.
+`--schema` is the whole-response schema (or the one derived from the default samples). It is cut down to the list's items, which must be an object, and a root `x-shape` carries over. The draft spec and `--keep` are item-level and map one item. `verify` maps each provider item through the spec against that item schema. `--num-tolerance`, `--ignore`, `--allow` and the other flags work on the item pairs. The report lists `aligned` per sample pair, with the matched, default-only and provider-only counts, in the text output and in `--json`.
 
 ## What is decided automatically, and what can break
 
