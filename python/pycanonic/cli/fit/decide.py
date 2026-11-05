@@ -22,13 +22,13 @@ def tier(fit: LeafFit, *, min_auto: float = 0.95, min_pairs: int = 5, floor: flo
     holdout at `min_auto` or more, and default samples that agree on the empty form (no
     `mixed_empty`), and two or more distinct values in the default (no `one_value`: a path that
     gives one value tells nothing that a constant does not). Below `floor` support, or with no
-    rule, it is manual."""
+    rule, it is manual. A field that needed a tolerance on any pair is review at most."""
     if fit.kind in MANUAL:
         return "manual"
     if fit.kind in REVIEW or (fit.kind == "empty" and (fit.mixed_empty or fit.one_value)):  # the design sends mixed empty forms to review
         return "review"
     if fit.total and fit.support < floor * fit.total:
         return "manual"
-    if fit.kind in AUTO and not fit.mixed_empty and not fit.one_value and fit.total >= min_pairs and fit.support >= min_auto * fit.total and fit.holdout >= min_auto:
+    if fit.kind in AUTO and not fit.mixed_empty and not fit.one_value and fit.total >= min_pairs and fit.support >= min_auto * fit.total and fit.holdout >= min_auto and not fit.tolerated:
         return "auto"
     return "review"

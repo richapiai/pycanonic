@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any, NoReturn, TypeGuard
 
 from .._api import Transform
+from .fit.compare import Tolerance
 
 Transforms = dict[str, Transform]
 """Deployment-private transforms loaded by --transforms."""
@@ -30,6 +31,19 @@ class _Parser(argparse.ArgumentParser):
 def parser(usage: str) -> argparse.ArgumentParser:
     """An argparse parser that raises `ValueError` (one line, exit 2) instead of exiting."""
     return _Parser(usage=usage, add_help=False, allow_abbrev=False)
+
+
+def add_tolerance(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--num-tolerance", type=float, default=0.0)
+    p.add_argument("--url-ignore-query", action="store_true")
+    p.add_argument("--text-ignore-space", action="store_true")
+
+
+def tolerance(a: argparse.Namespace) -> Tolerance:
+    """The `Tolerance` of the three flags."""
+    if not a.num_tolerance >= 0:  # also catches nan
+        raise ValueError(f"--num-tolerance {a.num_tolerance}: expected a relative number of 0 or more, such as 0.01")
+    return Tolerance(a.num_tolerance, a.url_ignore_query, a.text_ignore_space)
 
 
 def read_text(path: str) -> str:

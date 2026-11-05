@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ... import _api
-from .compare import same
+from .compare import Tolerance, match, same
 
 # The design's safe list first, then the transforms that always go to review. `lookup` is learned
 # over all pairs in leaves.py. `null_if` cannot produce a non-null target, and `replace` is covered
@@ -176,21 +176,22 @@ def _steps(v: Any, w: str, want: str | None) -> list[tuple[str, Any]]:
     return out
 
 
-def candidates(target: Any, source: Any) -> list[Chain]:
-    """Every chain of length 0, 1 or 2 that maps `source` to `target`, by length, then ORDER."""
+def candidates(target: Any, source: Any, tol: Tolerance = Tolerance()) -> list[Chain]:
+    """Every chain of length 0, 1 or 2 that maps `source` to `target` (within `tol`), by length, then ORDER."""
+    ok = lambda a, b: match(a, b, tol) != "miss"
     want = _kind(target)
     if want == "other" or source is None:
         return []
     w = text(target)
-    found = [Chain()] if same(source, target) else []
+    found = [Chain()] if ok(source, target) else []
     for st in _steps(source, w, want):
-        if same(apply(Chain([st]), source), target):
+        if ok(apply(Chain([st]), source), target):
             found.append(Chain([st]))
     for first in _steps(source, w, None):
         mid = apply(Chain([first]), source)
         if mid is None or same(mid, source) or same(mid, target):
             continue
         for second in _steps(mid, w, want):
-            if same(apply(Chain([second]), mid), target):
+            if ok(apply(Chain([second]), mid), target):
                 found.append(Chain([first, second]))
     return found

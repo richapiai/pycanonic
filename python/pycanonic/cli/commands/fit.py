@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..fit import fit
-from ..io import Transforms, UsageError, parser
+from ..io import Transforms, UsageError, add_tolerance, parser
 
 USAGE = """canonic fit --default <dir> --provider <dir> --provider-name <name> --endpoint <name> --out <file> [options]
 
@@ -21,7 +21,11 @@ USAGE = """canonic fit --default <dir> --provider <dir> --provider-name <name> -
   --min-auto <f>          support and holdout share an auto field needs (default 0.95)
   --min-pairs <n>         pairs with a value an auto field needs (default 5)
   --report <file>         write the report as <file>.md and <file>.json (default: Markdown to stdout)
-  --transforms-out <file> write a Python stub per manual field that needs code, with doctests"""
+  --transforms-out <file> write a Python stub per manual field that needs code, with doctests
+  --num-tolerance <f>     count two numbers as equal when they differ by at most this share of the
+                          larger one (0.01 is 1%); a top-level field that needs it is review, not auto
+  --url-ignore-query      compare two scheme:// URLs without their query (the part from ? to before #)
+  --text-ignore-space     compare two texts after collapsing white space and trimming"""
 
 
 def run(args: list[str], transforms: Transforms) -> int:
@@ -31,6 +35,7 @@ def run(args: list[str], transforms: Transforms) -> int:
     p.add_argument("--strict", action="store_true")
     p.add_argument("--min-auto", type=float, default=0.95)
     p.add_argument("--min-pairs", type=int, default=5)
+    add_tolerance(p)
     a = p.parse_args(args)
     if not (a.default and a.provider and a.provider_name and a.endpoint and a.out):
         raise UsageError(USAGE)

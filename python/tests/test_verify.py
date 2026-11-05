@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from pycanonic.cli.__main__ import main
+from pycanonic.cli.fit.compare import Tolerance
 from pycanonic.cli.fit.derive import derive_schema
 from pycanonic.cli.fit.pairs import Pair
 from pycanonic.cli.fit.verify import run, shape
@@ -390,3 +391,28 @@ def test_unmapped_lists_pairs(tmp_path: Path, capsys: pytest.CaptureFixture[str]
     assert "not mapped: status (3 pairs with a value: p0.json, p2.json, p3.json)" in capsys.readouterr().out
     main([*args, "--json"])
     assert json.loads(capsys.readouterr().out)["unmapped"] == {"status": {"pairs": 3, "examples": ["p0.json", "p2.json", "p3.json"]}}
+
+
+def test_verify_tolerated_counts(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    rows = pairs([({"n": 1000 + i}, {"c": 1001 + i}) for i in range(5)])
+    schema = derive_schema([p.default for p in rows])
+    assert not run(spec({"n": "c"}), schema, rows, 0.95, None).ok
+    r = run(spec({"n": "c"}), schema, rows, 0.95, None, tolerance=Tolerance(num=0.01))
+    assert r.ok and r.fields["n"] == (5, 5) and r.tolerated == {"n": 5}
+    assert r.to_json(5, [])["fields"]["n"]["tolerated"] == 5
+    d, p = tmp_path / "d", tmp_path / "p"
+    d.mkdir(), p.mkdir()
+    for i in range(5):
+        (d / f"{i}.json").write_text(json.dumps({"n": 1000 + i}))
+        (p / f"{i}.json").write_text(json.dumps({"c": 1001 + i}))
+    s, sc = tmp_path / "s.json", tmp_path / "sc.json"
+    s.write_text(json.dumps(spec({"n": "c"})))
+    sc.write_text(json.dumps(schema))
+    args = ["verify", str(s), "--schema", str(sc), "--default", str(d), "--provider", str(p)]
+    assert main(args) == 1
+    capsys.readouterr()
+    main([*args, "--json"])
+    assert "tolerated" not in json.loads(capsys.readouterr().out)["fields"]["n"]
+    assert main([*args, "--num-tolerance", "0.01"]) == 0
+    assert "5/5  1.00  tolerated 5" in capsys.readouterr().out
+    assert main([*args, "--num-tolerance", "-1"]) == 2

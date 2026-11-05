@@ -14,7 +14,7 @@ from ..infer.score import Leaf, ScoreCtx, name_score
 from ..infer.sources import Source
 from ..infer.tokens import SEED
 from .chains import ORDER, SAFE, Chain, apply, apply_rule, candidates, text
-from .compare import same
+from .compare import Tolerance, match, same, used
 from .index import Occurrence
 from .pairs import Pair
 
@@ -38,6 +38,7 @@ class LeafFit:
     alternatives: list[dict[str, Any]]
     mixed_empty: bool = False  # the default's samples disagree on the empty form: never auto
     one_value: bool = False  # the default sent one value or none in every pair: never auto
+    tolerated: str | None = None  # the flags some pair matched only within: never auto
 
 
 @dataclass(frozen=True)
@@ -78,9 +79,9 @@ def _digits(s: str) -> str:
     return re.sub(r"\D", "", s)
 
 
-def _related(v: Any, t: Any) -> bool:
+def _related(v: Any, t: Any, tol: Tolerance = Tolerance()) -> bool:
     """A cheap test that some chain could turn `v` into `t`, so the chain search skips unrelated values."""
-    if same(v, t) or isinstance(t, bool):
+    if match(v, t, tol) != "miss" or isinstance(t, bool):
         return True
     tv, tt = text(v).lower(), text(t).lower()
     if not tv or not tt:
@@ -98,12 +99,12 @@ def _related(v: Any, t: Any) -> bool:
     return len(dv) >= 4 and len(dt) >= 4 and (dv in dt or dt in dv)
 
 
-def _proposals(target: Any, occs: list[Occurrence]) -> list[_Cand]:
+def _proposals(target: Any, occs: list[Occurrence], tol: Tolerance = Tolerance()) -> list[_Cand]:
     """Path, chain and join rules that reproduce `target` from this pair's provider body."""
     out: list[_Cand] = []
-    related = [o for o in occs if _related(o.value, target)]
+    related = [o for o in occs if _related(o.value, target, tol)]
     for o in related:
-        out += [_cand("path", (o.path,), c) for c in candidates(target, o.value)]
+        out += [_cand("path", (o.path,), c) for c in candidates(target, o.value, tol)]
     if isinstance(target, str):
         parts = [o for o in related if not isinstance(o.value, bool) and text(o.value) and text(o.value) in target]
         for a in parts:
@@ -114,12 +115,13 @@ def _proposals(target: Any, occs: list[Occurrence]) -> list[_Cand]:
 
 
 class _Search:
-    def __init__(self, field: str, pairs: list[Pair], targets: list[Any], sources: list[list[Occurrence]], lookups: bool, floor: float, owners: list[int] | None = None) -> None:
+    def __init__(self, field: str, pairs: list[Pair], targets: list[Any], sources: list[list[Occurrence]], lookups: bool, floor: float, owners: list[int] | None = None, tol: Tolerance = Tolerance()) -> None:
+        self.tol = tol
         self.targets, self.lookups, self.floor = targets, lookups, floor
         self.owner = owners or list(range(len(pairs)))  # the sample pair behind each (element) pair
         self.bodies = [p.provider for p in pairs]
         self.values = [{o.path: o.value for o in occs} for occs in sources]
-        self.proposed = [_proposals(t, occs) if t is not None else [] for t, occs in zip(targets, sources)]
+        self.proposed = [_proposals(t, occs, tol) if t is not None else [] for t, occs in zip(targets, sources)]
         self.live = [j for j, t in enumerate(targets) if t is not None]
         self.memo: dict[_Cand, frozenset[int]] = {}
         keys = [k for k in _segs(field.replace("[]", "")) if isinstance(k, str)]
@@ -140,7 +142,7 @@ class _Search:
     def hits(self, c: _Cand) -> frozenset[int]:
         """The pairs with a value that the rule reproduces, over all pairs, so holdout runs reuse it."""
         if c not in self.memo:
-            self.memo[c] = frozenset(j for j in self.live if same(self.out(c, j), self.targets[j]))
+            self.memo[c] = frozenset(j for j in self.live if match(self.out(c, j), self.targets[j], self.tol) != "miss")
         return self.memo[c]
 
     def name(self, path: str) -> float:
@@ -246,6 +248,7 @@ def fit_leaf(
     lookups_allowed: bool,
     floor: float = 0.8,
     owners: list[int] | None = None,
+    tol: Tolerance = Tolerance(),
 ) -> LeafFit:
     """The best rule for `field` over the pairs, or kind `none` when no rule reaches `floor`, the
     share of pairs with a value. A learned lookup is tried only below it.
@@ -256,7 +259,7 @@ def fit_leaf(
 
     The holdout leaves out one sample pair at a time. For element pairs, `owners[j]` names the
     sample pair that element `j` came from, so all elements of one response leave together, and the pair holds only if every one of its elements is reproduced."""
-    s = _Search(field, pairs, targets, sources_by_pair, lookups_allowed, floor, owners)
+    s = _Search(field, pairs, targets, sources_by_pair, lookups_allowed, floor, owners, tol)
     every = list(range(len(pairs)))
     live = [j for j in every if targets[j] is not None]
     ranked = s.select(every)
@@ -276,7 +279,8 @@ def fit_leaf(
         held += bool(best and best[0][1] >= floor * (len(live) - len(out)) and s.hits(best[0][0]).issuperset(out))
     order = sorted(live, key=lambda j: j in s.hits(c))  # failures first, stable in pair order
     examples = [{"pair": pairs[j].name, "want": targets[j], "got": s.out(c, j)} for j in order[:3]]
-    return LeafFit(field, c.rule(), c.label(), support, len(live), held / len(units), examples, alternatives)
+    flags = dict.fromkeys(f for j in s.hits(c) if match(s.out(c, j), targets[j], tol) == "tolerated" for f in used(s.out(c, j), targets[j], tol))
+    return LeafFit(field, c.rule(), c.label(), support, len(live), held / len(units), examples, alternatives, tolerated=", ".join(flags) or None)
 
 
 def _case_variant(c: _Cand, chosen: _Cand) -> bool:

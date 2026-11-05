@@ -18,7 +18,7 @@ from pycanonic.cli.fit.arrays import fit_array
 from pycanonic.cli.fit.chains import Chain, apply, apply_rule, candidates
 from pycanonic.cli.fit import fit as fit_mod
 from pycanonic.cli.fit import report
-from pycanonic.cli.fit.compare import same
+from pycanonic.cli.fit.compare import Tolerance, match, same
 from pycanonic.cli.fit.decide import tier
 from pycanonic.cli.fit.derive import derive_schema
 from pycanonic.cli.fit.fit import FitOptions, exit_code, fit_pairs
@@ -995,3 +995,38 @@ def test_old_out_not_an_object_warns(tmp_path: Path, capsys: pytest.CaptureFixtu
     err = capsys.readouterr().err
     assert "is not a JSON object, so changed rules are not compared" in err
     assert json.loads((tmp_path / "spec.json").read_text())["language"] == 2
+
+
+# --- tolerance (R64) ---
+
+
+def test_match() -> None:
+    assert match(1804869, 1804870, Tolerance(num=0.01)) == "tolerated"
+    assert match(1804869, 1804870, Tolerance()) == "miss"
+    assert match(5, 5, Tolerance()) == "exact"
+    assert match(True, 1, Tolerance(num=5)) == "miss"
+    assert match(100, 150, Tolerance(num=0.01)) == "miss"
+    a, b = "https://x.example/p.png?sig=1#top", "https://x.example/p.png?sig=2#top"
+    assert match(a, b, Tolerance(url_query=True)) == "tolerated"
+    assert match(a, b, Tolerance()) == "miss"
+    assert match(a, a.replace("#top", "#end"), Tolerance(url_query=True)) == "miss"  # the fragment still counts
+    assert match("a?x", "a?y", Tolerance(url_query=True)) == "miss"  # not a scheme:// URL
+    assert match("a  b ", "a b", Tolerance(space=True)) == "tolerated"
+    assert match("a  b ", "a b", Tolerance()) == "miss"
+    t = Tolerance(num=0.01, space=True)
+    assert match({"n": [1000, "a  b"]}, {"n": [1001, "a b"]}, t) == "tolerated"
+    assert match({"n": [1000, "a"]}, {"n": [1001, "b"]}, t) == "miss"
+    assert match({"n": 1}, {"m": 1}, t) == "miss"
+
+
+def drifting(tol: Tolerance) -> Any:
+    rows = [({"followers": 1804870 + i}, {"stats": {"fans": 1804869 + i}}) for i in range(6)]
+    pairs = [Pair(f"p{i}.json", d, p, None) for i, (d, p) in enumerate(rows)]
+    return fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("globex", "e", tolerance=tol))
+
+
+def test_fit_tolerated_field_is_review() -> None:
+    row = drifting(Tolerance(num=0.01)).fields[0]
+    assert (row.tier, row.rule, row.support, row.total) == ("review", "stats.fans", 6, 6)
+    assert "matches within --num-tolerance 0.01" in row.risk()
+    assert drifting(Tolerance()).fields[0].rule is None  # strict: no rule reproduces a drifting count

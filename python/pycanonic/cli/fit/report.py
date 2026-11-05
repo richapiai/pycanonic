@@ -58,6 +58,7 @@ class Row:
     examples: list[dict[str, Any]]
     note: str = ""
     mixed_empty: bool = False
+    tolerated: str | None = None  # the flags some pair matched only within
 
     def risk(self) -> str:
         text = RISKS.get(self.kind, _TRANSFORM)

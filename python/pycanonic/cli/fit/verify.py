@@ -9,9 +9,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ... import Rejected, _api
-from .compare import same
+from .compare import Tolerance, same
 from .arrays import MISSING
-from .fit import _empty, _eq, _nodes, _val
+from .fit import _cmp, _empty, _nodes, _val
 from .pairs import Pair
 
 
@@ -26,6 +26,7 @@ class VerifyResult:
     unmapped: dict[str, list[str]] = field(default_factory=dict)  # leaf the spec leaves out to the pairs where the default fills it
     allowed: dict[str, str] = field(default_factory=dict)  # unmapped leaf to the reason it is expected
     stale_allow: list[str] = field(default_factory=list)  # allow entries that cover no unmapped leaf
+    tolerated: dict[str, int] = field(default_factory=dict)  # field key to the pairs that match only within a tolerance
 
     def to_json(self, pairs: int, skipped: list[tuple[str, str]]) -> dict[str, Any]:
         out = {
@@ -33,7 +34,7 @@ class VerifyResult:
             "pairs": pairs,
             "skipped": [{"pair": n, "reason": why} for n, why in skipped],
             "shape_failures": [{"pair": p, "path": at, "message": m} for p, at, m in self.shape_failures],
-            "fields": {k: {"match": m, "total": t, "share": m / t if t else 1.0, "misses": self.misses.get(k, [])} for k, (m, t) in self.fields.items()},
+            "fields": {k: {"match": m, "total": t, "share": m / t if t else 1.0, "misses": self.misses.get(k, []), **({"tolerated": self.tolerated[k]} if self.tolerated.get(k) else {})} for k, (m, t) in self.fields.items()},
             "unmapped": {k: {"pairs": len(ns), "examples": ns[:5], **({"allowed": self.allowed[k]} if k in self.allowed else {})} for k, ns in self.unmapped.items()},
             "rejected": self.rejected,
             "rejected_wrongly": self.rejected_wrongly,
@@ -198,6 +199,7 @@ def run(
     fail_unmapped: bool = False,
     ignore: list[str] | None = None,
     allow: dict[str, str] | None = None,
+    tolerance: Tolerance = Tolerance(),
 ) -> VerifyResult:
     """Maps every pair. A rejected pair counts in no field. It fails only if the spec without its
     reject rules maps it to exactly the default's output, or if over `max_reject` of the pairs are
@@ -206,7 +208,8 @@ def run(
     listed, and fails the run only with `fail_unmapped`. A list also scores each leaf of its
     items by position and a count row; `ignore` drops a field and all below it.
     `allow` maps a field to the reason its unmapped leaves are expected, itself and all below it, and
-    `fail_unmapped` fails only on the leaves it does not cover."""
+    `fail_unmapped` fails only on the leaves it does not cover. A pair that equals the
+    default only within `tolerance` counts as a match and in `tolerated`."""
     art = _api.compile_spec(spec, schema, transforms=transforms)
     loose = _api.compile_spec({k: v for k, v in spec.items() if k != "reject"}, schema, transforms=transforms) if spec.get("reject") else None
     sf = spec.get("fields") or {}
@@ -222,6 +225,7 @@ def run(
     order = [r for k in keys for r in [k, *rows.get(k, [])] if not dropped(r)]
     unions = {k: n for k, n in _nodes(schema) if k in kept and "oneOf" in n}
     counts = {k: [0, 0] for k in order}
+    near: dict[str, int] = {}
     misses: dict[str, list[str]] = {k: [] for k in order}
     unmapped: dict[str, list[str]] = {k: [] for k in [*_unmapped(sf, schema), *left] if not _under(k, ignored)}
     failures: list[tuple[str, str, str]] = []
@@ -238,7 +242,9 @@ def run(
         elif (got is None or got is MISSING) and (want is None or want is MISSING):
             return  # both null: neither a match nor a miss
         else:
-            hit = _eq(_sorted(got), _sorted(want))
+            m = _cmp(_sorted(got), _sorted(want), tolerance)
+            hit = m != "miss"
+            near[row] = near.get(row, 0) + (m == "tolerated")
         c = counts.setdefault(row, [0, 0])
         c[0] += hit
         c[1] += 1
@@ -278,4 +284,4 @@ def run(
     share = len(rejected) / len(pairs) if pairs else 0.0
     ok = not skipped and not failures and not wrongly and share <= max_reject and all(t == 0 or m / t >= min_match for m, t in fields.values())
     ok = ok and not (fail_unmapped and any(k not in reasons for k in unmapped))
-    return VerifyResult(failures, fields, rejected, ok, wrongly, misses, unmapped, reasons, stale)
+    return VerifyResult(failures, fields, rejected, ok, wrongly, misses, unmapped, reasons, stale, {k: n for k, n in near.items() if n})

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..fit import verify
 from ..fit.pairs import load_pairs
-from ..io import Transforms, UsageError, parser, read_json
+from ..io import Transforms, UsageError, add_tolerance, parser, read_json, tolerance
 
 USAGE = """canonic verify <spec.json> --schema <file> --default <dir> --provider <dir> [options]
 
@@ -33,6 +33,10 @@ USAGE = """canonic verify <spec.json> --schema <file> --default <dir> --provider
                        everything below it, and repeats. The report names the first five pairs
                        with a value, and notes an allowed field that is mapped or empty in every pair
   --allow-file <json>  the same as a JSON object of field to reason; both sources merge
+  --num-tolerance <f>  count two numbers as equal when they differ by at most this share of the larger
+                       one (0.01 is 1%); a tolerated pair counts as a match, and the field reports how many
+  --url-ignore-query   compare two scheme:// URLs without their query (the part from ? to before #)
+  --text-ignore-space  compare two texts after collapsing white space and trimming
   --json               print the result as JSON instead of a table"""
 
 
@@ -41,7 +45,8 @@ def _table(r: verify.VerifyResult, pairs: int, skipped: list[tuple[str, str]]) -
     width = max((len(k) for k in r.fields), default=5)
     for k, (m, t) in r.fields.items():
         miss = f"  misses {', '.join(r.misses[k])}" if r.misses.get(k) else ""
-        lines.append(f"{k.ljust(width)}  {m}/{t}  {m / t if t else 1.0:.2f}{miss}")
+        tol = f"  tolerated {r.tolerated[k]}" if r.tolerated.get(k) else ""
+        lines.append(f"{k.ljust(width)}  {m}/{t}  {m / t if t else 1.0:.2f}{tol}{miss}")
     for k, ns in r.unmapped.items():
         more = ", ..." if len(ns) > 5 else ""
         why = f"  allowed: {r.allowed[k]}" if k in r.allowed else ""
@@ -81,6 +86,7 @@ def run(args: list[str], transforms: Transforms) -> int:
     p.add_argument("--fail-unmapped", action="store_true")
     p.add_argument("--allow", action="append", default=[])
     p.add_argument("--allow-file")
+    add_tolerance(p)
     p.add_argument("spec", nargs="?")
     a = p.parse_intermixed_args(args)
     if not (a.spec and a.schema and a.default and a.provider):
@@ -90,7 +96,7 @@ def run(args: list[str], transforms: Transforms) -> int:
     if not pairs:
         print("verify: no pairs", file=sys.stderr)
         return 2
-    r = verify.run(read_json(a.spec), read_json(a.schema), pairs, a.min_match, transforms, a.max_reject, skipped, a.fail_unmapped, a.ignore, allow)
+    r = verify.run(read_json(a.spec), read_json(a.schema), pairs, a.min_match, transforms, a.max_reject, skipped, a.fail_unmapped, a.ignore, allow, tolerance(a))
     if a.json:
         sys.stdout.write(json.dumps(r.to_json(len(pairs), skipped), indent=2, ensure_ascii=False) + "\n")
     else:

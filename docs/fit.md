@@ -124,6 +124,16 @@ Every other kind goes to review:
 
 A two-step chain takes the kind of the step that is not on the auto list.
 
+### Tolerance for live data
+
+Two providers that scrape the same record at different times can differ by a few followers, by a signed URL's query string, or by white space. Three flags on `fit` and on `verify` count such a pair as equal. All are off by default, and then the comparison is the strict one.
+
+- `--num-tolerance <f>` makes two numbers equal when `abs(a - b) <= f * max(abs(a), abs(b))`. `f` is a relative share of 0 or more, so `0.01` is 1%. Booleans are never numbers here.
+- `--url-ignore-query` compares two strings that both start with `scheme://` without the part from `?` to before `#`. The fragment still counts. A text that is not a URL is not cut.
+- `--text-ignore-space` collapses each run of white space to one space and trims both ends, then compares.
+
+Lists and objects compare part by part with the same flags. In `fit`, a top-level field whose rule is right on some pair only within a flag is review, never auto, and its note reads `matches within --num-tolerance 0.01`. `fit` applies the flags to top-level fields and not to the leaves inside list items. In `verify`, a tolerated pair counts as a match, and the field reports how many pairs matched only that way (`tolerated 5` in the table, `"tolerated": 5` in JSON, left out when 0).
+
 ## What is decided automatically, and what can break
 
 This is the table the reviewer reads. The report prints the row of each field that is not auto, under "what can break". The texts below are the texts `fit` prints.
@@ -191,7 +201,7 @@ For a manual field that needs code, `--transforms-out transforms.py` writes one 
 
 ```
 canonic verify globex.json --schema canonical.json --default samples/default/ --provider samples/new/ \
-  [--inputs samples/inputs/] [--transforms transforms.py] [--min-match 0.95] [--max-reject 0.10] [--fail-unmapped] [--allow FIELD=REASON] [--allow-file allow.json] [--ignore <field>] [--json]
+  [--inputs samples/inputs/] [--transforms transforms.py] [--min-match 0.95] [--max-reject 0.10] [--fail-unmapped] [--allow FIELD=REASON] [--allow-file allow.json] [--ignore <field>] [--num-tolerance <f>] [--url-ignore-query] [--text-ignore-space] [--json]
 ```
 
 It maps each provider body through the spec and compares the output with the default's body of the same name. It checks:

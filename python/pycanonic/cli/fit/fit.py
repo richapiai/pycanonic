@@ -17,11 +17,11 @@ from ... import Rejected, _api
 from ..infer.ask import MAX_SOURCES, Ask, answer, ask_with, question, rule_for
 from ..infer.score import Leaf
 from ..infer.sources import collect
-from ..io import Transforms, read_json
+from ..io import Transforms, read_json, tolerance
 from . import decide
 from .arrays import MISSING, agree, fit_array, get
 from .chains import apply_rule
-from .compare import same
+from .compare import Tolerance, match, same
 from .derive import _child, derive_schema
 from .index import Occurrence, scalars
 from .leaves import LeafFit, _related, _segs, fit_leaf
@@ -41,6 +41,7 @@ class FitOptions:
     keep: dict[str, Any] = field(default_factory=dict)  # top-level field key to the approved rule
     ask: Ask | None = None
     transforms: Transforms = field(default_factory=dict)  # for kept rules that name private transforms
+    tolerance: Tolerance = field(default_factory=Tolerance)  # ; top-level leaf fields only
 
 
 def _val(doc: Any, key: str) -> Any:
@@ -48,8 +49,15 @@ def _val(doc: Any, key: str) -> Any:
     return get(doc, _segs(key.removesuffix("[]")))
 
 
-def _eq(a: Any, b: Any) -> bool:
-    return a is b if MISSING in (a, b) else same(a, b)
+def _cmp(a: Any, b: Any, tol: Tolerance = Tolerance()) -> str:
+    """`match` that also compares MISSING by identity."""
+    if MISSING in (a, b):
+        return "exact" if a is b else "miss"
+    return match(a, b, tol)
+
+
+def _eq(a: Any, b: Any, tol: Tolerance = Tolerance()) -> bool:
+    return _cmp(a, b, tol) != "miss"
 
 
 def _empty(v: Any) -> bool:
@@ -84,7 +92,7 @@ def _nodes(schema: dict[str, Any], prefix: str = "") -> Iterator[tuple[str, dict
 
 
 def _row(f: LeafFit) -> Row:
-    return Row(f.field, "", f.kind, short(f.field, f.rule), f.support, f.total, f.holdout, f.examples)
+    return Row(f.field, "", f.kind, short(f.field, f.rule), f.support, f.total, f.holdout, f.examples, tolerated=f.tolerated)
 
 
 class _Fitter:
@@ -164,14 +172,14 @@ class _Fitter:
             self.rows.append(_row(f))
 
     def leaf(self, key: str, node: dict[str, Any], targets: list[Any]) -> None:
-        f = fit_leaf(key, self.pairs, targets, self.sources, True, FLOOR)
+        f = fit_leaf(key, self.pairs, targets, self.sources, True, FLOOR, tol=self.opts.tolerance)
         if f.rule is not None:
             rule: dict[str, Any] = f.rule
             kind = f.kind
             if self.inputs and (cond := fit_when(key, self.pairs)):
                 rule, kind = {**rule, **cond}, "when"
             self.fields[key] = short(key, rule)
-            self.rows.append(Row(key, "", kind, short(key, rule), f.support, f.total, f.holdout, f.examples))
+            self.rows.append(Row(key, "", kind, short(key, rule), f.support, f.total, f.holdout, f.examples, tolerated=f.tolerated))
             return
         row = self.unmapped(f, targets)
         if row.kind != "absent" and self.opts.ask:
@@ -247,11 +255,11 @@ def _map(art: Any, p: Pair) -> Any:
     return art.map(p.provider) if p.inputs is None else art.map(p.provider, context=p.inputs)
 
 
-def _hit(rows: list[Row], key: str, got: Any, want: Any) -> bool:
+def _hit(rows: list[Row], key: str, got: Any, want: Any, tol: Tolerance = Tolerance()) -> bool:
     """The runtime reproduces the default's value. An array is judged as fit_array judges it: on the
     item leaves that have a rule, so an item leaf the provider lacks does not fail it."""
     if not key.endswith("[]"):
-        return _eq(got, want)
+        return _eq(got, want, tol)
     keys = [r.field[len(key) + 1 :] for r in rows if r.field.startswith(key + ".") and r.rule is not None]
     return agree(got, want, keys) if keys else _eq(got, want)
 
@@ -260,7 +268,7 @@ def _check(f: _Fitter) -> None:
     """Maps every pair through the compiled spec. A field whose runtime output disagrees with what
     fit reported loses its rule and becomes manual, kind none, until the spec agrees with itself.
     A pair that the runtime rejects but fit did not drops the reject rules (fit_pairs makes them manual)."""
-    pairs, n = f.pairs, len(f.pairs)
+    pairs, n, tol = f.pairs, len(f.pairs), f.opts.tolerance
     while f.fields:
         art = _api.compile_spec(_spec(f.opts, f.fields, f.reject, f.drift), f.schema, transforms=f.opts.transforms)
         outs: list[Any] = []
@@ -286,7 +294,7 @@ def _check(f: _Fitter) -> None:
                 support = sum(_empty(g) == _empty(w) for g, w in zip(got, want))
             else:
                 live = [j for j in range(n) if want[j] is not MISSING and want[j] is not None]
-                support = sum(_hit(f.rows, r.field, got[j], want[j]) for j in live)
+                support = sum(_hit(f.rows, r.field, got[j], want[j], tol) for j in live)
                 if r.kind == "kept":
                     r.support, r.total = support, len(live)
             if f.drift and support > r.support:  # fit searched exact keys, the runtime also matches other cases
@@ -297,10 +305,10 @@ def _check(f: _Fitter) -> None:
             return
         for r, support, got, want in bad:
             r.note = f"Runtime check: the rule {json.dumps(r.rule)} maps {support} pairs, fit found {r.support}."
-            wrong = [j for j in range(n) if not _hit(f.rows, r.field, got[j], want[j]) and not _empty(want[j])]
+            wrong = [j for j in range(n) if not _hit(f.rows, r.field, got[j], want[j], tol) and not _empty(want[j])]
             r.examples = [{"pair": pairs[j].name, "want": want[j], "got": None if got[j] is MISSING else got[j]} for j in wrong[:3]]
             del f.fields[r.field]
-            r.kind, r.rule, r.support, r.holdout = "none", None, 0, 0.0
+            r.kind, r.rule, r.support, r.holdout, r.tolerated = "none", None, 0, 0.0, None
             if r.field.endswith("[]"):  # its item rows describe a rule the spec no longer has
                 f.rows = [x for x in f.rows if not x.field.startswith(r.field + ".")]
 
@@ -399,10 +407,12 @@ def fit_pairs(pairs: list[Pair], schema: dict[str, Any], options: FitOptions) ->
         f.rows.append(Row(f"reject[{i}]", "", "reject", cond, len(hit), len(pairs), None, [], note))
     for r in f.rows:
         one = not r.field.startswith("reject[") and _one_value(f.pairs, r.field)
-        lf = LeafFit(r.field, None, r.kind, r.support, r.total, r.holdout or 0.0, [], [], r.mixed_empty, one)
+        lf = LeafFit(r.field, None, r.kind, r.support, r.total, r.holdout or 0.0, [], [], r.mixed_empty, one, r.tolerated)
         r.tier = decide.tier(lf, min_auto=options.min_auto, min_pairs=options.min_pairs, floor=FLOOR)
         if one and r.tier == "review" and r.kind in decide.AUTO:
             r.note = " ".join(filter(None, [r.note, "The default sent one value or none in every pair, so the samples cannot tell this rule from a constant."]))
+        if r.tolerated and r.tier == "review":
+            r.note = " ".join(filter(None, [r.note, f"matches within {r.tolerated}."]))
         if r.kind == "reject" and f.disagree:
             r.tier = "manual"
     return FitResult(options.provider, options.endpoint, len(pairs), f.rows, spec, stubs(f.rows, pairs, options.provider, options.endpoint))
@@ -434,7 +444,7 @@ def run(args: argparse.Namespace, transforms: Transforms | None = None) -> int:
     for k in keep:
         if k not in known:
             print(f'fit: --keep key "{k}" matches no field', file=sys.stderr)
-    opts = FitOptions(args.provider_name, args.endpoint, args.min_auto, args.min_pairs, keep, ask_with(args.ask) if args.ask else None, transforms or {})
+    opts = FitOptions(args.provider_name, args.endpoint, args.min_auto, args.min_pairs, keep, ask_with(args.ask) if args.ask else None, transforms or {}, tolerance(args))
     result = fit_pairs(pairs, schema, opts)
     result.skipped = skipped
     out = Path(args.out)
