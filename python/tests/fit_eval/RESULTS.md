@@ -19,7 +19,8 @@ The auto share is reported, not gated. The target is 80%.
 | drovo | 31 | 19 | 11 | 1 | 61% | 0 | 0 |
 | kestrin | 36 | 26 | 8 | 2 | 72% | 0 | 0 |
 | tessaly | 36 | 28 | 8 | 0 | 78% | 0 | 0 |
-| total | 432 | 325 | 99 | 8 | 75% | 0 | 0 |
+| ordina | 3 | 3 | 0 | 0 | 100% | 0 | 0 |
+| total | 435 | 328 | 99 | 8 | 75% | 0 | 0 |
 
 Most review rows are review by design: optional objects (`presence`, `if_empty`), fields where the default sent one value or none in 15 pairs, learned lookups, groups, and case-insensitive keys.
 Manual rows are sections that a provider does not send in the same form, and values that disagree.

@@ -156,7 +156,7 @@ def test_argument_learned_from_one_pair_is_not_kept() -> None:
 
 
 def test_holdout_catches_overfit() -> None:
-    rows = [(f"v{i}", {"a": f"v{i}" if i else "x", "n": 7 * i + 3}) for i in range(6)]
+    rows = [(f"v{i}", {"a": f"v{i}" if i else "x", "n": i}) for i in range(6)]
     f = leaf("type", rows)
     assert (f.rule, f.kind, f.support, f.total) == ({"from": "a"}, "path", 5, 6)
     assert f.holdout == 5 / 6
@@ -923,7 +923,7 @@ def test_case_drift_sets_case_insensitive_keys() -> None:
     """Keys that drift in case across the samples set `"keys": "case_insensitive"`, a review row,
     so a casing that no sample showed still maps (fit_eval found drovo fields null on fresh pairs)."""
     style = lambda k, i: k if i % 3 else k[0].upper() + k[1:]
-    pairs = [Pair(f"p{i}.json", {"name": "n" + "abcdefghij"[i], "score": i}, {style("fullName", i): "n" + "abcdefghij"[i], "rating": i}, None) for i in range(10)]
+    pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "score": i}, {style("fullName", i): f"n{i}", "rating": i}, None) for i in range(10)]
     schema = derive_schema([p.default for p in pairs])
     result = fit_pairs(pairs, schema, FitOptions("acme", "e"))
     assert result.spec is not None and result.spec["keys"] == "case_insensitive"

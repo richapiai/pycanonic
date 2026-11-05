@@ -134,7 +134,7 @@ def _learned(name: str, v: Any, w: str) -> list[Any]:
     if name == "format":  # the prefix and suffix around the value's text, at each place it shows
         t = text(v) if not isinstance(v, (str, list, dict)) else v if isinstance(v, str) else ""
         esc = lambda x: x.replace("{", "{{").replace("}", "}}")
-        at = [i for i in range(len(w)) if t and w.startswith(t, i)] if t != w else []
+        at = [i for i in range(len(w)) if t and w.startswith(t, i) and not (w[i - 1 : i].isalnum() or w[i + len(t) : i + len(t) + 1].isalnum())] if t != w else []  # on a token boundary
         return [esc(w[:i]) + "{}" + esc(w[i + len(t) :]) for i in at]
     if not isinstance(v, str) or not w:
         return []

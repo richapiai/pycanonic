@@ -345,6 +345,15 @@ def tessaly(e: E) -> E:
     }
 
 
+def ordina_default(e: E) -> E:
+    return {"ref": f"item-{e['id']}", "first": e["first"], "status": e["status"]}
+
+
+def ordina(e: E) -> E:
+    """The default's ref is a fixed prefix on the provider's id, and a small integer sits beside it as a decoy."""
+    return {"itemId": e["id"], "rank": e["id"] % 4, "givenName": e["first"], "state": e["status"]}
+
+
 PROVIDERS: list[Provider] = [
     Provider("quillon", default, quillon),
     Provider("brask", default, brask),
@@ -359,4 +368,5 @@ PROVIDERS: list[Provider] = [
     Provider("drovo", default, drovo),
     Provider("kestrin", default, kestrin),
     Provider("tessaly", default, tessaly),
+    Provider("ordina", ordina_default, ordina),
 ]
