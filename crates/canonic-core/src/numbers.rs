@@ -43,6 +43,11 @@ impl NumOp {
         Self::ALL.iter().find(|(n, _)| *n == name).map(|(_, o)| *o)
     }
 
+    /// `eq`, `lt`, `lte`, `gt` and `gte`, which give a boolean and cannot fold.
+    pub fn is_compare(self) -> bool {
+        matches!(self, Self::Eq | Self::Lt | Self::Lte | Self::Gt | Self::Gte)
+    }
+
     pub fn name(self) -> &'static str {
         Self::ALL
             .iter()

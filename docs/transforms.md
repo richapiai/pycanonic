@@ -289,7 +289,7 @@ An open range has no max, so `max` gives null and counts an error, as any null f
 
 ### Numbers
 
-Language 2 has numbers and compares: `add`, `sub`, `mul`, `div`, `ceil_div`, `floor_div`, `min`, `max`, `eq`, `lt`, `lte`, `gt` and `gte`. On one source they take one number argument, as in `{"mul": 100}`. On a `from` list of two or more sources, the first transform takes no argument and folds the sources left to right: `{"from": ["total", "$input.size"], "transform": "ceil_div"}`. A transform later in the chain gets one value, so it takes an argument. Any other combination fails the compile.
+Language 2 has numbers and compares: `add`, `sub`, `mul`, `div`, `ceil_div`, `floor_div`, `min`, `max`, `eq`, `lt`, `lte`, `gt` and `gte`. On one source they take one number argument, as in `{"mul": 100}`. On a `from` list of two or more sources, the first transform takes no argument and folds the sources left to right: `{"from": ["total", "$input.size"], "transform": "ceil_div"}`. A transform later in the chain gets one value, so it takes an argument. A compare (`eq`, `lt`, `lte`, `gt`, `gte`) takes exactly two sources, while the arithmetic transforms fold two or more. Any other combination fails the compile.
 
 An input is a number, or a string that holds one (the rule of `cast`). Booleans, objects, arrays, null and a missing source give null. A fold with a missing or null source gives null. Division by zero gives null, and so does a result that is not finite. `ceil_div` and `floor_div` give integers, and a whole result of the other number transforms is an integer. The compares give booleans. A custom transform of the same name wins over the default. In a chain, a null result counts as one error when the source was present.
 

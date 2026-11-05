@@ -736,6 +736,15 @@ fn source_args(tx: &[TxRef], sources: usize, at: &str) -> Result<(), String> {
             continue;
         };
         let name = op.name();
+        if on_list && k.is_none() && sources > 2 && op.is_compare() {
+            return fail(
+                name,
+                format!("{sources} sources"),
+                format!(
+                    "exactly two sources, as in {{\"from\": [\"a\", \"b\"], \"transform\": \"{name}\"}}"
+                ),
+            );
+        }
         match (on_list, k) {
             (true, Some(k)) => {
                 return fail(
