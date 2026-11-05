@@ -188,9 +188,10 @@ def _item_rows(spec_fields: dict[str, Any], schema: dict[str, Any], defs: dict[s
             out[k] = keep
             while isinstance(imap, dict) and isinstance(imap.get("$ref"), str):
                 imap = defs.get(imap["$ref"])
-            for rel, node in _nodes(items) if isinstance(imap, dict) else ():
-                if "oneOf" in node:
-                    links.update(_union_left(f"{k}.{rel}", node, imap.get(rel), defs))
+            if isinstance(imap, dict):
+                for rel, node in _nodes(items):
+                    if "oneOf" in node:
+                        links.update(_union_left(f"{k}.{rel}", node, imap.get(rel), defs))
     return out, left, links
 
 

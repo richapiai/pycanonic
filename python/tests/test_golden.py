@@ -1,5 +1,5 @@
-"""0.1.1 plans and outputs (fixtures/golden-0.1.1, written by the 0.1.1 build): a loaded plan and a
-fresh compile of the case spec must both map to the same bytes. See conformance/cases*/README.md."""
+"""0.1.1 plans and outputs (fixtures/golden-0.1.1), exported from the 0.1.1 build, one plan and output per
+conformance case: a loaded plan and a fresh compile of the case spec must both map to the same bytes."""
 
 import json
 import sys
@@ -31,7 +31,8 @@ def _run(a, raw, ctx):
 
 
 def test_there_are_fixtures():
-    assert PLANS
+    assert len(PLANS) == 159  # 72 v1 and 87 v2
+    assert sum(p.parent.name == "v1" for p in PLANS) == 72
 
 
 @pytest.mark.parametrize("plan", PLANS, ids=lambda p: f"{p.parent.name}/{p.name[:-len('.plan.json')]}")

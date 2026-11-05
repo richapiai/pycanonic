@@ -5,7 +5,9 @@ same inputs (`node packages/cli/dist/cli.js infer ...`), so the CLI tests compar
 from __future__ import annotations
 
 import json
+import os
 import random
+import time
 from itertools import permutations
 from pathlib import Path
 from typing import Any
@@ -14,7 +16,7 @@ import pytest
 
 import pycanonic
 from pycanonic.cli.__main__ import _load_transforms, main
-from pycanonic.cli.infer.ask import Question, ask_low_confidence
+from pycanonic.cli.infer.ask import Question, ask_low_confidence, ask_with
 from pycanonic.cli.infer.hungarian import assign
 from pycanonic.cli.infer.infer import infer, infer_draft, js_round, to_fixed
 from pycanonic.cli.infer.score import is_numeric, looks_full_name
@@ -346,6 +348,22 @@ def test_any_ask_reply_that_is_not_a_known_path_skips_the_field(capsys: pytest.C
     plain = run(capsys, *infer_args(str(CLI / "odd")))
     code, out, _ = run(capsys, *infer_args(str(CLI / "odd"), "--ask", command))
     assert (code, out) == (0, plain[1])
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process groups are POSIX only")
+def test_ask_timeout_kills_the_children_of_the_command(tmp_path: Path) -> None:
+    pidfile = tmp_path / "pid"
+    cmd = f"sleep 60 & echo $! > '{pidfile}'; wait"
+    assert ask_with(cmd, timeout=1.0)({"field": "title"}) is None
+    pid = int(pidfile.read_text())
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.1)
+    os.kill(pid, 9)
+    pytest.fail("the sleeper outlived the timeout")
 
 
 def test_learn_specs_without_fields_are_named(tmp_path: Path) -> None:

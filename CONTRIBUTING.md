@@ -94,8 +94,9 @@ To cut a release:
 
    `interpreters.py --gate` skips the three libraries in `bench/interpreters-exempt.json` (jmespath, jsonbender and pydantic) and fails on any other mapping library under 10x. The README says why the three are exempt.
 
-3. Run the local checks: `cargo test --workspace`, `.venv/bin/pytest python/tests -q`, `cargo audit`, `scripts/leak-scan.sh` and `scripts/leak-scan.sh --history`.
-4. Tag and push:
+3. If the conformance corpus was synced more than 30 days ago, run `conformance/sync.sh`. The release runs the corpus-age check and fails on an old corpus.
+4. Run the local checks: `cargo test --workspace`, `.venv/bin/pytest python/tests -q`, `cargo audit`, `scripts/leak-scan.sh` and `scripts/leak-scan.sh --history`.
+5. Tag and push:
 
    ```sh
    git tag -a v0.1.0 -m "pycanonic 0.1.0"
@@ -103,7 +104,7 @@ To cut a release:
    git push origin v0.1.0
    ```
 
-5. Watch the `release` workflow. The GitHub release, PyPI and crates.io jobs wait for the wheel smoke test and the audit.
+6. Watch the `release` workflow. The GitHub release, PyPI and crates.io jobs wait for the wheel smoke test and the audit.
 
 To publish by hand instead, for example after a workflow failure past the wheel stage:
 

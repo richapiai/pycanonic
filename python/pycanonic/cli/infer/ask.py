@@ -5,7 +5,10 @@ The report always flags an answer for a person to check."""
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import signal
 import subprocess
 import sys
 from collections.abc import Callable
@@ -145,13 +148,33 @@ ASK_TIMEOUT = 120.0
 """Seconds one --ask command may run before its field is skipped (--ask-timeout)."""
 
 
+def _run(command: str, stdin: str, timeout: float) -> subprocess.CompletedProcess[str]:
+    """Like subprocess.run with a shell, but on POSIX the command gets its own process group, so a
+    timeout kills what the command started too, not only the shell."""
+    with subprocess.Popen(
+        command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace", start_new_session=os.name == "posix",
+    ) as p:
+        try:
+            out, err = p.communicate(stdin, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(p.pid, signal.SIGKILL)
+            else:
+                p.kill()
+            p.communicate()
+            raise
+        return subprocess.CompletedProcess(command, p.returncode, out, err)
+
+
 def ask_with(command: str, timeout: float = ASK_TIMEOUT) -> Ask:
     """Runs the --ask command once per question. A failing command, or one that runs past
     `timeout` seconds, skips that field: the command is never required."""
 
     def run(q: Question) -> str | None:
         try:
-            done = subprocess.run(command, shell=True, input=js_json(q), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+            done = _run(command, js_json(q), timeout)
             # Lossy, as node decodes: a stray byte makes the answer unknown, not the run fail.
         except subprocess.TimeoutExpired:
             print(f"--ask failed for {q['field']}: timed out after {timeout:g} s", file=sys.stderr)
