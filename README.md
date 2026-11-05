@@ -5,7 +5,7 @@
 
 pycanonic maps a data provider's JSON response to your own canonical shape. It compiles a JSON mapping spec into a plan and runs it in Rust. The mapping stays a JSON file that you review in a pull request. pycanonic is the Python version of [canonic](https://github.com/richapiai/canonic), the TypeScript package, and it reads the same spec files.
 
-On the 5.9 KB benchmark body with 18 spec fields, `artifact.map(bytes)` takes 8.91 µs on the server that produced the TypeScript numbers. That is the parse and the mapping together. The TypeScript canonic needs 23.26 µs for `JSON.parse` plus `map` on the same server, and `orjson.loads` of the same body alone takes 20.73 µs.
+On the 5.9 KB benchmark body with 18 spec fields, `artifact.map(bytes)` takes 8.94 µs on the server that produced the TypeScript numbers. That is the parse and the mapping together. The TypeScript canonic needs 23.07 µs for `JSON.parse` plus `map` on the same server, and `orjson.loads` of the same body alone takes 20.73 µs.
 
 ## Why
 
@@ -288,7 +288,7 @@ Your deployment wires them together:
 
 ## Status
 
-pycanonic is at 0.1. The spec format follows the TypeScript package, and the Python API can still change before 1.0. A plan from `canonic build` is tied to the version that built it. Rebuild your plans after an upgrade.
+pycanonic is at 0.2. The spec format follows the TypeScript package, and the Python API can still change before 1.0. Every 0.1.1 spec maps the same in 0.2, except for the bugs fixed in [CHANGELOG.md](https://github.com/richapiai/pycanonic/blob/main/CHANGELOG.md), and a plan file that 0.1.1 wrote from `canonic build` loads and maps the same. `canonic schema`, `canonic fit` and `canonic verify` are experimental: their rules, tiers and report format can change in a minor release.
 
 ## Contributing
 
