@@ -166,5 +166,9 @@ fn sum<D: Doc>(xs: &[D]) -> Option<Value<'static>> {
             _ => return None,
         }
     }
-    Some(int.map_or(Value::Float(float), Value::Int))
+    // A total past the double range is an error, as for the number transforms.
+    match int {
+        Some(i) => Some(Value::Int(i)),
+        None => float.is_finite().then_some(Value::Float(float)),
+    }
 }

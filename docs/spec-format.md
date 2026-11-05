@@ -628,7 +628,7 @@ The aggregate ops:
 | `any`, `all` | whether any or all values are `true` | booleans |
 | `join` | the values joined with `"sep"` (default one space) | strings and numbers |
 
-`"nulls": "skip"` (the default) leaves null values out. With `"nulls": "propagate"`, any null value makes the result null. A value of a type the op does not take gives null and counts an error. So does a mix of numbers and strings for `min` and `max`.
+`"nulls": "skip"` (the default) leaves null values out. With `"nulls": "propagate"`, any null value makes the result null. A value of a type the op does not take gives null and counts an error. So does a mix of numbers and strings for `min` and `max`. So does a `sum` whose total is past the range of a double.
 
 Aggregates also work outside a group, on any array path. `{"aggregate": "count", "from": "data.items"}` counts the items of a page.
 

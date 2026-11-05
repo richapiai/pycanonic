@@ -1,0 +1,49 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "draft",
+    "fields": {
+      "x": {
+        "aggregate": "sum",
+        "from": "xs"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "x": {
+        "type": "number"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "xs": [
+          1e+308,
+          1e+308
+        ]
+      },
+      "context": null,
+      "expected": {
+        "x": null
+      }
+    },
+    {
+      "body": {
+        "xs": [
+          1.5,
+          2
+        ]
+      },
+      "context": null,
+      "expected": {
+        "x": 3.5
+      }
+    }
+  ]
+}
