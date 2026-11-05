@@ -1,0 +1,37 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "people[]": {
+        "from": "people",
+        "filter": {
+          "path": "url",
+          "starts_with": "https://x.example/people/"
+        },
+        "item": {
+          "name": "name"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "people": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"people[]\"]: \"filter\" needs \"language\": 2; spec.fields[\"people[]\"].filter.starts_with: unknown property; spec.fields[\"people[]\"].filter: needs exactly one of eq, in, present"
+}

@@ -3,7 +3,7 @@
 //! does (tests/validate.rs). spec.schema.json stays language 1.
 
 use crate::canonical::Empty;
-use crate::cond::{self, Cond};
+use crate::cond::{self, Cond, Operand};
 use crate::group::{AGG_OPS, AggOp};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -623,19 +623,52 @@ impl Checker {
         }
     }
     fn cond(&mut self, c: &Value, at: &str) {
-        self.parsed(cond::parse(c), at)
+        // Without language 2 the forms are those of language 1, so a new one fails as before.
+        let c = if self.language == 2 {
+            cond::parse(c)
+        } else {
+            cond::parse_v1(c)
+        };
+        self.parsed(c, at)
     }
     fn parsed(&mut self, c: Result<Cond, Vec<(String, String)>>, at: &str) {
         match c {
-            Ok(Cond::Present(p, _) | Cond::Eq(p, _) | Cond::In(p, _)) => {
-                self.root(&p, &format!("{at}.path"), true)
-            }
-            Ok(Cond::Missing(p)) => self.root(&p, &format!("{at}.missing"), true),
-            Ok(Cond::Empty(p)) => self.root(&p, &format!("{at}.empty"), true),
-            Ok(Cond::All(_)) => {}
+            Ok(c) => self.cond_roots(&c, at),
             Err(issues) => {
                 for (sub, m) in issues {
                     self.fail(&format!("{at}{sub}"), &m);
+                }
+            }
+        }
+    }
+    /// The root check of every path in a parsed condition, at its location in the spec.
+    fn cond_roots(&mut self, c: &Cond, at: &str) {
+        match c {
+            Cond::Present(p, _)
+            | Cond::Eq(p, _)
+            | Cond::In(p, _)
+            | Cond::Matches(p, _)
+            | Cond::StartsWith(p, _)
+            | Cond::EndsWith(p, _)
+            | Cond::Contains(p, _) => self.root(p, &format!("{at}.path"), true),
+            Cond::Missing(p) => self.root(p, &format!("{at}.missing"), true),
+            Cond::Empty(p) => self.root(p, &format!("{at}.empty"), true),
+            Cond::Compare(p, cmp, o) => {
+                self.root(p, &format!("{at}.path"), true);
+                if let Operand::Path(q) = o {
+                    let k = format!("{cmp:?}").to_lowercase();
+                    self.root(q, &format!("{at}.{k}.path"), true);
+                }
+            }
+            Cond::Not(c) => self.cond_roots(c, &format!("{at}.not")),
+            Cond::All(cs) | Cond::Any(cs) => {
+                let k = if matches!(c, Cond::All(_)) {
+                    "all"
+                } else {
+                    "any"
+                };
+                for (i, c) in cs.iter().enumerate() {
+                    self.cond_roots(c, &format!("{at}.{k}[{i}]"));
                 }
             }
         }
@@ -646,7 +679,12 @@ impl Checker {
         match r.as_array().filter(|a| !a.is_empty()) {
             Some(a) => {
                 for (i, c) in a.iter().enumerate() {
-                    self.parsed(cond::parse_reject(c), &format!("spec.reject[{i}]"));
+                    let c = if self.language == 2 {
+                        cond::parse_reject(c)
+                    } else {
+                        cond::parse_reject_v1(c)
+                    };
+                    self.parsed(c, &format!("spec.reject[{i}]"));
                 }
             }
             None => self.fail("spec.reject", "must be a non-empty array of conditions"),

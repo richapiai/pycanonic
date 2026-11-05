@@ -318,17 +318,9 @@ fn elements(f: &mut Filter, from: &Path, flatten: &[Path], wrap: bool, group: bo
 
 /// The element paths a condition reads. `$input` paths read the context, not the body.
 fn cond_paths(c: &Cond) -> Vec<&Path> {
-    match c {
-        Cond::All(cs) => cs.iter().flat_map(cond_paths).collect(),
-        Cond::Present(p, _)
-        | Cond::Eq(p, _)
-        | Cond::In(p, _)
-        | Cond::Missing(p)
-        | Cond::Empty(p) => match p.first() {
-            Some(Step::Key(k)) if k == "$input" => vec![],
-            _ => vec![p],
-        },
-    }
+    (c.paths().into_iter())
+        .filter(|p| !matches!(p.first(), Some(Step::Key(k)) if k == "$input"))
+        .collect()
 }
 
 fn custom(tx: &[TxRef]) -> bool {

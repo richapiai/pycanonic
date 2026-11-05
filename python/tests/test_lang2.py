@@ -400,3 +400,16 @@ def test_nan_in_a_dict_body_never_panics():
     assert len(out["uniq"]) == len(set(finite)) + 20
     assert sum(g["n"] for g in out["groups"]) == 60
     assert out["lo"] is None and out["hi"] is None
+
+
+def test_new_conditions_survive_a_plan_round_trip():
+    when = {"all": [{"path": "id", "starts_with": "urn:example:item:"}, {"not": {"path": "id", "matches": "9$"}},
+                    {"any": [{"path": "n", "gte": {"path": "m"}}, {"path": "tags", "contains": "a"}]}]}
+    a = pycanonic.compile_spec(_spec({"name": {"from": "name", "when": when}}), SCHEMA)
+    plan = a.plan_json()
+    assert json.loads(plan)["format"] == 2
+    b = pycanonic.load(plan)
+    hit = {"name": "x", "id": "urn:example:item:1", "n": 3, "m": 2}
+    miss = {"name": "x", "id": "urn:example:item:9", "n": 3, "m": 2}
+    assert b.map(hit) == a.map(hit) == {"name": "x", "kind": None}
+    assert b.map(miss) == a.map(miss) == {"name": None, "kind": None}

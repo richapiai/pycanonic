@@ -30,7 +30,7 @@
 //!   leaves the key out with `omit`, before anything under it is read. Its fields are misses.
 
 use crate::canonical::{Empty, Node, Semantic};
-use crate::cond::{Cond, Rank, holds, key_text};
+use crate::cond::{Cond, Operand, Rank, holds, key_text};
 use crate::doc::{Doc, Key, KeyPath as Path, KeyStep as Step, read, step as step_of};
 use crate::group::{Agg, AggOp, aggregate, groups};
 use crate::plan::{CompileError, Field, ListKind, ListOps, Named, Plan, Scalar, TxRef};
@@ -300,10 +300,10 @@ impl Builder<'_> {
     fn cond(&mut self, c: &Cond) -> Cond<Path> {
         // A condition path that starts with `$input` always reads the context (`cond::holds`).
         let input = |p: &spec::Path| matches!(p.first(), Some(spec::Step::Key(k)) if k == "$input");
-        self.input |= match c {
-            Cond::Present(p, _) | Cond::Eq(p, _) | Cond::In(p, _) => input(p),
-            Cond::Missing(p) | Cond::Empty(p) => input(p),
-            Cond::All(_) => false,
+        self.input |= c.paths().into_iter().any(input);
+        let op = |b: &mut Self, o: &Operand<spec::Path>| match o {
+            Operand::Num(n) => Operand::Num(*n),
+            Operand::Path(p) => Operand::Path(b.path(p)),
         };
         match c {
             Cond::Present(p, b) => Cond::Present(self.path(p), *b),
@@ -312,6 +312,16 @@ impl Builder<'_> {
             Cond::Missing(p) => Cond::Missing(self.path(p)),
             Cond::Empty(p) => Cond::Empty(self.path(p)),
             Cond::All(cs) => Cond::All(cs.iter().map(|c| self.cond(c)).collect()),
+            Cond::Any(cs) => Cond::Any(cs.iter().map(|c| self.cond(c)).collect()),
+            Cond::Not(c) => Cond::Not(Box::new(self.cond(c))),
+            Cond::Matches(p, re) => Cond::Matches(self.path(p), re.clone()),
+            Cond::StartsWith(p, t) => Cond::StartsWith(self.path(p), t.clone()),
+            Cond::EndsWith(p, t) => Cond::EndsWith(self.path(p), t.clone()),
+            Cond::Contains(p, v) => Cond::Contains(self.path(p), v.clone()),
+            Cond::Compare(p, cmp, o) => {
+                let p = self.path(p);
+                Cond::Compare(p, *cmp, op(self, o))
+            }
         }
     }
 

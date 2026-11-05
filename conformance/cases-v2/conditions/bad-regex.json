@@ -1,0 +1,27 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "x": {
+        "from": "v",
+        "when": {
+          "path": "v",
+          "matches": "(unclosed"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "x": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"x\"].when.matches: invalid regex: unclosed group"
+}

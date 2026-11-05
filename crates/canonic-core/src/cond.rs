@@ -6,10 +6,26 @@
 use crate::doc::{Doc, KeyPath, KeyStep, read};
 use crate::exec::{MAX_NODES, json};
 use crate::spec::{Path, parse_path};
+use crate::strings::Pattern;
 use crate::value::Value as V;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
+
+/// The right side of a compare: a number, or the number a path reads.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Operand<P> {
+    Num(f64),
+    Path(P),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum Cmp {
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Cond<P = Path> {
@@ -25,35 +41,155 @@ pub enum Cond<P = Path> {
     Empty(P),
     /// Every condition holds. An empty list holds.
     All(Vec<Cond<P>>),
+    /// `{"path": p, "matches": "<regex>"}`: a string the regex finds a match in.
+    Matches(P, Pattern),
+    /// `{"path": p, "starts_with": s}`: a string.
+    StartsWith(P, String),
+    /// `{"path": p, "ends_with": s}`: a string.
+    EndsWith(P, String),
+    /// `{"path": p, "contains": v}`: a substring of a string, or an element of an array equal to v.
+    Contains(P, Value),
+    /// `{"path": p, "lt" | "lte" | "gt" | "gte": n | {"path": q}}`: numbers only.
+    Compare(P, Cmp, Operand<P>),
+    /// `{"not": c}`.
+    Not(Box<Cond<P>>),
+    /// `{"any": [c, ...]}`. An empty list does not hold.
+    Any(Vec<Cond<P>>),
+}
+
+impl<P> Cond<P> {
+    /// Every path the condition reads, also inside combinators and as a compare operand.
+    pub fn paths(&self) -> Vec<&P> {
+        match self {
+            Cond::Present(p, _)
+            | Cond::Eq(p, _)
+            | Cond::In(p, _)
+            | Cond::Missing(p)
+            | Cond::Empty(p)
+            | Cond::Matches(p, _)
+            | Cond::StartsWith(p, _)
+            | Cond::EndsWith(p, _)
+            | Cond::Contains(p, _) => vec![p],
+            Cond::Compare(p, _, Operand::Num(_)) => vec![p],
+            Cond::Compare(p, _, Operand::Path(q)) => vec![p, q],
+            Cond::Not(c) => c.paths(),
+            Cond::All(cs) | Cond::Any(cs) => cs.iter().flat_map(|c| c.paths()).collect(),
+        }
+    }
 }
 
 const SHAPE: &str = "must be {\"path\": <path>, \"eq\" | \"in\" | \"present\": <value>}";
+const REJECT_SHAPE: &str = "must be {\"path\": <path>, \"eq\" | \"in\" | \"present\": <value>}, \
+                            {\"missing\": <path>} or {\"empty\": <path>}";
+const PATH_SHAPE: &str = "must be a path like a.b[0][\"c d\"]";
+const ALL_TESTS: [&str; 11] = [
+    "eq",
+    "in",
+    "present",
+    "matches",
+    "starts_with",
+    "ends_with",
+    "contains",
+    "lt",
+    "lte",
+    "gt",
+    "gte",
+];
+const COMBINATORS: [&str; 3] = ["not", "all", "any"];
 
-/// A condition as the spec writes it, in the condition forms (`eq`, `in`, `present`). `Err` holds every
-/// issue as (location suffix, message), for example `(".in", "must be an array")`.
-pub fn parse(v: &Value) -> Result<Cond, Vec<(String, String)>> {
-    let Some(o) = v.as_object().filter(|o| o.contains_key("path")) else {
-        return Err(vec![(String::new(), SHAPE.into())]);
+type Issues = Vec<(String, String)>;
+
+/// A condition as the spec writes it: the condition forms (`eq`, `in`, `present`), the string tests
+/// (`matches`, `starts_with`, `ends_with`, `contains`), the compares (`lt`, `lte`, `gt`, `gte`) and
+/// the combinators `not`, `all` and `any`. `Err` holds every issue as (location suffix, message),
+/// for example `(".in", "must be an array")`.
+pub fn parse(v: &Value) -> Result<Cond, Issues> {
+    go(v, None, false, false)
+}
+
+/// A condition in the language 1 grammar: only `eq`, `in` and `present`. A spec without
+/// `"language": 2` is checked with it, so a new form fails there as it did before.
+pub fn parse_v1(v: &Value) -> Result<Cond, Issues> {
+    go(v, None, false, true)
+}
+
+/// `parse_reject` in the language 1 grammar.
+pub fn parse_reject_v1(v: &Value) -> Result<Cond, Issues> {
+    go(v, None, true, true)
+}
+
+/// A condition whose `path` may be left out: without it the condition tests `own`.
+pub fn parse_relative(v: &Value, own: &Path) -> Result<Cond, Issues> {
+    go(v, Some(own), false, false)
+}
+
+/// A `reject` condition: the forms of `parse`, or `{"missing": p}` or `{"empty": p}`.
+pub fn parse_reject(v: &Value) -> Result<Cond, Issues> {
+    go(v, None, true, false)
+}
+
+fn go(v: &Value, own: Option<&Path>, reject: bool, v1: bool) -> Result<Cond, Issues> {
+    let tests = if v1 { &ALL_TESTS[..3] } else { &ALL_TESTS[..] };
+    let shape = || {
+        let m = if reject { REJECT_SHAPE } else { SHAPE };
+        vec![(String::new(), m.to_string())]
     };
+    let Some(o) = v.as_object() else {
+        return Err(shape());
+    };
+    if !o.contains_key("path") {
+        let comb = o
+            .iter()
+            .find(|(k, _)| COMBINATORS.contains(&k.as_str()) && !v1);
+        if let Some((k, p)) = comb {
+            if o.len() != 1 {
+                let m = "a combinator takes no other key";
+                return Err(vec![(String::new(), m.into())]);
+            }
+            return combinator(k, p, own, reject);
+        }
+        let one = Some(o)
+            .filter(|o| o.len() == 1)
+            .and_then(|o| o.iter().next());
+        if let Some((k, p)) = one.filter(|(k, _)| reject && (*k == "missing" || *k == "empty")) {
+            let Some(path) = p.as_str().and_then(parse_path) else {
+                return Err(vec![(format!(".{k}"), PATH_SHAPE.into())]);
+            };
+            return Ok(match k.as_str() {
+                "missing" => Cond::Missing(path),
+                _ => Cond::Empty(path),
+            });
+        }
+        if own.is_none() {
+            return Err(shape());
+        }
+    }
     let mut issues = Vec::new();
     for k in o.keys() {
-        if !["path", "eq", "in", "present"].contains(&k.as_str()) {
+        if k != "path" && !tests.contains(&k.as_str()) {
             issues.push((format!(".{k}"), "unknown property".into()));
         }
     }
-    let path = o["path"].as_str().and_then(parse_path);
+    let path = match o.get("path") {
+        Some(p) => p.as_str().and_then(parse_path),
+        None => own.cloned(),
+    };
     if path.is_none() {
-        let m = "must be a path like a.b[0][\"c d\"]";
-        issues.push((".path".into(), m.into()));
+        issues.push((".path".into(), PATH_SHAPE.into()));
     }
-    let tests: Vec<&str> = ["eq", "in", "present"]
-        .into_iter()
+    let found: Vec<&str> = tests
+        .iter()
+        .copied()
         .filter(|k| o.contains_key(*k))
         .collect();
-    if tests.len() != 1 {
-        issues.push((String::new(), "needs exactly one of eq, in, present".into()));
+    if found.len() != 1 {
+        // The three A6 tests keep their message, so a spec that failed before fails the same way.
+        let legacy = found.iter().all(|k| ALL_TESTS[..3].contains(k));
+        let names = if legacy { &ALL_TESTS[..3] } else { tests };
+        let m = format!("needs exactly one of {}", names.join(", "));
+        issues.push((String::new(), m));
     }
-    let c = match tests.first().map(|k| (*k, &o[*k])) {
+    let c = match found.first().map(|k| (*k, &o[*k])) {
         Some(("in", Value::Array(a))) => path.map(|p| Cond::In(p, a.clone())),
         Some(("in", _)) => {
             issues.push((".in".into(), "must be an array".into()));
@@ -64,6 +200,54 @@ pub fn parse(v: &Value) -> Result<Cond, Vec<(String, String)>> {
             issues.push((".present".into(), "must be true or false".into()));
             None
         }
+        Some(("matches", Value::String(s))) => match Pattern::compile(s) {
+            Ok(re) => path.map(|p| Cond::Matches(p, re)),
+            Err(e) => {
+                let e = e.to_string();
+                let m = e.lines().last().unwrap_or("").trim();
+                let m = m.strip_prefix("error: ").unwrap_or(m);
+                issues.push((".matches".into(), format!("invalid regex: {m}")));
+                None
+            }
+        },
+        Some((k @ ("starts_with" | "ends_with"), Value::String(s))) => {
+            let s = s.clone();
+            path.map(|p| match k {
+                "starts_with" => Cond::StartsWith(p, s),
+                _ => Cond::EndsWith(p, s),
+            })
+        }
+        Some((k @ ("matches" | "starts_with" | "ends_with"), _)) => {
+            issues.push((format!(".{k}"), "must be a string".into()));
+            None
+        }
+        Some(("contains", v)) => path.map(|p| Cond::Contains(p, v.clone())),
+        Some((k @ ("lt" | "lte" | "gt" | "gte"), v)) => {
+            let op = match (v.as_f64(), v.as_object().and_then(|o| o.get("path"))) {
+                (Some(n), _) if v.is_number() => Some(Operand::Num(n)),
+                (_, Some(q)) if v.as_object().is_some_and(|o| o.len() == 1) => {
+                    match q.as_str().and_then(parse_path) {
+                        Some(q) => Some(Operand::Path(q)),
+                        None => {
+                            issues.push((format!(".{k}.path"), PATH_SHAPE.into()));
+                            None
+                        }
+                    }
+                }
+                _ => {
+                    let m = "must be a number or {\"path\": <path>}";
+                    issues.push((format!(".{k}"), m.into()));
+                    None
+                }
+            };
+            let cmp = match k {
+                "lt" => Cmp::Lt,
+                "lte" => Cmp::Lte,
+                "gt" => Cmp::Gt,
+                _ => Cmp::Gte,
+            };
+            path.zip(op).map(|(p, op)| Cond::Compare(p, cmp, op))
+        }
         Some((_, v)) => path.map(|p| Cond::Eq(p, v.clone())),
         None => None,
     };
@@ -73,29 +257,41 @@ pub fn parse(v: &Value) -> Result<Cond, Vec<(String, String)>> {
     }
 }
 
-const REJECT_SHAPE: &str = "must be {\"path\": <path>, \"eq\" | \"in\" | \"present\": <value>}, \
-                            {\"missing\": <path>} or {\"empty\": <path>}";
-
-/// A `reject` condition: the condition forms of `parse`, or `{"missing": p}` or `{"empty": p}`.
-pub fn parse_reject(v: &Value) -> Result<Cond, Vec<(String, String)>> {
-    let one = v
-        .as_object()
-        .filter(|o| o.len() == 1)
-        .and_then(|o| o.iter().next());
-    let Some((k, p)) = one.filter(|(k, _)| *k == "missing" || *k == "empty") else {
-        return parse(v).map_err(|issues| match issues.as_slice() {
-            [(at, m)] if at.is_empty() && m == SHAPE => vec![(String::new(), REJECT_SHAPE.into())],
-            _ => issues,
-        });
+/// `{"not": c}`, `{"all": [c, ...]}` or `{"any": [c, ...]}`. The inner conditions use the same
+/// grammar, so they can be combinators too.
+fn combinator(k: &str, v: &Value, own: Option<&Path>, reject: bool) -> Result<Cond, Issues> {
+    let at = |i: usize, sub: Issues| {
+        (sub.into_iter())
+            .map(|(s, m)| (format!(".{k}[{i}]{s}"), m))
+            .collect::<Issues>()
     };
-    let Some(path) = p.as_str().and_then(parse_path) else {
-        let m = "must be a path like a.b[0][\"c d\"]";
-        return Err(vec![(format!(".{k}"), m.into())]);
+    if k == "not" {
+        return match go(v, own, reject, false) {
+            Ok(c) => Ok(Cond::Not(Box::new(c))),
+            Err(e) => Err(e
+                .into_iter()
+                .map(|(s, m)| (format!(".not{s}"), m))
+                .collect()),
+        };
+    }
+    let Some(a) = v.as_array() else {
+        return Err(vec![(
+            format!(".{k}"),
+            "must be an array of conditions".into(),
+        )]);
     };
-    Ok(match k.as_str() {
-        "missing" => Cond::Missing(path),
-        _ => Cond::Empty(path),
-    })
+    let (mut cs, mut issues) = (Vec::new(), Vec::new());
+    for (i, c) in a.iter().enumerate() {
+        match go(c, own, reject, false) {
+            Ok(c) => cs.push(c),
+            Err(e) => issues.extend(at(i, e)),
+        }
+    }
+    match (issues.is_empty(), k) {
+        (false, _) => Err(issues),
+        (true, "all") => Ok(Cond::All(cs)),
+        (true, _) => Ok(Cond::Any(cs)),
+    }
 }
 
 /// The value `path` names. A path that starts with `$input` reads `ctx`. Any other path reads
@@ -130,6 +326,45 @@ pub fn holds<D: Doc>(
         Cond::Missing(p) => at(p).is_none(),
         Cond::Empty(p) => at(p).is_none_or(|d| empty(&d)),
         Cond::All(cs) => cs.iter().all(|c| holds(c, root, element, ctx)),
+        Cond::Any(cs) => cs.iter().any(|c| holds(c, root, element, ctx)),
+        Cond::Not(c) => !holds(c, root, element, ctx),
+        Cond::Matches(p, re) => on_str(at(p), |s| re.is_match(s)),
+        Cond::StartsWith(p, t) => on_str(at(p), |s| s.starts_with(t.as_str())),
+        Cond::EndsWith(p, t) => on_str(at(p), |s| s.ends_with(t.as_str())),
+        Cond::Contains(p, v) => at(p).is_some_and(|d| match (d.leaf(), v) {
+            (V::Str(s), Value::String(t)) => s.contains(t.as_str()),
+            (V::Container, v) => (0..d.len().unwrap_or(0)).any(|i| equal(d.item(i).as_ref(), v)),
+            _ => false,
+        }),
+        Cond::Compare(p, cmp, rhs) => {
+            let r = match rhs {
+                Operand::Num(n) => Some(*n),
+                Operand::Path(q) => at(q).and_then(|d| finite(&d)),
+            };
+            match (at(p).and_then(|d| finite(&d)), r) {
+                (Some(a), Some(b)) => match cmp {
+                    Cmp::Lt => a < b,
+                    Cmp::Lte => a <= b,
+                    Cmp::Gt => a > b,
+                    Cmp::Gte => a >= b,
+                },
+                _ => false,
+            }
+        }
+    }
+}
+
+/// Whether `f` holds for the text of a string value. Nothing else reads as text.
+fn on_str<D: Doc>(d: Option<D>, f: impl Fn(&str) -> bool) -> bool {
+    d.is_some_and(|d| matches!(d.leaf(), V::Str(s) if f(&s)))
+}
+
+/// A finite number: an `Int` or `Float` value. A string or a `BigInt` is not one.
+fn finite<D: Doc>(d: &D) -> Option<f64> {
+    match d.leaf() {
+        V::Int(i) => Some(i as f64),
+        V::Float(f) if f.is_finite() => Some(f),
+        _ => None,
     }
 }
 

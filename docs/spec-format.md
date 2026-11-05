@@ -508,6 +508,34 @@ With `"omit": true` and a failed `when`, the key is left out of the output. `omi
 | null | holds only for `"eq": null` or an `in` list with null | fails | holds |
 | `""`, `[]`, `{}` | holds on an equal value | holds | fails |
 
+`when`, `filter` and `reject` share one condition grammar. A condition has a `path` and one test:
+
+| Test | Holds when |
+|---|---|
+| `eq`, `in`, `present` | as above |
+| `matches` | the value is a string and the regex finds a match in it (not anchored) |
+| `starts_with`, `ends_with` | the value is a string with that prefix or suffix |
+| `contains` | the value is a string with that substring, or an array with an element equal to the given value |
+| `lt`, `lte`, `gt`, `gte` | the value and the argument are both numbers and the compare is true. The argument is a number or `{"path": <path>}` |
+
+A string test on a missing, null or non-string value does not hold. A compare does not hold if either side is not a finite number, so `"5"` is not 5. The compile reads each `matches` regex once, and a bad regex fails it with `spec.fields["x"].when.matches: invalid regex: <message>`.
+
+`{"not": c}`, `{"all": [c, ...]}` and `{"any": [c, ...]}` combine conditions, and they nest. An empty `all` holds and an empty `any` does not. In a language 1 spec the new tests and combinators fail the grammar check as before.
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "properties": {"id": {"type": "string"}, "tier": {"type": "string"}}},
+  "spec": {"language": 2, "provider": "acme", "endpoint": "item.get", "version": 1, "status": "draft",
+    "fields": {"id": "id", "tier": {"from": "tier", "when": {"all": [
+      {"path": "id", "starts_with": "urn:example:item:"},
+      {"not": {"path": "id", "matches": "9$"}},
+      {"path": "score", "gte": {"path": "min_score"}}]}}}},
+  "body": {"id": "urn:example:item:1", "tier": "gold", "score": 7, "min_score": 5},
+  "expected": {"id": "urn:example:item:1", "tier": "gold"}
+}
+```
+
 A routing field cannot read `$input` and cannot have `when`, and neither can an object that holds one. Both fail the compile (`routing fields can't read $input`, `routing fields can't have when`), because `extract` has no context.
 
 ### Reject

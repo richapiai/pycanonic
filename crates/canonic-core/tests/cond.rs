@@ -119,3 +119,76 @@ fn eq_on_containers_compares_numbers_by_value_and_ignores_key_order() {
     );
     assert!(holds(&any, root, None, None));
 }
+
+#[test]
+fn string_tests_read_only_strings_and_contains_reads_arrays() {
+    use canonic_core::cond::{Cmp, Operand};
+    let all = Filter::all();
+    let root = parse(
+        br#"{"s": "abc", "n": null, "i": 5, "a": ["x", 5], "w": 3, "t": "5", "f": 4.5}"#,
+        &all,
+    )
+    .unwrap();
+    let root = Some(&&root);
+    let h = |c: Cond<KeyPath>| holds(&c, root, None, None);
+    let re = |s: &str| serde_json::from_value(json!(s)).unwrap();
+    assert!(h(Cond::Matches(path(&["s"]), re("^a.c$"))));
+    assert!(!h(Cond::Matches(path(&["i"]), re("5"))));
+    assert!(!h(Cond::Matches(path(&["n"]), re(""))));
+    assert!(!h(Cond::Matches(path(&["x"]), re(""))));
+    assert!(h(Cond::StartsWith(path(&["s"]), "ab".into())));
+    assert!(h(Cond::EndsWith(path(&["s"]), "bc".into())));
+    assert!(!h(Cond::StartsWith(path(&["i"]), "5".into())));
+    assert!(h(Cond::Contains(path(&["s"]), json!("b"))));
+    assert!(!h(Cond::Contains(path(&["s"]), json!(5))));
+    assert!(h(Cond::Contains(path(&["a"]), json!(5))));
+    assert!(h(Cond::Contains(path(&["a"]), json!("x"))));
+    assert!(!h(Cond::Contains(path(&["a"]), json!("xy"))));
+    let cmp = |k: &str, c, o| h(Cond::Compare(path(&[k]), c, o));
+    assert!(cmp("i", Cmp::Gte, Operand::Num(5.0)));
+    assert!(!cmp("i", Cmp::Gt, Operand::Num(5.0)));
+    assert!(cmp("f", Cmp::Lt, Operand::Num(5.0)));
+    assert!(!cmp("t", Cmp::Gte, Operand::Num(1.0)));
+    assert!(!cmp("x", Cmp::Lt, Operand::Num(1.0)));
+    assert!(cmp("i", Cmp::Gt, Operand::Path(path(&["w"]))));
+    assert!(!cmp("i", Cmp::Gt, Operand::Path(path(&["t"]))));
+    assert!(!cmp("i", Cmp::Lte, Operand::Path(path(&["x"]))));
+    let missing = Cond::Missing(path(&["x"]));
+    assert!(!h(Cond::Not(Box::new(missing.clone()))));
+    assert!(h(Cond::Any(vec![present(&["x"], true), missing])));
+    assert!(!h(Cond::Any(vec![])));
+}
+
+#[test]
+fn parse_reads_the_new_forms_and_nests_combinators() {
+    use canonic_core::cond::{parse, parse_reject, parse_relative, parse_v1};
+    use canonic_core::spec::parse_path;
+    let c = parse(&json!({"all": [{"not": {"path": "a", "starts_with": "x"}},
+        {"any": [{"path": "b", "gte": {"path": "c"}}, {"path": "d", "contains": 1}]}]}))
+    .unwrap();
+    assert!(matches!(&c, Cond::All(v) if v.len() == 2 && matches!(v[0], Cond::Not(_))));
+    let own = parse_path("name").unwrap();
+    let c = parse_relative(&json!({"matches": "^a"}), &own).unwrap();
+    assert!(matches!(&c, Cond::Matches(p, _) if *p == own));
+    let c = parse_relative(&json!({"not": {"lt": 3}}), &own).unwrap();
+    assert!(matches!(c, Cond::Not(_)));
+    // An explicit path wins over `own`.
+    let c = parse_relative(&json!({"path": "z", "eq": 1}), &own).unwrap();
+    assert_eq!(c, Cond::Eq(parse_path("z").unwrap(), json!(1)));
+    // Without own, a path is required.
+    assert!(parse(&json!({"matches": "a"})).is_err());
+    // Reject keeps missing and empty, also inside a combinator.
+    assert!(parse_reject(&json!({"not": {"missing": "a"}})).is_ok());
+    assert!(parse(&json!({"not": {"missing": "a"}})).is_err());
+    // Language 1 reads neither the new tests nor the combinators.
+    assert!(parse_v1(&json!({"path": "a", "starts_with": "x"})).is_err());
+    assert!(parse_v1(&json!({"not": {"path": "a", "eq": 1}})).is_err());
+    // Issues carry the location inside a combinator.
+    let e = parse(&json!({"all": [{"path": "a", "eq": 1}, {"path": "b", "lt": "5"}]})).unwrap_err();
+    assert_eq!(e[0].0, ".all[1].lt");
+    let e = parse(&json!({"path": "a", "matches": "("})).unwrap_err();
+    assert_eq!(
+        e,
+        vec![(".matches".into(), "invalid regex: unclosed group".into())]
+    );
+}

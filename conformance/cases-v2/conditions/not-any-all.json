@@ -1,0 +1,185 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "nt": {
+        "const": true,
+        "when": {
+          "not": {
+            "path": "v",
+            "eq": "abc"
+          }
+        }
+      },
+      "an": {
+        "const": true,
+        "when": {
+          "any": [
+            {
+              "path": "v",
+              "starts_with": "x"
+            },
+            {
+              "path": "v",
+              "eq": 5
+            }
+          ]
+        }
+      },
+      "al": {
+        "const": true,
+        "when": {
+          "all": [
+            {
+              "path": "v",
+              "starts_with": "a"
+            },
+            {
+              "not": {
+                "path": "v",
+                "ends_with": "c"
+              }
+            }
+          ]
+        }
+      },
+      "nn": {
+        "const": true,
+        "when": {
+          "not": {
+            "any": [
+              {
+                "path": "v",
+                "present": true
+              },
+              {
+                "all": []
+              }
+            ]
+          }
+        }
+      },
+      "ea": {
+        "const": true,
+        "when": {
+          "any": []
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "nt": {
+        "type": "boolean"
+      },
+      "an": {
+        "type": "boolean"
+      },
+      "al": {
+        "type": "boolean"
+      },
+      "nn": {
+        "type": "boolean"
+      },
+      "ea": {
+        "type": "boolean"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "nt": true,
+        "an": null,
+        "al": null,
+        "nn": null,
+        "ea": null
+      }
+    },
+    {
+      "body": {
+        "v": null
+      },
+      "context": null,
+      "expected": {
+        "nt": true,
+        "an": null,
+        "al": null,
+        "nn": null,
+        "ea": null
+      }
+    },
+    {
+      "body": {
+        "v": ""
+      },
+      "context": null,
+      "expected": {
+        "nt": true,
+        "an": null,
+        "al": null,
+        "nn": null,
+        "ea": null
+      }
+    },
+    {
+      "body": {
+        "v": 5
+      },
+      "context": null,
+      "expected": {
+        "nt": true,
+        "an": true,
+        "al": null,
+        "nn": null,
+        "ea": null
+      }
+    },
+    {
+      "body": {
+        "v": "abc"
+      },
+      "context": null,
+      "expected": {
+        "nt": null,
+        "an": null,
+        "al": null,
+        "nn": null,
+        "ea": null
+      }
+    },
+    {
+      "body": {
+        "v": "xyz"
+      },
+      "context": null,
+      "expected": {
+        "nt": true,
+        "an": true,
+        "al": null,
+        "nn": null,
+        "ea": null
+      }
+    },
+    {
+      "body": {
+        "v": "ab"
+      },
+      "context": null,
+      "expected": {
+        "nt": true,
+        "an": null,
+        "al": true,
+        "nn": null,
+        "ea": null
+      }
+    }
+  ]
+}

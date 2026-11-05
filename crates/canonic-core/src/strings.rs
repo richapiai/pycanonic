@@ -14,7 +14,15 @@ pub struct Pattern(regex::Regex);
 
 impl Pattern {
     pub(crate) fn new(s: &str) -> Option<Pattern> {
-        regex::Regex::new(s).ok().map(Pattern)
+        Pattern::compile(s).ok()
+    }
+
+    pub(crate) fn compile(s: &str) -> Result<Pattern, regex::Error> {
+        regex::Regex::new(s).map(Pattern)
+    }
+
+    pub(crate) fn is_match(&self, s: &str) -> bool {
+        self.0.is_match(s)
     }
 
     pub fn as_str(&self) -> &str {

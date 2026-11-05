@@ -1,0 +1,148 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "lt": {
+        "const": true,
+        "when": {
+          "path": "v",
+          "lt": 3
+        }
+      },
+      "gte": {
+        "const": true,
+        "when": {
+          "path": "v",
+          "gte": 5
+        }
+      },
+      "gtp": {
+        "const": true,
+        "when": {
+          "path": "v",
+          "gt": {
+            "path": "w"
+          }
+        }
+      },
+      "lep": {
+        "const": true,
+        "when": {
+          "path": "v",
+          "lte": {
+            "path": "nope"
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "lt": {
+        "type": "boolean"
+      },
+      "gte": {
+        "type": "boolean"
+      },
+      "gtp": {
+        "type": "boolean"
+      },
+      "lep": {
+        "type": "boolean"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "lt": null,
+        "gte": null,
+        "gtp": null,
+        "lep": null
+      }
+    },
+    {
+      "body": {
+        "v": null
+      },
+      "context": null,
+      "expected": {
+        "lt": null,
+        "gte": null,
+        "gtp": null,
+        "lep": null
+      }
+    },
+    {
+      "body": {
+        "v": ""
+      },
+      "context": null,
+      "expected": {
+        "lt": null,
+        "gte": null,
+        "gtp": null,
+        "lep": null
+      }
+    },
+    {
+      "body": {
+        "v": 5,
+        "w": 3
+      },
+      "context": null,
+      "expected": {
+        "lt": null,
+        "gte": true,
+        "gtp": true,
+        "lep": null
+      }
+    },
+    {
+      "body": {
+        "v": "5",
+        "w": 3
+      },
+      "context": null,
+      "expected": {
+        "lt": null,
+        "gte": null,
+        "gtp": null,
+        "lep": null
+      }
+    },
+    {
+      "body": {
+        "v": 2,
+        "w": "3"
+      },
+      "context": null,
+      "expected": {
+        "lt": true,
+        "gte": null,
+        "gtp": null,
+        "lep": null
+      }
+    },
+    {
+      "body": {
+        "v": 4.5,
+        "w": 4.5
+      },
+      "context": null,
+      "expected": {
+        "lt": null,
+        "gte": null,
+        "gtp": null,
+        "lep": null
+      }
+    }
+  ]
+}

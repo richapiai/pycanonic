@@ -2,7 +2,7 @@
 //! semantics, as data. The executor runs it. `source()` prints it for humans.
 
 use crate::canonical::{Empty, Node, Semantic};
-use crate::cond::Cond;
+use crate::cond::{Cmp, Cond, Operand};
 use crate::spec::{Aggregate, Path, Source, Status, Step};
 use crate::transforms::Builtin;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -545,6 +545,28 @@ fn cond(c: &Cond) -> String {
         Cond::All(cs) => {
             let all: Vec<String> = cs.iter().map(cond).collect();
             format!("all({})", all.join(", "))
+        }
+        Cond::Any(cs) => {
+            let any: Vec<String> = cs.iter().map(cond).collect();
+            format!("any({})", any.join(", "))
+        }
+        Cond::Not(c) => format!("not({})", cond(c)),
+        Cond::Matches(p, re) => format!("{} matches {}", path(p), Value::from(re.as_str())),
+        Cond::StartsWith(p, s) => format!("{} starts_with {}", path(p), Value::from(s.as_str())),
+        Cond::EndsWith(p, s) => format!("{} ends_with {}", path(p), Value::from(s.as_str())),
+        Cond::Contains(p, v) => format!("{} contains {v}", path(p)),
+        Cond::Compare(p, cmp, o) => {
+            let name = match cmp {
+                Cmp::Lt => "lt",
+                Cmp::Lte => "lte",
+                Cmp::Gt => "gt",
+                Cmp::Gte => "gte",
+            };
+            let rhs = match o {
+                Operand::Num(n) => Value::from(*n).to_string(),
+                Operand::Path(q) => path(q),
+            };
+            format!("{} {name} {rhs}", path(p))
         }
     }
 }

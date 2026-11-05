@@ -1,0 +1,96 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "m": {
+        "const": true,
+        "when": {
+          "path": "v",
+          "matches": "^x"
+        }
+      },
+      "u": {
+        "const": true,
+        "when": {
+          "path": "v",
+          "matches": "b"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "m": {
+        "type": "boolean"
+      },
+      "u": {
+        "type": "boolean"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "m": null,
+        "u": null
+      }
+    },
+    {
+      "body": {
+        "v": null
+      },
+      "context": null,
+      "expected": {
+        "m": null,
+        "u": null
+      }
+    },
+    {
+      "body": {
+        "v": ""
+      },
+      "context": null,
+      "expected": {
+        "m": null,
+        "u": null
+      }
+    },
+    {
+      "body": {
+        "v": 5
+      },
+      "context": null,
+      "expected": {
+        "m": null,
+        "u": null
+      }
+    },
+    {
+      "body": {
+        "v": "abc"
+      },
+      "context": null,
+      "expected": {
+        "m": null,
+        "u": true
+      }
+    },
+    {
+      "body": {
+        "v": "xyz"
+      },
+      "context": null,
+      "expected": {
+        "m": true,
+        "u": null
+      }
+    }
+  ]
+}

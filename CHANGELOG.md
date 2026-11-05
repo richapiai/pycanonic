@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+
+- Language 2 conditions in `when`, `filter` and `reject` gain `matches`, `starts_with`, `ends_with`, `contains`, the compares `lt`, `lte`, `gt` and `gte`, and the combinators `not`, `all` and `any`. A language 1 spec that uses one fails the grammar check as before.
+
 ## 0.1.1
 
 ### Changed

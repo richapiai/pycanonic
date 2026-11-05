@@ -1,0 +1,72 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "people[]": {
+        "from": "people",
+        "filter": {
+          "path": "url",
+          "starts_with": "https://x.example/people/"
+        },
+        "item": {
+          "name": "name"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "people": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "people": [
+          {
+            "name": "ada",
+            "url": "https://x.example/people/ada"
+          },
+          {
+            "name": "b",
+            "url": "https://x.example/orgs/b"
+          },
+          {
+            "name": "c",
+            "url": null
+          },
+          {
+            "name": "d"
+          },
+          {
+            "name": "e",
+            "url": 5
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "people": [
+          {
+            "name": "ada"
+          }
+        ]
+      }
+    }
+  ]
+}
