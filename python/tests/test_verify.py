@@ -314,9 +314,10 @@ def test_item_leaf_outside_item_map_is_unmapped() -> None:
     """R43 inside items: a leaf the item map omits is listed, and gates only with --fail-unmapped."""
     rows = pairs([({"name": "a", "items": [{"name": "i", "url": "u"}]}, {"n": "a", "xs": [{"n": "i"}]}) for _ in range(2)])
     s = spec({"name": "n", "items[]": {"from": "xs", "item": {"name": "n"}}})
-    r = run(s, ITEMS, rows, 0.0, None)  # 0.0: the whole-list row `items[]` still misses the omitted url
+    r = run(s, ITEMS, rows, 0.95, None)
     assert r.unmapped == {"items[].url": 2} and "items[].url" not in r.fields and r.ok
-    assert not run(s, ITEMS, rows, 0.0, None, fail_unmapped=True).ok
+    assert "items[]" not in r.fields and r.fields["items[].name"] == (2, 2)
+    assert not run(s, ITEMS, rows, 0.95, None, fail_unmapped=True).ok
     ref = spec({"name": "n", "items[]": {"from": "xs", "item": {"$ref": "it"}}})
     assert run({**ref, "definitions": {"it": {"name": "n", "url": "u"}}}, ITEMS, item_rows(), 0.0, None).unmapped == {}
 

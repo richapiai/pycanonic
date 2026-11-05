@@ -210,8 +210,8 @@ def run(
     item_rows, left = _item_rows(kept, schema, spec.get("definitions") or {})
     rows = {k: [r for r in rs if not _under(r, ignored)] for k, rs in item_rows.items()}
 
-    def dropped(row: str) -> bool:  # a row whose descendant is ignored cannot compare its whole value
-        return any(i != row and _under(i, {row}) for i in ignored)
+    def dropped(row: str) -> bool:  # a row with an ignored or unmapped descendant cannot compare its whole value
+        return any(i != row and _under(i, {row}) for i in [*ignored, *left])
 
     order = [r for k in keys for r in [k, *rows.get(k, [])] if not dropped(r)]
     unions = {k: n for k, n in _nodes(schema) if k in kept and "oneOf" in n}
