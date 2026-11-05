@@ -78,9 +78,12 @@ impl<P> Cond<P> {
     }
 }
 
-const SHAPE: &str = "must be {\"path\": <path>, \"eq\" | \"in\" | \"present\": <value>}";
-const REJECT_SHAPE: &str = "must be {\"path\": <path>, \"eq\" | \"in\" | \"present\": <value>}, \
-                            {\"missing\": <path>} or {\"empty\": <path>}";
+const SHAPE: &str = "must be {\"path\": <path>, \"eq\" | \"in\" | \"present\" | \"matches\" | \"starts_with\" | \"ends_with\" | \"contains\" | \"lt\" | \"lte\" | \"gt\" | \"gte\": <value>}, {\"not\": <condition>}, {\"all\": [<condition>, ...]} or {\"any\": [<condition>, ...]}";
+const REJECT_SHAPE: &str = "must be {\"path\": <path>, \"eq\" | \"in\" | \"present\" | \"matches\" | \"starts_with\" | \"ends_with\" | \"contains\" | \"lt\" | \"lte\" | \"gt\" | \"gte\": <value>}, {\"not\": <condition>}, {\"all\": [<condition>, ...]}, {\"any\": [<condition>, ...]}, {\"missing\": <path>} or {\"empty\": <path>}";
+// The language 1 texts stay as 0.1.1 wrote them.
+const SHAPE_V1: &str = "must be {\"path\": <path>, \"eq\" | \"in\" | \"present\": <value>}";
+const REJECT_SHAPE_V1: &str = "must be {\"path\": <path>, \"eq\" | \"in\" | \"present\": <value>}, \
+                               {\"missing\": <path>} or {\"empty\": <path>}";
 const PATH_SHAPE: &str = "must be a path like a.b[0][\"c d\"]";
 const ALL_TESTS: [&str; 11] = [
     "eq",
@@ -131,7 +134,12 @@ pub fn parse_reject(v: &Value) -> Result<Cond, Issues> {
 fn go(v: &Value, own: Option<&Path>, reject: bool, v1: bool) -> Result<Cond, Issues> {
     let tests = if v1 { &ALL_TESTS[..3] } else { &ALL_TESTS[..] };
     let shape = || {
-        let m = if reject { REJECT_SHAPE } else { SHAPE };
+        let m = match (reject, v1) {
+            (true, true) => REJECT_SHAPE_V1,
+            (true, false) => REJECT_SHAPE,
+            (false, true) => SHAPE_V1,
+            (false, false) => SHAPE,
+        };
         vec![(String::new(), m.to_string())]
     };
     let Some(o) = v.as_object() else {
@@ -183,10 +191,7 @@ fn go(v: &Value, own: Option<&Path>, reject: bool, v1: bool) -> Result<Cond, Iss
         .filter(|k| o.contains_key(*k))
         .collect();
     if found.len() != 1 {
-        // The three A6 tests keep their message, so a spec that failed before fails the same way.
-        let legacy = found.iter().all(|k| ALL_TESTS[..3].contains(k));
-        let names = if legacy { &ALL_TESTS[..3] } else { tests };
-        let m = format!("needs exactly one of {}", names.join(", "));
+        let m = format!("needs exactly one of {}", tests.join(", "));
         issues.push((String::new(), m));
     }
     let c = match found.first().map(|k| (*k, &o[*k])) {
