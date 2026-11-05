@@ -41,10 +41,7 @@ class FitOptions:
     keep: dict[str, Any] = field(default_factory=dict)  # top-level field key to the approved rule
     ask: Ask | None = None
     transforms: Transforms = field(default_factory=dict)  # for kept rules that name private transforms
-    tolerance: Tolerance = field(default_factory=Tolerance)  # ; top-level leaf fields only
-
-
-def _val(doc: Any, key: str) -> Any:
+    tolerance: Tolerance = field(default_factory=Tolerance)  # def _val(doc: Any, key: str) -> Any:
     """The value at a field key (`hq.city`, `jobs[]`, `[]`), or MISSING."""
     return get(doc, _segs(key.removesuffix("[]")))
 
@@ -159,7 +156,7 @@ class _Fitter:
         self.rows.append(Row(key, "", "path", chosen, len(hits[chosen]), len(live), held, examples))
 
     def array(self, key: str, node: dict[str, Any], vals: list[Any]) -> None:
-        rule, fits = fit_array(key, node, self.pairs)
+        rule, fits = fit_array(key, node, self.pairs, tol=self.opts.tolerance)
         if rule is None and (const := fit_const(key, vals)):
             rule, fits = const, [LeafFit(key, const, "const", len(vals), len(vals), 1.0, [], [])]
         if rule is not None:
@@ -261,7 +258,7 @@ def _hit(rows: list[Row], key: str, got: Any, want: Any, tol: Tolerance = Tolera
     if not key.endswith("[]"):
         return _eq(got, want, tol)
     keys = [r.field[len(key) + 1 :] for r in rows if r.field.startswith(key + ".") and r.rule is not None]
-    return agree(got, want, keys) if keys else _eq(got, want)
+    return agree(got, want, keys, tol) if keys else _eq(got, want)
 
 
 def _check(f: _Fitter) -> None:

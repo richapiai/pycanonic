@@ -132,7 +132,7 @@ Two providers that scrape the same record at different times can differ by a few
 - `--url-ignore-query` compares two strings that both start with `scheme://` without the part from `?` to before `#`. The fragment still counts. A text that is not a URL is not cut.
 - `--text-ignore-space` collapses each run of white space to one space and trims both ends, then compares.
 
-Lists and objects compare part by part with the same flags. In `fit`, a top-level field whose rule is right on some pair only within a flag is review, never auto, and its note reads `matches within --num-tolerance 0.01`. `fit` applies the flags to top-level fields and not to the leaves inside list items. In `verify`, a tolerated pair counts as a match, and the field reports how many pairs matched only that way (`tolerated 5` in the table, `"tolerated": 5` in JSON, left out when 0).
+Lists and objects compare part by part with the same flags. In `fit`, a field (a leaf inside list items too) whose rule is right on some pair only within a flag is review, never auto, and its note reads `matches within --num-tolerance 0.01`. In `verify`, a tolerated pair counts as a match, and the field reports how many pairs matched only that way (`tolerated 5` in the table, `"tolerated": 5` in JSON, left out when 0).
 
 ## What is decided automatically, and what can break
 

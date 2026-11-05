@@ -1030,3 +1030,18 @@ def test_fit_tolerated_field_is_review() -> None:
     assert (row.tier, row.rule, row.support, row.total) == ("review", "stats.fans", 6, 6)
     assert "matches within --num-tolerance 0.01" in row.risk()
     assert drifting(Tolerance()).fields[0].rule is None  # strict: no rule reproduces a drifting count
+
+
+def test_fit_tolerated_item_leaf_is_review() -> None:
+    def run(tol: Tolerance) -> Any:
+        rows = [
+            ({"xs": [{"id": f"i{i}{k}", "n": 1000 * (i + 1) + k} for k in range(2)]}, {"ys": [{"key": f"i{i}{k}", "c": 1000 * (i + 1) + k + 1} for k in range(2)]})
+            for i in range(6)
+        ]
+        pairs = [Pair(f"p{i}.json", d, p, None) for i, (d, p) in enumerate(rows)]
+        return fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("globex", "e", tolerance=tol))
+
+    row = next(r for r in run(Tolerance(num=0.01)).fields if r.field == "xs[].n")
+    assert row.tier == "review" and row.support == row.total == 12
+    assert "matches within --num-tolerance 0.01" in row.risk()
+    assert next(r for r in run(Tolerance()).fields if r.field == "xs[].n").tier == "manual"

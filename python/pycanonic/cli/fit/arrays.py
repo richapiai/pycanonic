@@ -18,7 +18,7 @@ from ..infer.score import Leaf, ScoreCtx, name_score
 from ..infer.sources import Seg, Source, format_path
 from ..infer.tokens import SEED
 from .chains import apply_rule, text
-from .compare import same
+from .compare import Tolerance, match, same, used
 from .index import scalars
 from .leaves import LeafFit, _related, _segs, fit_leaf
 from .pairs import Pair
@@ -45,7 +45,7 @@ def get(doc: Any, segs: list[Seg]) -> Any:
     return doc
 
 
-def agree(out: Any, want: Any, keys: list[str]) -> bool:
+def agree(out: Any, want: Any, keys: list[str], tol: Tolerance = Tolerance()) -> bool:
     """`out` has the default array's structure, as an object is judged by its keys: the same element
     (or group) count, and the same count in every nested array that has a rule. `keys` are the
     relative item keys with a rule (`name`, `roles[]`, `roles[].title`). Each item leaf is judged on
@@ -53,7 +53,7 @@ def agree(out: Any, want: Any, keys: list[str]) -> bool:
     (scalar items, a const or kept rule) the arrays compare whole."""
     out, want = (None if v is MISSING else v for v in (out, want))
     if not keys or not isinstance(out, list) or not isinstance(want, list):
-        return same(out, want)
+        return match(out, want, tol) != "miss"
     if len(out) != len(want):
         return False
     nested = [k for k in keys if k.endswith("[]") and k.count("[]") == 1]
@@ -63,7 +63,7 @@ def agree(out: Any, want: Any, keys: list[str]) -> bool:
             a, b = (None if (v := get(z, _segs(k[:-2]))) is MISSING else v for z in (x, y))
             if isinstance(a, list) and isinstance(b, list) and not sub:
                 sub = [""]  # a nested array of scalars: its count, not its values
-            if not agree(a, b, sub):
+            if not agree(a, b, sub, tol):
                 return False
     return True
 
@@ -223,7 +223,7 @@ def _under(rel: str) -> str:
     return f"{_G}[]{'' if rel.startswith('[') else '.'}{rel}"
 
 
-def _aggregate(f: LeafFit, key: str, eps: list[Pair], owners: list[int], targets: list[Any], groups: list[list[Any]]) -> LeafFit:
+def _aggregate(f: LeafFit, key: str, eps: list[Pair], owners: list[int], targets: list[Any], groups: list[list[Any]], tol: Tolerance = Tolerance()) -> LeafFit:
     """The leaf rule of a grouped item: the plain rule (it reads the group's first element) or an
     aggregate over `$group`, whichever reproduces more of the default. Null targets break ties, so
     `nulls: propagate` wins where the default is null for an open group."""
@@ -236,7 +236,7 @@ def _aggregate(f: LeafFit, key: str, eps: list[Pair], owners: list[int], targets
         for op, how in _AGG:
             agg = {"aggregate": op, "from": _under(p), **({"nulls": how} if how == "propagate" else {})}
             cands.append(({**agg, "from": "$group" + agg["from"][len(_G) :]}, [apply_rule(agg, {_G: g}) for g in groups]))
-    hits = [frozenset(j for j, (o, t) in enumerate(zip(outs, targets)) if same(o, t)) for _, outs in cands]
+    hits = [frozenset(j for j, (o, t) in enumerate(zip(outs, targets)) if match(o, t, tol) != "miss") for _, outs in cands]
 
     def best(skip: frozenset[int] = frozenset()) -> int | None:
         score = [(len(h & set(full) - skip), len(h & set(nulls) - skip)) for h in hits]
@@ -256,7 +256,8 @@ def _aggregate(f: LeafFit, key: str, eps: list[Pair], owners: list[int], targets
     examples = [{"pair": eps[j].name, "want": targets[j], "got": outs[j]} for j in order[:3]]
     rest = sorted((i for i in range(len(cands)) if i != top), key=lambda i: -len(hits[i] & set(full)))
     alternatives = [{"rule": cands[i][0], "kind": "group", "support": len(hits[i] & set(full))} for i in rest[:3]]
-    return LeafFit(key, rule, "group", len(hits[top] & set(full)), len(full), held / len(units), examples, alternatives)
+    flags = dict.fromkeys(x for j in hits[top] & set(full) if match(outs[j], targets[j], tol) == "tolerated" for x in used(outs[j], targets[j], tol))
+    return LeafFit(key, rule, "group", len(hits[top] & set(full)), len(full), held / len(units), examples, alternatives, tolerated=", ".join(flags) or None)
 
 
 @dataclass
@@ -267,7 +268,7 @@ class _Items:
     holdout: float
 
 
-def _object(props: dict[str, Any], eps: list[Pair], owners: list[int], groups: list[list[Any]] | None, prefix: list[Seg]) -> tuple[dict[str, Any], list[LeafFit]]:
+def _object(props: dict[str, Any], eps: list[Pair], owners: list[int], groups: list[list[Any]] | None, prefix: list[Seg], tol: Tolerance = Tolerance()) -> tuple[dict[str, Any], list[LeafFit]]:
     item: dict[str, Any] = {}
     fits: list[LeafFit] = []
     for k, sub in props.items():
@@ -276,7 +277,7 @@ def _object(props: dict[str, Any], eps: list[Pair], owners: list[int], groups: l
         sub = sub if isinstance(sub, dict) else {}
         if sub.get("type") == "array":
             sub_pairs = eps if groups is None else [Pair(e.name, e.default, {_G: g}, e.inputs) for e, g in zip(eps, groups)]
-            rule, sub_fits = fit_array(key + "[]", sub, sub_pairs, owners)
+            rule, sub_fits = fit_array(key + "[]", sub, sub_pairs, owners, tol)
             if groups is not None and sub_fits:
                 # A nested array in a group reads $group only, not the first element; add
                 # the first element as a second source if a provider needs it.
@@ -288,14 +289,14 @@ def _object(props: dict[str, Any], eps: list[Pair], owners: list[int], groups: l
                 item[key + "[]"] = rule
             fits += sub_fits
         elif "properties" in sub:
-            inner, inner_fits = _object(sub["properties"], eps, owners, groups, segs)
+            inner, inner_fits = _object(sub["properties"], eps, owners, groups, segs, tol)
             item.update(inner)
             fits += inner_fits
         else:
             targets = [None if (v := get(e.default, segs)) is MISSING else v for e in eps]
-            f = fit_leaf(key, eps, targets, [scalars(e.provider) for e in eps], True, owners=owners)
+            f = fit_leaf(key, eps, targets, [scalars(e.provider) for e in eps], True, owners=owners, tol=tol)
             if groups is not None:
-                f = _aggregate(f, key, eps, owners, targets, groups)
+                f = _aggregate(f, key, eps, owners, targets, groups, tol)
             if f.rule is None and f.total and not any(_related(o.value, t) for e, t in zip(eps, targets) if t is not None for o in scalars(e.provider)):
                 f = replace(f, kind="absent")  # nothing in the provider looks like it, as for top-level fields
             if f.rule is not None:
@@ -304,16 +305,16 @@ def _object(props: dict[str, Any], eps: list[Pair], owners: list[int], groups: l
     return item, fits
 
 
-def _items(field: str, items: dict[str, Any], eps: list[Pair], owners: list[int], groups: list[list[Any]] | None) -> _Items | None:
+def _items(field: str, items: dict[str, Any], eps: list[Pair], owners: list[int], groups: list[list[Any]] | None, tol: Tolerance = Tolerance()) -> _Items | None:
     """The per-element part of the rule, fitted over element pairs (default element, provider element).
     `owners[i]` is the sample pair that element pair `i` came from, for the holdout."""
     if not eps:
         return None
     if "properties" in items:
-        item, fits = _object(items["properties"], eps, owners, groups, [])
+        item, fits = _object(items["properties"], eps, owners, groups, [], tol)
         held = [f.holdout for f in fits if f.rule is not None]
         return _Items({"item": item}, fits, "path", min(held, default=1.0)) if item else None
-    f = fit_leaf(field, eps, [e.default for e in eps], [scalars(e.provider) for e in eps], True, owners=owners)
+    f = fit_leaf(field, eps, [e.default for e in eps], [scalars(e.provider) for e in eps], True, owners=owners, tol=tol)
     src = f.rule.get("from") if f.rule else None
     if f.rule is None or not isinstance(src, str):
         return None  # join, coalesce and const have no per-element form
@@ -332,7 +333,7 @@ class _Tried:
     outs: list[Any]
 
 
-def fit_array(field: str, node: dict[str, Any], pairs: list[Pair], owners: list[int] | None = None) -> tuple[dict[str, Any] | None, list[LeafFit]]:
+def fit_array(field: str, node: dict[str, Any], pairs: list[Pair], owners: list[int] | None = None, tol: Tolerance = Tolerance()) -> tuple[dict[str, Any] | None, list[LeafFit]]:
     """The array rule for `field` and the fits under it. The first fit is the array itself, with kind
     path (or the element transform for scalar items), wrap, flatten, group, filter or none; the rest
     are the item leaves and nested arrays, keyed `field.leaf`. Pairs where the default has no list do
@@ -369,7 +370,7 @@ def fit_array(field: str, node: dict[str, Any], pairs: list[Pair], owners: list[
         full = {**rule, **it.part}
         outs = [apply_rule(full, p.provider, node) for p in pairs]
         keys = [f.field for f in it.fits if f.rule is not None]
-        tried.append(_Tried(kind, full, it, frozenset(j for j in live if agree(outs[j], wants[j], keys)), outs))
+        tried.append(_Tried(kind, full, it, frozenset(j for j in live if agree(outs[j], wants[j], keys, tol)), outs))
 
     for kind in KINDS:
         # Only the best source by shared values gets the full item fit; try
@@ -400,7 +401,7 @@ def fit_array(field: str, node: dict[str, Any], pairs: list[Pair], owners: list[
         top = max(found, key=lambda f: (f[0], -f[1]), default=None)
         if top is not None and top[0] > 0:
             eps, owners_ = element_pairs(top[3])
-            score(kind, top[2], _items(field, items, eps, owners_, top[4]))
+            score(kind, top[2], _items(field, items, eps, owners_, top[4], tol))
         if any(len(t.hits) == len(live) for t in tried):
             break
 
