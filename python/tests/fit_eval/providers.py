@@ -1,4 +1,4 @@
-"""Thirteen invented providers for the entities in world.py. Each one renders the default provider's
+"""Fourteen invented providers for the entities in world.py. Each one renders the default provider's
 body (`render_default`) and its own body (`render`) from the same entity, so the true mapping is
 known: on any pair, the right spec maps `render` to exactly `render_default`.
 

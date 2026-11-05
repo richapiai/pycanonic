@@ -232,7 +232,7 @@ canonic verify globex.json --schema canonical.json --default samples/default/ --
 
 `canonic schema`, `fit` and `verify` are experimental in 0.1. Their rules and report format can change in a minor release. With few pairs, most fields land in review. Read every review rule before you keep it.
 
-On 13 invented providers, 75% of the fields land in auto, and no auto field is wrong on fresh pairs. The target is 80%. The specs use spec language 2 (`"language": 2`), which only pycanonic runs. See [docs/fit.md](https://github.com/richapiai/pycanonic/blob/main/docs/fit.md) and the [Language 2](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md#language-2) rules.
+On 14 invented providers, 75% of the fields land in auto, and no auto field is wrong on fresh pairs. The target is 80%. The specs use spec language 2 (`"language": 2`), which only pycanonic runs. See [docs/fit.md](https://github.com/richapiai/pycanonic/blob/main/docs/fit.md) and the [Language 2](https://github.com/richapiai/pycanonic/blob/main/docs/spec-format.md#language-2) rules.
 
 ## Same behavior as TypeScript
 
