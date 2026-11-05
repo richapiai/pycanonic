@@ -36,6 +36,10 @@ JavaScript numbers are doubles, so the TypeScript package rounds an integer abov
 
 The compares (`eq`, `lt`, `lte`, `gt`, `gte`) and the number transforms (`add`, `sub`, `mul`, `div`, `ceil_div`, `floor_div`, `min`, `max`) read an integer above 2^53 through a double. Two such integers that differ by less than one double step compare as equal.
 
+## `present` does not stop `extract`
+
+A routing field cannot sit below an object with `when`, because `extract` has no conditions. An object with `present` acts the same way, but the compile allows it, because 0.1.1 allowed it. So with `{"hq": {"present": "x"}, "hq.email": "e"}`, `map` writes `"hq": null` when `x` is missing, and `extract` still returns `hq.email`. Do not put `present` on an object that holds a routing field. Map the routing field outside the object, or test the condition before you route.
+
 ## A union inside list items is verified as a whole
 
 `canonic verify` scores a union inside list items as one whole value, not per branch leaf. A union at the top level or inside an object is scored per leaf.
