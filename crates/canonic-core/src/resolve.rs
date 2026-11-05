@@ -2,7 +2,7 @@
 //! spec field, and resolution stops at the first one. Port of canonic/packages/canonic/src/resolve.ts
 //! and the compile entry point of artifact.ts.
 
-use crate::canonical::{Empty, Kind, Node, load_schema};
+use crate::canonical::{Empty, Kind, Node, empty_shape, load_schema};
 use crate::plan::{
     self, CompileError, Field, Format, ListKind, ListOps, Meta, Named, Plan, Reject, RoutingField,
     Scalar, TxRef,
@@ -28,6 +28,8 @@ struct Resolver<'c> {
     language: u8,
     /// A scalar reads `$input` (language 2).
     context: bool,
+    /// R48: the schema's `"x-shape": "strict"`. Each node with no usable value writes its empty form.
+    strict: bool,
     stat_names: Vec<String>,
     names: Vec<String>,
     /// Top-level spec key to its scalar, `None` for an array rule. Anchors look fields up here.
@@ -35,6 +37,12 @@ struct Resolver<'c> {
 }
 
 impl Resolver<'_> {
+    /// R48: the empty form of `node` under strict shape when it is not null. The fields that
+    /// store it write null without it.
+    fn shape(&self, node: &Node) -> Option<Value> {
+        (self.strict.then(|| empty_shape(node)).flatten()).filter(|v| !v.is_null())
+    }
+
     fn intern(&mut self, name: &str) -> usize {
         self.names
             .iter()
@@ -181,6 +189,7 @@ impl Resolver<'_> {
             default,
             on_missing: r.on_missing,
             stat,
+            empty: self.shape(node),
         })
     }
 
@@ -231,10 +240,29 @@ impl Resolver<'_> {
                 None => ListKind::Plain(tx),
             }
         };
-        // The spec's option first, then the schema's `x-empty`, then language 1 behavior.
+        // The spec's option first, then the schema's `x-empty`, then language 1 behavior, or under
+        // strict shape (R48) `[]`.
+        let missing = (r.missing.or(node.empty)).unwrap_or(match self.strict {
+            true => Empty::List,
+            false => Empty::Null,
+        });
+        // Strict shape: the empty form of an empty or wrong source. When a missing source leaves
+        // the key out, these do too (`build` wraps the list in `OmitNull`). Otherwise a spec
+        // `missing` overrides an `x-empty` of "missing", and `[]` is the default.
+        let form = match missing {
+            Empty::Missing => Empty::Missing,
+            _ => node
+                .empty
+                .filter(|e| *e != Empty::Missing)
+                .unwrap_or(Empty::List),
+        };
         let ops = ListOps {
-            missing: r.missing.or(node.empty).unwrap_or(Empty::Null),
-            empty: r.empty.unwrap_or(Empty::List),
+            missing,
+            empty: r
+                .empty
+                .or(self.strict.then_some(form))
+                .unwrap_or(Empty::List),
+            wrong: self.strict.then_some(form),
             wrap: r.wrap,
             flatten: r.flatten.clone(),
             filter: r.filter.clone(),
@@ -317,6 +345,7 @@ impl Resolver<'_> {
             node,
             on_missing,
             stat,
+            strict: self.strict,
         }))
     }
 
@@ -433,11 +462,13 @@ impl Resolver<'_> {
             if when.is_some() && matches!(&field, Field::Scalar(s) if s.validator.is_some()) {
                 return Err(format!("{kat}: routing fields can't have when"));
             }
+            // `build` sets the strict empty form, where it unwraps the field.
             let field = match when {
                 Some((when, omit)) => Field::When {
                     when: when.clone(),
                     omit,
                     field: Box::new(field),
+                    empty: None,
                 },
                 None => field,
             };
@@ -502,7 +533,9 @@ impl Resolver<'_> {
                     .filter(|e| matches!(e, Empty::Null | Empty::Object));
                 // A `when` wraps the field once it is built.
                 let (field, when) = match mapped.remove(&path) {
-                    Some(Field::When { when, omit, field }) => (Some(*field), Some((when, omit))),
+                    Some(Field::When {
+                        when, omit, field, ..
+                    }) => (Some(*field), Some((when, omit))),
                     f => (f, None),
                 };
                 let value = match (field, &child.kind) {
@@ -532,7 +565,12 @@ impl Resolver<'_> {
                             if_empty: x_empty,
                         }
                     }
-                    (None, _) => match child.empty {
+                    // Strict shape (R48): an array is `[]`, an open map `{}`.
+                    (None, kind) => match child.empty.or(match kind {
+                        Kind::Array { .. } if self.strict => Some(Empty::List),
+                        Kind::Object { .. } if self.strict => Some(Empty::Object),
+                        _ => None,
+                    }) {
                         Some(e @ (Empty::List | Empty::Object)) => Field::Empty(e),
                         _ => Field::Null,
                     },
@@ -542,14 +580,18 @@ impl Resolver<'_> {
                         when,
                         omit,
                         field: Box::new(value),
+                        empty: self.shape(child).filter(|_| !omit),
                     },
                     None => value,
                 };
-                // A mapped array handles `x-empty: "missing"` itself (`ListOps::missing`).
+                // A mapped array handles `x-empty: "missing"` itself (`ListOps::missing`). Under
+                // strict shape its empty and wrong sources leave the key out too (`array`).
+                let own = |v: &Field| match v {
+                    Field::List { ops, .. } => !self.strict || ops.missing != Empty::Missing,
+                    _ => false,
+                };
                 let value = match (child.empty, value) {
-                    (Some(Empty::Missing), v) if !matches!(v, Field::List { .. }) => {
-                        Field::OmitNull(Box::new(v))
-                    }
+                    (Some(Empty::Missing), v) if !own(&v) => Field::OmitNull(Box::new(v)),
                     (_, v) => v,
                 };
                 Named {
@@ -777,6 +819,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
         definitions: &s.definitions,
         language: s.language,
         context: false,
+        strict: canonical.strict,
         stat_names: Vec::new(),
         names: Vec::new(),
         top: HashMap::new(),
@@ -830,6 +873,7 @@ pub fn compile(spec: &Value, schema: &Value, custom: &[String]) -> Result<Plan, 
             .collect(),
         case_insensitive: s.case_insensitive,
         array: canonical.array.is_some(),
+        strict: canonical.strict,
     };
     if plan.needs_v2() {
         plan.format = Format(2);

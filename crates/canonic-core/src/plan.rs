@@ -98,6 +98,10 @@ pub struct Scalar {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_missing: bool,
     pub stat: usize,
+    /// R48 (strict shape): what goes out instead of null when there is no `default`. Set only
+    /// when that is not null, so on an open map (`{}`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub empty: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -116,8 +120,12 @@ pub enum ListKind {
 pub struct ListOps<P = Path> {
     /// The output for a missing or null source: `Null` or `List`.
     pub missing: Empty,
-    /// The output for an empty source array, also after filtering: `List` or `Null`.
+    /// The output for an empty source array, also after filtering: `List` or `Null`. Strict shape
+    /// (R48) also takes `Missing`, null that its `OmitNull` leaves out.
     pub empty: Empty,
+    /// R48 (strict shape): the output for a source that is not an array, which is null without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrong: Option<Empty>,
     /// A source that is a scalar or an object is a one-element array.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub wrap: bool,
@@ -153,6 +161,7 @@ impl<P> Default for ListOps<P> {
         ListOps {
             missing: Empty::Null,
             empty: Empty::List,
+            wrong: None,
             wrap: false,
             flatten: Vec::new(),
             filter: None,
@@ -225,11 +234,14 @@ pub enum Field {
         when: Cond,
         omit: bool,
         field: Box<Field>,
+        /// R48 (strict shape): what a failed condition writes instead of null, when that is not null.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        empty: Option<Value>,
     },
     /// Language 2: one custom transform over the whole value at `from` (`$group`: the
     /// group) of an array or object node. Its result goes out when it fits `node`
     /// (`transforms::conform`), else null and an error. A missing source writes the node's
-    /// `x-empty`, a miss.
+    /// `x-empty`, a miss. With `strict` (R48), every one of these writes the node's empty form.
     Container {
         from: Path,
         tx: TxRef,
@@ -237,6 +249,8 @@ pub enum Field {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         on_missing: bool,
         stat: usize,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        strict: bool,
     },
     /// Language 2: a canonical field the spec does not map, written as its `x-empty`:
     /// `List` (`[]`) or `Object` (`{}`). An unmapped null or left-out field is `Null` or `OmitNull`.
@@ -363,6 +377,10 @@ pub struct Plan {
     /// whole output.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub array: bool,
+    /// Language 2 (R48): the schema has `"x-shape": "strict"`. The resolver has put each node's
+    /// empty form into the fields, so the executor does not read this.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub strict: bool,
 }
 
 /// A `reject` condition and its spec JSON text, the reason `Rejected` gives.
@@ -410,6 +428,7 @@ impl Plan {
                 Field::Scalar(s) => {
                     tx(&s.tx)
                         || s.on_missing
+                        || s.empty.is_some()
                         || matches!(s.source, Source::Computed(_) | Source::CoalesceWhen(_))
                 }
                 Field::Const(..)
@@ -449,6 +468,7 @@ impl Plan {
         }
         self.context
             || self.array
+            || self.strict
             || self.case_insensitive
             || !self.reject.is_empty()
             || self.fields.iter().any(|n| field(&n.value))
@@ -480,7 +500,9 @@ fn line(out: &mut String, name: &str, field: &Field) {
             _ = writeln!(out, "{name}: left out when null");
             line(out, name, f);
         }
-        Field::When { when, omit, field } => {
+        Field::When {
+            when, omit, field, ..
+        } => {
             let not = if *omit { "left out" } else { "null" };
             _ = writeln!(out, "{name}: {not} unless {}", cond(when));
             line(out, name, field);

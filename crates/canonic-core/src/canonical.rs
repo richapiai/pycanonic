@@ -95,6 +95,38 @@ pub struct Schema {
     pub root: Vec<(String, Node)>,
     /// Language 2: the root node when it is an array, which a spec maps with the field `"[]"`.
     pub array: Option<Node>,
+    /// Language 2 (R48): `"x-shape": "strict"` at the root. A node with no usable value writes
+    /// its empty form (`empty_shape`).
+    pub strict: bool,
+}
+
+/// R48: what a node with no usable value writes under strict shape. `None` is `x-empty: "missing"`,
+/// no key. Without `x-empty`, an array is `[]`, a leaf null, and an object an object of its
+/// children's empty forms.
+pub fn empty_shape(node: &Node) -> Option<Value> {
+    Some(match (node.empty, &node.kind) {
+        (Some(Empty::Missing), _) => return None,
+        (Some(Empty::Null), _) | (None, Kind::Scalar { .. }) => Value::Null,
+        (Some(Empty::List), _) | (None, Kind::Array { .. }) => Value::Array(Vec::new()),
+        (Some(Empty::Object), _) => Value::Object(Map::new()),
+        (None, Kind::Object { children, .. }) => Value::Object(
+            (children.iter())
+                .filter_map(|(k, c)| Some((k.clone(), empty_shape(c)?)))
+                .collect(),
+        ),
+        // Task 10: a `oneOf` node writes null.
+    })
+}
+
+/// The empty form of a node with no usable value: `empty_shape` under strict shape, else its
+/// `x-empty` (`[]` or `{}`), null without one. `None` leaves the key out.
+pub fn empty_form(node: &Node, strict: bool) -> Option<Value> {
+    match (strict, node.empty) {
+        (true, _) => empty_shape(node),
+        (false, Some(Empty::Missing)) => None,
+        (false, Some(Empty::List | Empty::Object)) => empty_shape(node),
+        (false, _) => Some(Value::Null),
+    }
 }
 
 // toJSON and every own name of Object.prototype: a record or a view cannot safely carry them.
@@ -258,10 +290,16 @@ pub fn load_schema(schema: &Value, language: u8) -> Result<Schema, Issue> {
         message,
     };
     let node = load_node(schema, "", false, language >= 2).map_err(issue)?;
+    let strict = match schema.get("x-shape").filter(|_| language >= 2) {
+        None => false,
+        Some(v) if v == "strict" => true,
+        Some(_) => return Err(issue("x-shape must be \"strict\"".into())),
+    };
     match node.kind {
         Kind::Object { children, .. } => Ok(Schema {
             root: children,
             array: None,
+            strict,
         }),
         // The body is always there, so there is no key to leave out.
         Kind::Array { .. } if language >= 2 && node.empty == Some(Empty::Missing) => {
@@ -270,6 +308,7 @@ pub fn load_schema(schema: &Value, language: u8) -> Result<Schema, Issue> {
         Kind::Array { .. } if language >= 2 => Ok(Schema {
             root: Vec::new(),
             array: Some(node),
+            strict,
         }),
         _ => Err(issue("root must be an object with properties".into())),
     }

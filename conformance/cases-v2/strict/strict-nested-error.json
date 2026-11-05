@@ -1,0 +1,185 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "orders[]": {
+        "from": "orders",
+        "item": {
+          "id": "id",
+          "ship": {
+            "when": {
+              "path": "ship",
+              "present": true
+            }
+          },
+          "ship.carrier": {
+            "from": "ship.carrier",
+            "transform": "lower"
+          },
+          "ship.lines[]": {
+            "from": "ship.lines",
+            "item": {
+              "sku": {
+                "from": "sku",
+                "transform": {
+                  "cast": "integer"
+                }
+              },
+              "tags[]": {
+                "from": "tags"
+              }
+            }
+          },
+          "ship.codes[]": {
+            "from": "ship.codes",
+            "transform": {
+              "cast": "integer"
+            }
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "x-shape": "strict",
+    "type": "object",
+    "properties": {
+      "orders": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "ship": {
+              "type": "object",
+              "properties": {
+                "carrier": {
+                  "type": "string"
+                },
+                "lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sku": {
+                        "type": "integer"
+                      },
+                      "tags": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "codes": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "orders": [
+          {
+            "id": "o1",
+            "ship": {
+              "carrier": {
+                "x": 1
+              },
+              "lines": [
+                {
+                  "sku": "abc",
+                  "tags": "x"
+                },
+                {
+                  "sku": "7"
+                }
+              ],
+              "codes": {
+                "a": 1
+              }
+            }
+          },
+          {
+            "id": "o2"
+          },
+          {
+            "id": "o3",
+            "ship": {
+              "carrier": "UPS",
+              "lines": "x",
+              "codes": [
+                "1",
+                "q"
+              ]
+            }
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "orders": [
+          {
+            "id": "o1",
+            "ship": {
+              "carrier": null,
+              "lines": [
+                {
+                  "sku": null,
+                  "tags": []
+                },
+                {
+                  "sku": 7,
+                  "tags": []
+                }
+              ],
+              "codes": []
+            }
+          },
+          {
+            "id": "o2",
+            "ship": {
+              "carrier": null,
+              "lines": [],
+              "codes": []
+            }
+          },
+          {
+            "id": "o3",
+            "ship": {
+              "carrier": "ups",
+              "lines": [],
+              "codes": [
+                1,
+                null
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "orders": []
+      }
+    }
+  ]
+}

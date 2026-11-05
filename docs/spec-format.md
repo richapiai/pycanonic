@@ -349,6 +349,56 @@ The schema loader rejects any other value, for example with `x-empty "[]" needs 
 }
 ```
 
+#### Strict shape
+
+`"x-shape": "strict"` at the root of a canonical schema turns on strict shape. Under strict shape, a node with no usable value writes its empty form. Every key stays in the output, and an empty list is `[]`, not null. Callers then read one shape for every provider and never test a key before they read it.
+
+These cases give a node with no usable value:
+
+- a missing or null source
+- an empty source array, or a list that the list options take down to nothing
+- a source of the wrong type, or a transform error
+- a failed `when` without `omit`
+- a container transform that raises or gives the wrong shape
+
+The empty form is the node's `x-empty`. Without `x-empty`:
+
+| Node | Empty form |
+|---|---|
+| array | `[]` |
+| leaf | null |
+| object | an object of its children's empty forms, without the children whose `x-empty` is `"missing"` |
+| open map (`x-open`) | `{}` |
+
+Explicit choices win, in this order: a spec option (`missing`, `empty`, `if_empty`, `default`, `present`, `omit`), then the node's `x-empty`, then the table. A key is left out only where the schema says `x-empty: "missing"` or the spec says `omit`. Under strict shape, `x-empty: "missing"` on an array also leaves the key out for an empty or wrong source. The error and miss counts in `stats` are the same as without strict shape. Any other `x-shape` value fails with `x-shape must be "strict"`. A language 1 spec ignores the key. A plan from a strict schema is format 2.
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "x-shape": "strict", "properties": {
+    "name": {"type": "string"},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "jobs": {"type": "array", "items": {"type": "string"}},
+    "hq": {"type": "object", "properties": {"city": {"type": "string"}, "phones": {"type": "array", "items": {"type": "string"}}}},
+    "links": {"type": "array", "items": {"type": "string"}, "x-empty": "null"}}},
+  "spec": {"language": 2, "provider": "acme", "endpoint": "person.enrich", "version": 1, "status": "draft",
+    "fields": {"name": "n", "tags[]": {"from": "labels"}, "jobs[]": {"from": "roles", "empty": "null"},
+      "hq": {"when": {"path": "office", "present": true}}, "hq.city": "office.city", "links[]": {"from": "urls"}}},
+  "body": {"n": "Ada", "labels": "not a list", "roles": []},
+  "expected": {"name": "Ada", "tags": [], "jobs": null, "hq": {"city": null, "phones": []}, "links": null}
+}
+```
+
+Without `x-shape`, the same body gives `"tags": null` (and one error), `"hq": null` and `"links": null`.
+
+To keep null for one node, use the spec option for its node kind. An array takes `"empty": "null"` (and `"missing": "null"` for a missing source), and an object takes `"if_empty": "null"`:
+
+| Node | Spec option | Gives null for |
+|---|---|---|
+| array | `"empty": "null"` | an empty source array |
+| array | `"missing": "null"` | a missing or null source |
+| object | `"if_empty": "null"` | an object whose leaves are all null |
+
 ### Optional objects
 
 A field key can name a canonical object node, not only a leaf. Its rule is `{"present": <path>}` or `{"present": [<path>, ...]}`. Every path must be there and not null. If the condition fails, the object is null, or no key under `x-empty` `"missing"`. If it holds, the leaves inside are mapped as usual. A present object whose leaves are all null follows its `x-empty`, as above.

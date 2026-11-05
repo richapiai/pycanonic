@@ -28,8 +28,11 @@
 //! - Language 2: a path that starts with `$input` reads the request context (`Frame::ctx`),
 //!   in a plan with `context` set, and in every condition. A `when` that fails gives null, or
 //!   leaves the key out with `omit`, before anything under it is read. Its fields are misses.
+//! - Language 2 (R48): under strict shape the resolver has put each node's empty form into the
+//!   plan (`ListOps`, `Scalar::empty`, `When::empty`, `Container::strict`). The null paths write
+//!   it as a placeholder that is no fill, and count the same misses and errors.
 
-use crate::canonical::{Empty, Node, Semantic};
+use crate::canonical::{Empty, Node, Semantic, empty_form};
 use crate::cond::{Cond, Operand, Rank, holds, key_text};
 use crate::doc::{Doc, Key, KeyPath as Path, KeyStep as Step, read, step as step_of};
 use crate::group::{Agg, AggOp, aggregate, groups};
@@ -175,6 +178,8 @@ struct Leaf {
     /// R54: the first transform runs on a missing source, with null.
     on_missing: bool,
     stat: usize,
+    /// R48: written in place of null when there is no default.
+    empty: Option<J>,
 }
 
 impl Leaf {
@@ -208,6 +213,10 @@ struct Whole {
     node: Node,
     on_missing: bool,
     stat: usize,
+    /// R48: a failure writes `empty` too, and `conform` fills strict empty forms.
+    strict: bool,
+    /// The node's empty form, which a missing source writes. Null for no key.
+    empty: J,
 }
 
 enum Op {
@@ -238,11 +247,12 @@ enum Op {
     },
     /// Left out of its object when it writes nothing but null.
     OmitNull(Box<Op>),
-    /// `op` when `cond` holds, else null, or no key with `omit`.
+    /// `op` when `cond` holds, else `empty` (R48) or null, or no key with `omit`.
     When {
         cond: Cond<Path>,
         omit: bool,
         op: Box<Op>,
+        empty: Option<J>,
     },
 }
 
@@ -362,6 +372,7 @@ impl Builder<'_> {
         ListOps {
             missing: o.missing,
             empty: o.empty,
+            wrong: o.wrong,
             wrap: o.wrap,
             flatten: o.flatten.iter().map(|p| self.path(p)).collect(),
             filter: o.filter.as_ref().map(|c| self.cond(c)),
@@ -431,6 +442,7 @@ impl Builder<'_> {
             default: s.default.clone(),
             on_missing: s.on_missing,
             stat: self.stat(s.stat)?,
+            empty: s.empty.clone(),
         })
     }
 
@@ -483,10 +495,16 @@ impl Builder<'_> {
                 Op::Const(v, None)
             }
             Field::OmitNull(inner) => Op::OmitNull(Box::new(self.op(inner)?)),
-            Field::When { when, omit, field } => Op::When {
+            Field::When {
+                when,
+                omit,
+                field,
+                empty,
+            } => Op::When {
                 cond: self.cond(when),
                 omit: *omit,
                 op: Box::new(self.op(field)?),
+                empty: empty.clone(),
             },
             Field::Container {
                 from,
@@ -494,6 +512,7 @@ impl Builder<'_> {
                 node,
                 on_missing,
                 stat,
+                strict,
             } => Op::Container(Box::new(Whole {
                 from: match is_group(from) {
                     true => Input::Group,
@@ -503,6 +522,8 @@ impl Builder<'_> {
                 node: node.clone(),
                 on_missing: *on_missing,
                 stat: self.stat(*stat)?,
+                strict: *strict,
+                empty: empty_form(node, *strict).unwrap_or(J::Null),
             })),
             Field::Aggregate(a, stat) => Op::Aggregate(Box::new(Fold {
                 op: a.op,
@@ -1025,6 +1046,7 @@ impl<S: Sink> Exec<'_, S> {
                     cond,
                     omit: true,
                     op,
+                    ..
                 } if !holds(cond, f.doc.as_ref(), None, f.ctx.as_ref()) => self.miss(op),
                 Op::List {
                     from: Input::At(at),
@@ -1062,12 +1084,17 @@ impl<S: Sink> Exec<'_, S> {
                 self.sink.passthrough(&v)
             }
             Op::OmitNull(inner) => self.op(inner, f),
-            Op::When { cond, op, .. } => {
+            Op::When {
+                cond, op, empty, ..
+            } => {
                 if holds(cond, f.doc.as_ref(), None, f.ctx.as_ref()) {
                     return self.op(op, f);
                 }
                 self.miss(op);
-                self.sink.scalar(Value::Null)
+                match empty {
+                    Some(e) => self.sink.passthrough(&e),
+                    None => self.sink.scalar(Value::Null),
+                }
             }
             Op::Optional {
                 members,
@@ -1137,8 +1164,10 @@ impl<S: Sink> Exec<'_, S> {
                 }
                 self.stats.miss(l.stat);
                 self.filled += l.default.is_some() as usize;
-                let v = l.default.as_ref().map_or(Value::Null, json_value);
-                self.sink.scalar(v)
+                match (&l.default, &l.empty) {
+                    (None, Some(e)) => self.sink.passthrough(&e),
+                    (d, _) => self.sink.scalar(d.as_ref().map_or(Value::Null, json_value)),
+                }
             }
         }
     }
@@ -1276,12 +1305,12 @@ impl<S: Sink> Exec<'_, S> {
                 if !ops.collects() {
                     return match x.len() {
                         Some(n) => self.elements(n, |i| x.item(i), None, kind, stat, ops, f),
-                        None => self.not_a_list(stat),
+                        None => self.wrong(stat, ops.wrong),
                     };
                 }
                 match collect(Some(x), ops, f.ctx.as_ref()) {
                     Some(xs) => xs,
-                    None => return self.not_a_list(stat),
+                    None => return self.wrong(stat, ops.wrong),
                 }
             }
         };
@@ -1360,32 +1389,33 @@ impl<S: Sink> Exec<'_, S> {
             }),
             _ => None,
         };
-        match out.and_then(|v| conform(&v, &w.node)) {
+        match out.and_then(|v| conform(&v, &w.node, w.strict)) {
             Some(v) if !v.is_null() => {
                 self.filled += 1;
                 self.sink.passthrough(&&v)
             }
             // A null result for a missing source is a miss, not an error.
             Some(_) if missing => self.missing_whole(w),
-            _ => self.not_a_list(w.stat),
+            _ if w.strict => {
+                self.stats.error(w.stat);
+                self.missing_whole(w)
+            }
+            _ => self.wrong(w.stat, None),
         }
     }
 
-    /// A missing source: a miss, and the node's `x-empty`, a placeholder that is no fill.
+    /// A missing source: a miss, and the node's empty form, a placeholder that is no fill.
     fn missing_whole(&mut self, w: &Whole) -> S::Out {
         self.stats.miss(w.stat);
-        let v = match w.node.empty {
-            Some(Empty::List) => J::Array(Vec::new()),
-            Some(Empty::Object) => J::Object(Default::default()),
-            _ => J::Null,
-        };
-        self.sink.passthrough(&&v)
+        self.sink.passthrough(&&w.empty)
     }
 
-    fn not_a_list(&mut self, stat: usize) -> S::Out {
+    /// A source that is not an array: an error, a miss, and null or the strict empty form (R48), a
+    /// placeholder that is no fill.
+    fn wrong(&mut self, stat: usize, e: Option<Empty>) -> S::Out {
         self.stats.error(stat);
         self.stats.miss(stat);
-        self.sink.scalar(Value::Null)
+        self.empty(e.unwrap_or(Empty::Null), false)
     }
 
     /// A list of the `n` elements `get` gives. With `groups`, element `i` is the first of group `i`,
@@ -1427,7 +1457,7 @@ impl<S: Sink> Exec<'_, S> {
     }
 
     /// `[]` for `Empty::List`, null otherwise. `[]` for an empty source array is a fill. For a
-    /// missing source it is a placeholder, which does not make its object filled.
+    /// missing or wrong source it is a placeholder, which does not make its object filled.
     fn empty(&mut self, e: Empty, fill: bool) -> S::Out {
         if e != Empty::List {
             return self.sink.scalar(Value::Null);

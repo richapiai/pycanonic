@@ -2,7 +2,7 @@
 //! and never panics. The executor counts a `Null` from non-null input as a field error.
 //! Port of canonic/packages/canonic/src/transforms.ts.
 
-use crate::canonical::{Empty, Kind, Node, Semantic};
+use crate::canonical::{Kind, Node, Semantic, empty_form};
 use crate::dates::{self, DateOut, Layout, date_from_epoch, date_from_string};
 use crate::numbers::{self, NumOp};
 use crate::strings::{self, Find, Otherwise, Pattern, Template};
@@ -45,8 +45,8 @@ pub trait Transform: Send + Sync {
 
 /// A container transform's result in the shape of `node`, `None` when it does not fit: a leaf
 /// takes any non-container, an array a list of fitting items, an object a dict of its own keys,
-/// an open map any dict. A missing or null key gets the value of its `x-empty`, in schema order.
-pub fn conform(v: &J, node: &Node) -> Option<J> {
+/// an open map any dict. A missing or null key gets its empty form (`empty_form`), in schema order.
+pub fn conform(v: &J, node: &Node, strict: bool) -> Option<J> {
     match (&node.kind, v) {
         (_, J::Null) => Some(J::Null),
         (Kind::Scalar { .. }, J::Array(_) | J::Object(_)) => None,
@@ -54,7 +54,7 @@ pub fn conform(v: &J, node: &Node) -> Option<J> {
         (Kind::Array { items: None, .. }, J::Array(_)) => Some(v.clone()),
         (Kind::Array { items: Some(n), .. }, J::Array(xs)) => xs
             .iter()
-            .map(|x| conform(x, n))
+            .map(|x| conform(x, n, strict))
             .collect::<Option<_>>()
             .map(J::Array),
         (Kind::Object { open: true, .. }, J::Object(_)) => Some(v.clone()),
@@ -65,12 +65,10 @@ pub fn conform(v: &J, node: &Node) -> Option<J> {
             let mut out = Map::new();
             for (k, child) in children {
                 let x = match m.get(k).filter(|x| !x.is_null()) {
-                    Some(x) => conform(x, child)?,
-                    None => match child.empty {
-                        Some(Empty::Missing) => continue,
-                        Some(Empty::List) => J::Array(Vec::new()),
-                        Some(Empty::Object) => J::Object(Map::new()),
-                        _ => J::Null,
+                    Some(x) => conform(x, child, strict)?,
+                    None => match empty_form(child, strict) {
+                        Some(x) => x,
+                        None => continue,
                     },
                 };
                 out.insert(k.clone(), x);
@@ -83,7 +81,7 @@ pub fn conform(v: &J, node: &Node) -> Option<J> {
 
 /// Whether a container transform's result fits `node` (`conform`).
 pub fn conforms(v: &J, node: &Node) -> bool {
-    conform(v, node).is_some()
+    conform(v, node, false).is_some()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

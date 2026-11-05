@@ -1,0 +1,162 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "hq": {
+        "when": {
+          "path": "kind",
+          "eq": "on"
+        }
+      },
+      "hq.city": "office.city",
+      "hq.tags[]": {
+        "from": "office.tags"
+      },
+      "props": "p"
+    }
+  },
+  "schema": {
+    "x-shape": "strict",
+    "type": "object",
+    "properties": {
+      "hq": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gone": {
+            "type": "string",
+            "x-empty": "missing"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "x-empty": "null"
+          },
+          "sub": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "meta": {
+            "type": "object",
+            "x-open": true
+          }
+        }
+      },
+      "extra": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "info": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "list": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "bag": {
+        "type": "object",
+        "x-open": true
+      },
+      "props": {
+        "type": "object",
+        "x-open": true
+      },
+      "score": {
+        "type": "number"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "kind": "off",
+        "office": {
+          "city": "Oslo"
+        }
+      },
+      "context": null,
+      "expected": {
+        "hq": {
+          "city": null,
+          "tags": [],
+          "links": null,
+          "sub": {
+            "ids": []
+          },
+          "meta": {}
+        },
+        "extra": [],
+        "info": {
+          "a": null,
+          "list": []
+        },
+        "bag": {},
+        "props": {},
+        "score": null
+      }
+    },
+    {
+      "body": {
+        "kind": "on",
+        "office": {
+          "city": "Oslo"
+        },
+        "p": {
+          "k": 1
+        }
+      },
+      "context": null,
+      "expected": {
+        "hq": {
+          "city": "Oslo",
+          "tags": [],
+          "links": null,
+          "sub": {
+            "ids": []
+          },
+          "meta": {}
+        },
+        "extra": [],
+        "info": {
+          "a": null,
+          "list": []
+        },
+        "bag": {},
+        "props": {
+          "k": 1
+        },
+        "score": null
+      }
+    }
+  ]
+}

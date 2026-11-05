@@ -1,0 +1,58 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "name": {
+        "from": "n",
+        "default": "anon"
+      },
+      "nick": "k"
+    }
+  },
+  "schema": {
+    "x-shape": "strict",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "nick": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "name": "anon",
+        "nick": null
+      }
+    },
+    {
+      "body": {
+        "n": null
+      },
+      "context": null,
+      "expected": {
+        "name": "anon",
+        "nick": null
+      }
+    },
+    {
+      "body": {
+        "n": "Ada"
+      },
+      "context": null,
+      "expected": {
+        "name": "Ada",
+        "nick": null
+      }
+    }
+  ]
+}

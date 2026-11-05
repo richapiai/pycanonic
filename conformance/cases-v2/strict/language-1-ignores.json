@@ -1,0 +1,40 @@
+{
+  "spec": {
+    "language": 1,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "name": "n",
+      "tags[]": {
+        "from": "labels"
+      }
+    }
+  },
+  "schema": {
+    "x-shape": "loose",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "name": null,
+        "tags": null
+      }
+    }
+  ]
+}
