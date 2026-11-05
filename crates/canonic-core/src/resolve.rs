@@ -43,6 +43,19 @@ impl Resolver<'_> {
         (self.strict.then(|| empty_shape(node)).flatten()).filter(|v| !v.is_null())
     }
 
+    /// R48: what a failed `when` around `field` writes under strict shape, when not null. A
+    /// spec option wins: an object's `if_empty`, an array's `missing`. Then the node's empty form.
+    fn when_empty(&self, field: &Field, node: &Node) -> Option<Value> {
+        match field {
+            _ if !self.strict => None,
+            Field::Object {
+                if_empty: Some(e), ..
+            } => (*e == Empty::Object).then(|| Value::Object(Default::default())),
+            Field::List { ops, .. } => (ops.missing == Empty::List).then(|| Value::Array(vec![])),
+            _ => self.shape(node),
+        }
+    }
+
     fn intern(&mut self, name: &str) -> usize {
         self.names
             .iter()
@@ -246,9 +259,10 @@ impl Resolver<'_> {
             true => Empty::List,
             false => Empty::Null,
         });
-        // Strict shape: the empty form of an empty or wrong source. When a missing source leaves
-        // the key out, these do too (`build` wraps the list in `OmitNull`). Otherwise a spec
-        // `missing` overrides an `x-empty` of "missing", and `[]` is the default.
+        // Strict shape: the empty form of an empty source. When a missing source leaves the key
+        // out, so does an empty one (`build` wraps the list in `OmitNull`). Otherwise a spec
+        // `missing` overrides an `x-empty` of "missing", and `[]` is the default. A wrong source
+        // and a failed `when` take `missing` itself: the spec option, then `x-empty`, then `[]`.
         let form = match missing {
             Empty::Missing => Empty::Missing,
             _ => node
@@ -262,7 +276,7 @@ impl Resolver<'_> {
                 .empty
                 .or(self.strict.then_some(form))
                 .unwrap_or(Empty::List),
-            wrong: self.strict.then_some(form),
+            wrong: self.strict.then_some(missing),
             wrap: r.wrap,
             flatten: r.flatten.clone(),
             filter: r.filter.clone(),
@@ -579,8 +593,8 @@ impl Resolver<'_> {
                     Some((when, omit)) => Field::When {
                         when,
                         omit,
+                        empty: self.when_empty(&value, child).filter(|_| !omit),
                         field: Box::new(value),
-                        empty: self.shape(child).filter(|_| !omit),
                     },
                     None => value,
                 };

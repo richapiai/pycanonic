@@ -74,7 +74,7 @@
       "context": null,
       "expected": {
         "a": null,
-        "b": null,
+        "b": [],
         "c": []
       }
     }

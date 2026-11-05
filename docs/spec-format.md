@@ -396,8 +396,8 @@ To keep null for one node, use the spec option for its node kind. An array takes
 | Node | Spec option | Gives null for |
 |---|---|---|
 | array | `"empty": "null"` | an empty source array |
-| array | `"missing": "null"` | a missing or null source |
-| object | `"if_empty": "null"` | an object whose leaves are all null |
+| array | `"missing": "null"` | a missing or null source, a source of the wrong type, a failed `when` |
+| object | `"if_empty": "null"` | an object whose leaves are all null, a failed `when` |
 
 ### Optional objects
 
