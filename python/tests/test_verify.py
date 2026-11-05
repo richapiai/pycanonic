@@ -308,3 +308,21 @@ def test_nested_list_and_union_leaves() -> None:
     union = {"type": "object", "properties": {"u": {"type": "object", "oneOf": [{"title": "A", "type": "object", "properties": {"p": S}}, {"title": "B", "type": "object", "properties": {"q": S}}]}}}
     r = run(spec({"u": {"one_of": [{"branch": "B", "when": {"path": "k", "eq": "b"}, "fields": {"q": "v"}}]}}), union, pairs([({"u": {"q": "1"}}, {"k": "b", "v": "1"})]), 0.95, None)
     assert r.fields["u(B).q"] == (1, 1) and r.shape_failures == []
+
+
+def test_item_leaf_outside_item_map_is_unmapped() -> None:
+    """R43 inside items: a leaf the item map omits is listed, and gates only with --fail-unmapped."""
+    rows = pairs([({"name": "a", "items": [{"name": "i", "url": "u"}]}, {"n": "a", "xs": [{"n": "i"}]}) for _ in range(2)])
+    s = spec({"name": "n", "items[]": {"from": "xs", "item": {"name": "n"}}})
+    r = run(s, ITEMS, rows, 0.0, None)  # 0.0: the whole-list row `items[]` still misses the omitted url
+    assert r.unmapped == {"items[].url": 2} and "items[].url" not in r.fields and r.ok
+    assert not run(s, ITEMS, rows, 0.0, None, fail_unmapped=True).ok
+    ref = spec({"name": "n", "items[]": {"from": "xs", "item": {"$ref": "it"}}})
+    assert run({**ref, "definitions": {"it": {"name": "n", "url": "u"}}}, ITEMS, item_rows(), 0.0, None).unmapped == {}
+
+
+def test_ignore_item_leaf_waives_whole_list_row() -> None:
+    rows = item_rows()
+    assert not run(spec(ITEM_SPEC), ITEMS, rows, 0.95, None).ok
+    r = run(spec(ITEM_SPEC), ITEMS, rows, 0.95, None, ignore=["items[].url"])
+    assert r.ok and "items[].url" not in r.fields and "items[]" not in r.fields and r.fields["items[].name"] == (6, 6)

@@ -103,15 +103,44 @@ def _leaf_rows(node: dict[str, Any], prefix: str) -> Iterator[str]:
             yield p
 
 
-def _item_rows(spec_fields: dict[str, Any], schema: dict[str, Any]) -> dict[str, list[str]]:
-    """For each list the spec maps, the count row and the leaf rows of its items."""
+def _covers(imap: Any, rel: str, defs: dict[str, Any]) -> bool:
+    """Whether an item map maps the leaf `rel`, itself or through an ancestor that copies a whole value."""
+    while isinstance(imap, dict) and isinstance(imap.get("$ref"), str):
+        imap = defs.get(imap["$ref"])
+    if not isinstance(imap, dict):
+        return False
+    parts = rel.split(".")
+    for i in range(1, len(parts) + 1):
+        r = imap.get(".".join(parts[:i]))
+        if r is None:
+            continue
+        if i == len(parts) or isinstance(r, str) or "item" not in r:
+            return True
+        if parts[i - 1].endswith("[]"):
+            return _covers(r["item"], ".".join(parts[i:]), defs)
+    return False
+
+
+def _item_rows(spec_fields: dict[str, Any], schema: dict[str, Any], defs: dict[str, Any]) -> tuple[dict[str, list[str]], list[str]]:
+    """For each list the spec maps, the count row and the leaf rows of its items, and the
+    item leaves the spec's item map leaves out, which are `unmapped` as at the top level."""
     nodes = dict(_nodes(schema))
-    out = {}
+    out, left = {}, []
     for k in spec_fields:
         if k.endswith("[]") and k != "[]" and k in nodes:
             items = nodes[k].get("items") or {}
-            out[k] = [k + " (count)"] + (list(_leaf_rows(items, k)) if "properties" in items and not items.get("x-open") else [])
-    return out
+            rule = spec_fields[k]
+            imap = rule.get("item") if isinstance(rule, dict) else None
+            rows = list(_leaf_rows(items, k)) if "properties" in items and not items.get("x-open") else []
+            keep = [k + " (count)"]
+            for r in rows:
+                rel = r.removesuffix(" (count)")[len(k) + 1 :]
+                if imap is None or _covers(imap, rel, defs):
+                    keep.append(r)
+                elif not r.endswith(" (count)"):
+                    left.append(r)
+            out[k] = keep
+    return out, left
 
 
 def _walk(g: Any, w: Any, key: str, idx: str = "") -> Iterator[tuple[Any, Any, str]]:
@@ -178,17 +207,24 @@ def run(
     ignored = set(ignore or ())
     kept = {k: v for k, v in sf.items() if not _under(k, ignored)}
     keys = list(kept)
-    rows = {k: [r for r in rs if not _under(r, ignored)] for k, rs in _item_rows(kept, schema).items()}
-    order = [r for k in keys for r in [k, *rows.get(k, [])]]
+    item_rows, left = _item_rows(kept, schema, spec.get("definitions") or {})
+    rows = {k: [r for r in rs if not _under(r, ignored)] for k, rs in item_rows.items()}
+
+    def dropped(row: str) -> bool:  # a row whose descendant is ignored cannot compare its whole value
+        return any(i != row and _under(i, {row}) for i in ignored)
+
+    order = [r for k in keys for r in [k, *rows.get(k, [])] if not dropped(r)]
     unions = {k: n for k, n in _nodes(schema) if k in kept and "oneOf" in n}
     counts = {k: [0, 0] for k in order}
     misses: dict[str, list[str]] = {k: [] for k in order}
-    unmapped = dict.fromkeys((k for k in _unmapped(sf, schema) if not _under(k, ignored)), 0)
+    unmapped = dict.fromkeys((k for k in [*_unmapped(sf, schema), *left] if not _under(k, ignored)), 0)
     failures: list[tuple[str, str, str]] = []
     rejected: list[str] = []
     wrongly: list[str] = []
 
     def score(row: str, got: Any, want: Any, tag: str) -> None:
+        if dropped(row):
+            return
         if row.endswith(" (count)"):
             if not (isinstance(got, list) or isinstance(want, list)):
                 return
@@ -213,7 +249,7 @@ def run(
             continue
         failures += [(p.name, at, msg) for at, msg in shape(out, p.default, schema) if not _under(re.sub(r"\[\d+\]", "[]", at), ignored)]
         for k in unmapped:
-            unmapped[k] += not _empty(_val(p.default, k))
+            unmapped[k] += not all(_empty(w) for _, w, _ in _walk(p.default, p.default, k))
         for k in keys:
             score(k, _val(out, k), _val(p.default, k), p.name)
             for row in rows.get(k, []):
