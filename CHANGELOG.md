@@ -33,12 +33,20 @@ pycanonic 0.2.0 widens spec language 2, adds strict and union canonical schemas,
 - A `canonic fit` draft has every canonical key. Each manual field (`none` or `disagree`), at the top level or inside an item map, gets a placeholder `{"const": <empty form>}`: the node's `x-empty`, else what strict shape writes, else null. Its report row starts with `placeholder:`. `canonic verify` lists a placeholder as not mapped, as before. `verify` also no longer reports a missing key on a leaf whose schema says `x-empty: "missing"`, because that is the leaf's null. Against a value, it is a value miss. So a fresh draft whose provider lacks such a leaf, inside list items too, no longer fails the shape check.
 - An `if_empty` row of the fit report says once that the object's empty form is a guess.
 - `canonic verify` lists a leaf that the spec leaves out below an object with `when`, `omit`, `present` or `if_empty`, or in a union branch, as unmapped, so `--allow` covers it and `--fail-unmapped` gates it.
+- `canonic infer` and `canonic fit` take `--ask-timeout <seconds>` (default 120). An `--ask` command that runs longer is stopped, the CLI prints `--ask failed for <field>: timed out after <s> s`, and that field is skipped.
 
 ### Fixed
 
 - `group_by`, `unique` and a condition `eq` against an array or object now compare integers exactly. Before, two integers above 2^53 that round to the same double, such as the IDs `1234567890123456789` and `1234567890123456790`, merged into one group or one `unique` element. An integral float such as `1.0` still equals the integer `1`.
 - An aggregate `sum` whose total overflows a double now gives null and counts an error. Before, `map` returned `inf` while `map_json` wrote `null`.
 - A custom transform that returns NaN or infinity now gives null and counts an error. Before, `map` returned the float, `map_json` wrote `null` and the stats counted a fill.
+- `canonic fit` counts a pair where its rule writes a value but the default has none as a miss, as `canonic verify` does. Before, such a field could be auto while `verify` failed the same spec on the same pairs. The field's `total` in the report now includes those pairs.
+- An `empty` row of the fit report (the default never sent a value) is now review, or manual with a `Runtime check` note when the spec does not write the default's empty form. Before, it was always review with a note that the default sent one value.
+- `canonic schema`, and `canonic fit` without `--schema`, no longer exit 2 with a `TypeError` when an object or list value sits under a key that every key set of a proposed union shares.
+- `canonic verify` scores and lists an item leaf whose name holds a dot or a bracket (`jobs[].["a.b"]`). Before, such a leaf was neither scored nor listed as unmapped, so a wrong value passed.
+- `canonic fit` and `canonic verify` no longer exit 2 with an `OverflowError` on an integer past the double range (about 1.8e308). Such integers compare exactly.
+- `canonic fit` warns and still writes the spec and the report when the existing `--out` file is not JSON.
+- `canonic infer --ask` drops an answer that names a path a `join` or `coalesce` rule already reads, as the docs say.
 
 ### Compatibility
 

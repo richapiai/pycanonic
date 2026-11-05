@@ -101,7 +101,7 @@ These were left out of language 2 and `canonic fit` on purpose:
 
 The auto share and the zero wrong auto fields of `canonic fit` come from 14 invented providers in `python/tests/fit_eval/`, not from real provider responses. The auto share is 75% there, below the 80% target. See [fit.md](fit.md#how-well-fit-does). A real provider can have patterns the suite does not cover. Review the report, and run `canonic verify` on pairs that `fit` did not learn from.
 
-With few pairs, `fit` can propose rules that fit the samples by chance, for example a boolean read from another boolean that agreed on every sample. They land in review, never in auto. A lookup entry, a learned text argument and a reject each need two sample pairs or more, so a rule that memorizes one pair is not proposed. The commands are experimental in 0.1.
+With few pairs, `fit` can propose rules that fit the samples by chance, for example a boolean read from another boolean that agreed on every sample. They land in review, never in auto. A lookup entry, a learned text argument and a reject each need two sample pairs or more, so a rule that memorizes one pair is not proposed. `canonic schema`, `canonic fit` and `canonic verify` are still experimental in 0.2.
 
 ## Custom transforms
 
