@@ -101,6 +101,7 @@ def test_bare_array_root() -> None:
             "properties": {"a": {"type": "number", "x-empty": "missing"}, "b": {"type": "string", "x-empty": "missing"}},
         },
         "x-empty": "[]",
+        "x-shape": "strict",
     }
     assert flags(s) == []
     # The root node is `$`. Its elements are `[]` and their fields `[].a`: the spec's `"[]"` key
@@ -191,3 +192,31 @@ def test_schema_file_keeps_index_like_key_order(tmp_path: Path, capsys: pytest.C
     out = tmp_path / "schema.json"
     assert main(["schema", str(d), "--out", str(out)]) == 0
     assert list(json.loads(out.read_text())["properties"]) == ["b", "10", "2"]
+
+
+PEOPLE = [{"kind": "person", "name": f"p{i}", "title": "t"} for i in range(3)]
+ORGS = [{"kind": "org", "name": f"o{i}", "size": i} for i in range(3)]
+
+
+def test_schema_writes_strict() -> None:
+    assert derive([{"a": 1}])["x-shape"] == "strict"
+    assert derive([[{"a": 1}]])["x-shape"] == "strict"  # an array root takes it too
+
+
+def test_schema_proposes_union() -> None:
+    s = derive([{"id": i, "author": a} for i, a in enumerate([*PEOPLE, *ORGS])])
+    author = s["properties"]["author"]
+    assert "properties" not in author and author["type"] == "object"
+    assert [b["title"] for b in author["oneOf"]] == ["person", "org"]
+    assert list(author["oneOf"][0]["properties"]) == ["kind", "name", "title"]
+    assert list(author["oneOf"][1]["properties"]) == ["kind", "name", "size"]
+    assert ("author", "oneOf proposed") in flags(s)
+    # no discriminating scalar: numbered branches
+    plain = derive([{"a": {"x": 1}}, {"a": {"x": 2}}, {"a": {"y": 1}}, {"a": {"y": 2}}])
+    assert [b["title"] for b in plain["properties"]["a"]["oneOf"]] == ["branch1", "branch2"]
+
+
+def test_schema_no_union_for_noise() -> None:
+    s = derive([{"author": a} for a in [*PEOPLE, {**PEOPLE[0], "extra": 1}]])
+    assert "oneOf" not in s["properties"]["author"] and "extra" in s["properties"]["author"]["properties"]
+    assert "oneOf" not in derive([{"author": a} for a in PEOPLE])["properties"]["author"]

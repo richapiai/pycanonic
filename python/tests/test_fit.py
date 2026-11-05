@@ -1134,3 +1134,21 @@ def test_if_empty_note_once() -> None:
     pairs = [Pair(f"p{i}.json", {"name": f"n{i}", "org": {"name": f"o{i}"}}, {"n": f"n{i}", "employer": {"orgName": f"o{i}"}}, None) for i in range(10)]
     rows = {r.field: r for r in fit_pairs(pairs, derive_schema([p.default for p in pairs]), FitOptions("acme", "e")).fields}
     assert rows["org"].risk().count("its empty form is a guess") == 1
+
+
+def test_fit_union_manual() -> None:
+    """A union node is one manual row and a placeholder, no leaf rows below it."""
+    from pycanonic.cli.fit import verify
+
+    authors = [{"kind": "person", "name": f"p{i}"} for i in range(3)] + [{"kind": "org", "name": f"o{i}", "size": i} for i in range(3)]
+    pairs = [Pair(f"p{i}.json", {"id": f"x{i}", "author": a}, {"ref": f"x{i}", "by": a}, None) for i, a in enumerate(authors)]
+    schema = derive_schema([p.default for p in pairs])
+    assert "oneOf" in schema["properties"]["author"]
+    result = fit_pairs(pairs, schema, FitOptions("acme", "e"))
+    rows = {r.field: r for r in result.fields}
+    assert rows["author"].tier == "manual" and "one_of" in rows["author"].risk() and "placeholder" in rows["author"].risk()
+    assert not any(k.startswith("author.") for k in rows)
+    assert result.spec is not None and result.spec["fields"]["author"] == {"const": None}
+    pycanonic.compile_spec(result.spec, schema)
+    failures = verify.run(result.spec, schema, pairs, 0.95, None).shape_failures
+    assert failures and {m for _, _, m in failures} == {"null against object"}  # no missing key; the null stays until the branches are written

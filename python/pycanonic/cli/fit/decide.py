@@ -12,7 +12,7 @@ Tier = Literal["auto", "review", "manual"]
 # list (lookup, const, regex, group, omit, when, reject, null_if, keys, absent) and the kinds the safe
 # list does not name (wrap, flatten, filter, presence, if_empty, split and the other transforms).
 AUTO = {"path", "cast", "trim", "lower", "upper", "format_date", "parse_date", "strip_prefix", "strip_suffix", "format", "join", "coalesce", "empty"}
-MANUAL = {"none", "disagree"}
+MANUAL = {"none", "disagree", "union"}
 # A person decided these (kept, asked) or must decide them (absent, reject), whatever the support.
 REVIEW = {"absent", "kept", "asked", "reject"}
 

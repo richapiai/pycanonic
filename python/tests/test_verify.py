@@ -436,3 +436,15 @@ def test_verify_tolerated_counts(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert main([*args, "--num-tolerance", "0.01"]) == 0
     assert "5/5  1.00  tolerated 5" in capsys.readouterr().out
     assert main([*args, "--num-tolerance", "-1"]) == 2
+
+
+def test_verify_union_shape() -> None:
+    from pycanonic.cli.fit.derive import derive_schema
+
+    org = {"kind": "org", "name": "o", "size": 1}
+    person = {"kind": "person", "name": "p", "title": "t"}
+    schema = derive_schema([{"author": a} for a in [person, person, org, org]])
+    assert "oneOf" in schema["properties"]["author"]
+    rule = {"one_of": [{"branch": "org", "when": {"path": "k", "eq": "o"}, "fields": {"kind": {"const": "org"}, "name": "n", "size": "s"}}]}
+    r = run(spec({"author": rule}), schema, pairs([({"author": org}, {"k": "o", "n": "o", "s": 1})]), 0.95, None)
+    assert r.shape_failures == [] and r.fields["author(org).name"] == (1, 1) and r.ok

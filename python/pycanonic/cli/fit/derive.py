@@ -41,6 +41,27 @@ def _is_open(dicts: list[dict[str, Any]], keys: list[str]) -> bool:
     return len(keys) > 20 and sum(len(d) for d in dicts) / len(dicts) < len(keys) / 2
 
 
+def _union(dicts: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    """The `oneOf` branches when the objects fall into 2 or more key sets, each seen in 2 or more
+    samples and none left over (R55). A branch is titled by a scalar key that is one string within
+    each set and differs across sets, lowercased, else `branch<n>`."""
+    groups: dict[frozenset[str], list[dict[str, Any]]] = {}
+    for d in dicts:
+        groups.setdefault(frozenset(d), []).append(d)
+    sets = list(groups.values())
+    if len(sets) < 2 or any(len(g) < 2 for g in sets):
+        return None
+    titles = [f"branch{i}" for i in range(1, len(sets) + 1)]
+    for k in dict.fromkeys(k for d in dicts for k in d):
+        if all(k in g[0] for g in sets):
+            vals = [{d[k] for d in g} for g in sets]
+            names = [re.sub(r"\W", "_", str(next(iter(v))).lower()) for v in vals]
+            if all(len(v) == 1 and isinstance(next(iter(v)), str) for v in vals) and len(set(names)) == len(names) and all(_IDENT.match(n) for n in names):
+                titles = names
+                break
+    return [{"title": t, "properties": {k: _node([d[k] for d in g], 0) for k in dict.fromkeys(k for d in g for k in d)}} for t, g in zip(titles, sets)]
+
+
 def _node(values: list[Any], absent: int) -> dict[str, Any]:
     """The schema node for the values seen at one place; `absent` counts parents that lack the key."""
     types = sorted({_type(v) for v in values if v is not None})
@@ -53,6 +74,8 @@ def _node(values: list[Any], absent: int) -> dict[str, Any]:
         keys = list(dict.fromkeys(k for d in dicts for k in d))
         if dicts and _is_open(dicts, keys):
             out["x-open"] = True
+        elif branches := _union(dicts):
+            out["oneOf"] = branches
         else:
             out["properties"] = {
                 k: _node([d[k] for d in dicts if k in d], sum(k not in d for d in dicts)) for k in keys
@@ -74,7 +97,7 @@ def _node(values: list[Any], absent: int) -> dict[str, Any]:
 
 def derive_schema(samples: list[Any]) -> dict[str, Any]:
     """The schema for the samples (objects, or bare arrays as the `$` root with `"type": "array"`)."""
-    return _node(samples, 0)
+    return {**_node(samples, 0), "x-shape": "strict"}
 
 
 def _child(path: str, key: str) -> str:
@@ -90,6 +113,8 @@ def flags(schema: dict[str, Any], path: str = "") -> list[tuple[str, str]]:
         out.append((at, "mixed empty"))
     if "type" not in schema:
         out.append((at, "always null"))
+    if "oneOf" in schema:
+        out.append((at, "oneOf proposed"))
     for k, child in schema.get("properties", {}).items():
         out += flags(child, _child(path, k))
     if "items" in schema:

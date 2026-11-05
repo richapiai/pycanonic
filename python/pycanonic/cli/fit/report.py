@@ -35,6 +35,7 @@ RISKS: dict[str, str] = {
     "reject": "Too strict: good answers fail over to the next provider and cost money. Too loose: empty answers reach customers.",
     "absent": "Customers that filter on that field get nulls. A business decision, not a mapping one.",
     "disagree": "A value mismatch that a lookup table cannot fix, for example old and new industry names. Decide per field: lookup table, custom transform, or accept the difference.",
+    "union": "The draft writes the union's empty form until you write the one_of branches.",
     "none": "Covered by the generated stub and its doctests.",
     "join": "A record with one part missing, or with a different separator, maps to a wrong or partial value.",
     "wrap": "A provider that sometimes sends a list here gets a list inside a list.",

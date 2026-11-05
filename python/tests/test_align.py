@@ -70,7 +70,7 @@ def test_bad_regex() -> None:
 
 def test_item_schema() -> None:
     schema = derive_schema([{"data": {"items": [{"id": "1"}]}, "n": 1, "tags": ["a"]}])
-    assert item_schema(schema, "data.items") == {"type": "object", "properties": {"id": {"type": "string"}}}
+    assert item_schema(schema, "data.items") == {"type": "object", "properties": {"id": {"type": "string"}}, "x-shape": "strict"}
     for bad in ("n", "tags", "data", "nope"):
         with pytest.raises(ValueError, match="array of objects"):
             item_schema(schema, bad)

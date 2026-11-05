@@ -37,8 +37,10 @@ It reads the default provider's responses (files, or folders of `.json` files) a
 - the key order, in order of first appearance across the samples,
 - the form an empty value takes, as `"x-empty"`: `"null"`, `"[]"`, `"{}"` or `"missing"` (the key is left out),
 - `"x-open": true` for a map of dynamic keys. That needs more than 20 distinct keys, and on average each sample carries fewer than half of them.
+- `"x-shape": "strict"` at the root, on every schema it writes, so an unmapped node writes its empty form and never drops a key (see [strict shape](spec-format.md)). An array root takes it too.
+- a `oneOf` union for an object whose samples fall into two or more key sets. Each key set must appear in two or more samples, and every sample must fall in one set, so a single sample with an extra key gives no union. A branch is titled by a scalar key that holds one string within each set and differs across sets (`"kind": "person"` gives `person`), lowercased, else `branch1`, `branch2` and so on. `x-empty` sits on the union node.
 
-If the samples disagree on the empty form, the schema takes the most frequent form that the node allows and adds `"x-mixed-empty": true`. A tie goes to the first of null, `[]`, `{}` and missing. The fields to check go to stderr: mixed types, mixed empty forms, and fields that are null in every sample.
+If the samples disagree on the empty form, the schema takes the most frequent form that the node allows and adds `"x-mixed-empty": true`. A tie goes to the first of null, `[]`, `{}` and missing. The fields to check go to stderr: mixed types, mixed empty forms, fields that are null in every sample, and `oneOf proposed` for each union. `fit` does not learn branch conditions: a union node is one manual `union` row, and the draft writes the node's empty form (its `x-empty`, else null) until you write the `one_of` branches by hand. `verify` scores a union's leaves per branch as `<node>(<branch>).<leaf>`.
 
 `fit` and `verify` reproduce exactly what `x-empty` says, so check those lines before you go on. A field that is null in every sample has no type and no value to learn from.
 

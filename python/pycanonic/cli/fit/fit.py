@@ -120,6 +120,9 @@ class _Fitter:
             self.rows.append(Row(key, "", "empty", None, 0, 0, 1.0, []))
         elif key.endswith("[]"):
             self.array(key, node, vals)
+        elif "oneOf" in node:  # fit learns no branch conditions: one manual row
+            note = "A union: write the one_of branches by hand (each branch needs a when and its fields)."
+            self.rows.append(Row(key, "", "union", None, 0, len(self.pairs), 0.0, [], note))
         elif node.get("x-open"):
             self.open_map(key, [None if v is MISSING else v for v in vals])
         elif "properties" in node:
