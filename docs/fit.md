@@ -10,7 +10,7 @@ A pair is one request sent to both providers: the default's response and the new
 
 The specs that `fit` writes use [language 2](spec-format.md#language-2), so only pycanonic can run them.
 
-These three commands are experimental in 0.1. Their rules, tiers and report format can change in a minor release. `pycanonic` itself (`compile_spec`, `map` and the spec format) follows semantic versioning.
+These three commands are experimental in 0.2. Their rules, tiers and report format can change in a minor release. `pycanonic` itself (`compile_spec`, `map` and the spec format) follows semantic versioning.
 
 ## The pairs
 
@@ -58,6 +58,7 @@ canonic fit --default samples/default/ --provider samples/new/ --inputs samples/
 | `--inputs <dir>` | request inputs per pair, for fields that depend on them |
 | `--keep <file>` | reviewed rules to keep as written, see [The manual path](#the-manual-path) |
 | `--ask <command>` | asks a shell command about the manual fields, as `canonic infer --ask` does |
+| `--ask-timeout <s>` | seconds one `--ask` command may run before its field is skipped, default `120` |
 | `--report <file>` | writes the report to `<file>.md` and `<file>.json`. Without it, the Markdown report goes to stdout. |
 | `--transforms-out <file>` | writes a Python stub for each manual field that needs code |
 | `--min-auto <f>` | the support and holdout share an auto field needs, default `0.95` |
@@ -104,7 +105,7 @@ A proposed reject goes into the spec as a review row. A pair that the spec rejec
 An auto field meets all of these rules. The numbers are the defaults of `--min-auto` and `--min-pairs`.
 
 - Its kind is on the auto list below.
-- It is exact on 95% or more of the pairs where the default has a value.
+- It is exact on 95% or more of the pairs where the default has a value or the rule writes one. A value the rule writes where the default has none counts as a miss, as it does in `verify`.
 - It has 5 such pairs or more.
 - Its holdout is 95% or more.
 - The default sends two or more distinct values. One value tells nothing that a constant does not.
@@ -169,7 +170,7 @@ This is the table the reviewer reads. The report prints the row of each field th
 | Prefix strip | `strip_prefix` | auto | A record with a different prefix keeps it, so the value comes out with that prefix still on. |
 | Suffix strip | `strip_suffix` | auto | A record with a different suffix keeps it, so the value comes out with that suffix still on. |
 | Prefix or suffix add | `format` | auto | A record that needs a different prefix or suffix gets this one, so the text comes out wrong without an error. |
-| Empty array or null, from the default's samples | `empty` | auto (review for samples that disagree) | The default provider itself is inconsistent (sometimes null, sometimes `[]`). The schema flags fields where samples disagree, and those fields go to review. |
+| Empty array or null, from the default's samples | `empty` | review (manual when the spec does not write the default's empty form) | The default provider itself is inconsistent (sometimes null, sometimes `[]`). The schema flags fields where samples disagree, and those fields go to review. |
 | Coalesce order | `coalesce` | auto | The second source has different meaning on records the samples did not cover. |
 | Join separator | `join` | auto | A record with one part missing, or with a different separator, maps to a wrong or partial value. |
 | Learned lookup table | `lookup` | review | A value outside the table. `"else"` decides: keep (wrong vocabulary passes through), null (data lost), or a fixed value. |
@@ -307,15 +308,20 @@ $ echo '{"status": "state"}' > reviewed.json
 $ canonic fit ... --keep reviewed.json --out globex.json --report report
 fit: 9 auto, 3 review, 0 manual
 $ canonic verify globex.json --schema canonical.json --default $F/default --provider $F/provider
-id       10/10  1.00
-name     10/10  1.00
-email    10/10  1.00
-joined   10/10  1.00
-status   7/10  0.70
-hq       6/6  1.00
-hq.city  6/6  1.00
-tags[]   10/10  1.00
-jobs[]   10/10  1.00
+id                      10/10  1.00
+name                    10/10  1.00
+email                   10/10  1.00
+joined                  10/10  1.00
+status                  7/10  0.70  misses p03.json, p05.json, p08.json
+hq                      6/6  1.00
+hq.city                 6/6  1.00
+tags[]                  10/10  1.00
+tags[] (count)          10/10  1.00
+jobs[]                  10/10  1.00
+jobs[] (count)          10/10  1.00
+jobs[].org              17/17  1.00
+jobs[].roles[] (count)  17/17  1.00
+jobs[].roles[].title    23/23  1.00
 verify: failed (10 pairs, 0 rejected)
 ```
 

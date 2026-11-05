@@ -76,6 +76,17 @@ def from_of(rule: Any) -> Any:
     return rule if isinstance(rule, str) else rule.get("from") if isinstance(rule, dict) else None
 
 
+def reads(rule: Any) -> list[str]:
+    """Every source path a rule reads: a path, each path of a `from` list, and each `coalesce` entry."""
+    if isinstance(rule, str):
+        return [rule]
+    if not isinstance(rule, dict):
+        return []
+    frm = rule.get("from")
+    out = [frm] if isinstance(frm, str) else [p for p in frm if isinstance(p, str)] if isinstance(frm, list) else []
+    return out + [p for c in rule.get("coalesce") or [] for p in reads(c)]
+
+
 def doubtful(r: Inferred) -> dict[str, tuple[str | None, float]]:
     """Fields worth asking about, with the low-confidence source inference chose, if any."""
     out: dict[str, tuple[str | None, float]] = {}
@@ -100,7 +111,7 @@ def ask_low_confidence(r: Inferred, schema: Any, samples: list[Any], ask: Ask) -
     fields = dict(r.spec["fields"])
     report = list(r.fields)
     anchors = dict(r.spec.get("anchors") or {})
-    used = {f for f in map(from_of, fields.values()) if isinstance(f, str)}
+    used = {p for rule in fields.values() for p in reads(rule)}
     unmapped = r.unmapped
     for field, (current, confidence) in doubtful(r).items():
         leaf = leaves.get(field)
@@ -130,13 +141,21 @@ def ask_low_confidence(r: Inferred, schema: Any, samples: list[Any], ask: Ask) -
     return replace(r, spec=spec, fields=report, unmapped=unmapped)
 
 
-def ask_with(command: str) -> Ask:
-    """Runs the --ask command once per question. A failing command skips that field: the command is never required."""
+ASK_TIMEOUT = 120.0
+"""Seconds one --ask command may run before its field is skipped (--ask-timeout)."""
+
+
+def ask_with(command: str, timeout: float = ASK_TIMEOUT) -> Ask:
+    """Runs the --ask command once per question. A failing command, or one that runs past
+    `timeout` seconds, skips that field: the command is never required."""
 
     def run(q: Question) -> str | None:
         try:
-            done = subprocess.run(command, shell=True, input=js_json(q), capture_output=True, text=True, encoding="utf-8", errors="replace")
+            done = subprocess.run(command, shell=True, input=js_json(q), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
             # Lossy, as node decodes: a stray byte makes the answer unknown, not the run fail.
+        except subprocess.TimeoutExpired:
+            print(f"--ask failed for {q['field']}: timed out after {timeout:g} s", file=sys.stderr)
+            return None
         except OSError as e:
             print(f"--ask failed for {q['field']}: {e}", file=sys.stderr)
             return None

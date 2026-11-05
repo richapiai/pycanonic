@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from ..fit import align, fit
-from ..io import Transforms, UsageError, add_tolerance, parser
+from ..infer.ask import ASK_TIMEOUT
+from ..io import Transforms, UsageError, add_tolerance, parser, seconds
 
 USAGE = """canonic fit --default <dir> --provider <dir> --provider-name <name> --endpoint <name> --out <file> [options]
 
@@ -17,6 +18,7 @@ USAGE = """canonic fit --default <dir> --provider <dir> --provider-name <name> -
   --schema <file>         the canonical schema (default: derived from the --default samples)
   --keep <file>           reviewed rules to keep as written: {"<field key>": <rule>}
   --ask <command>         ask this shell command about manual fields, as canonic infer --ask does
+  --ask-timeout <s>       seconds one --ask command may run before its field is skipped (default 120)
   --strict                a field to review also exits 2
   --min-auto <f>          support and holdout share an auto field needs (default 0.95)
   --min-pairs <n>         pairs with a value an auto field needs (default 5)
@@ -42,6 +44,7 @@ def run(args: list[str], transforms: Transforms) -> int:
     for flag in ("--default", "--provider", "--inputs", "--schema", "--keep", "--ask", "--provider-name", "--endpoint", "--out", "--report", "--transforms-out"):
         p.add_argument(flag)
     p.add_argument("--strict", action="store_true")
+    p.add_argument("--ask-timeout", type=seconds, default=ASK_TIMEOUT)
     p.add_argument("--min-auto", type=float, default=0.95)
     p.add_argument("--min-pairs", type=int, default=5)
     add_tolerance(p)

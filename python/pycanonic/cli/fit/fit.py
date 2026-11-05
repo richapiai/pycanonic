@@ -343,14 +343,20 @@ def _check(f: _Fitter) -> None:
             want = [_val(p.default, r.field) for p in pairs]
             if r.kind == "empty":
                 r.support, r.total = sum(map(_eq, got, want)), n
+                check = f"Runtime check: the spec writes the default's empty form in {r.support} of {n} pairs. Set the schema's x-empty to the form the default sends."
+                if r.support < n and check not in r.note:
+                    r.note = " ".join(filter(None, [r.note, check]))
                 continue
             if r.kind in ("presence", "if_empty"):
                 support = sum(_empty(g) == _empty(w) for g, w in zip(got, want))
             else:
                 live = [j for j in range(n) if want[j] is not MISSING and want[j] is not None]
                 support = sum(_hit(f.rows, r.field, got[j], want[j], tol) for j in live)
+                # A value the rule writes where the default has none is a miss in verify, so it counts in the total.
+                extra = sum(got[j] is not MISSING and got[j] is not None for j in range(n) if j not in live)
+                r.total = len(live) + extra
                 if r.kind == "kept":
-                    r.support, r.total = support, len(live)
+                    r.support = support
             if f.drift and support > r.support:  # fit searched exact keys, the runtime also matches other cases
                 r.support = support
             elif r.kind != "kept" and support != r.support:
@@ -507,14 +513,18 @@ def run(args: argparse.Namespace, transforms: Transforms | None = None) -> int:
     for k in keep:
         if k not in known:
             print(f'fit: --keep key "{k}" matches no field', file=sys.stderr)
-    opts = FitOptions(args.provider_name, args.endpoint, args.min_auto, args.min_pairs, keep, ask_with(args.ask) if args.ask else None, transforms or {}, tolerance(args))
+    opts = FitOptions(args.provider_name, args.endpoint, args.min_auto, args.min_pairs, keep, ask_with(args.ask, args.ask_timeout) if args.ask else None, transforms or {}, tolerance(args))
     result = fit_pairs(pairs, schema, opts)
     result.skipped, result.aligned = skipped, aligned
     out = Path(args.out)
     if result.spec is None:
         print("fit: no field could be mapped, so no spec was written", file=sys.stderr)
     else:
-        prev = read_json(str(out)) if out.exists() else {}
+        try:
+            prev = read_json(str(out)) if out.exists() else {}
+        except ValueError:
+            prev = {}
+            print(f"fit: {out} is not JSON, so changed rules are not compared", file=sys.stderr)
         if not isinstance(prev, dict):
             print(f"fit: {out} is not a JSON object, so changed rules are not compared", file=sys.stderr)
         old = prev.get("fields") if isinstance(prev, dict) and out.exists() else None

@@ -52,7 +52,7 @@ def _union(dicts: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
     if len(sets) < 2 or any(len(g) < 2 for g in groups.values()) or any(a < b for a in sets for b in sets):
         return None
     for k in dict.fromkeys(k for d in dicts for k in d):
-        if all(k in s for s in sets):
+        if all(k in s for s in sets) and all(isinstance(d[k], str) for d in dicts):  # only a text value can title a branch
             vals = [{d[k] for d in groups[s]} for s in sets]
             if not all(len(v) == 1 and isinstance(next(iter(v)), str) for v in vals):
                 continue

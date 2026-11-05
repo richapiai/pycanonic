@@ -32,6 +32,7 @@ Pick samples that differ: people with and without a work email, companies with a
 | `--synonyms <file>` | extra name synonyms, `{"token": ["canonical", "tokens"]}`. An entry replaces a learned or built-in entry for the same token. |
 | `--min-score <n>` | pairs that score below this stay unmapped. The default is 0.4. |
 | `--ask <command>` | optional model pass for doubtful fields, see below |
+| `--ask-timeout <s>` | seconds one `--ask` command may run before its field is skipped. The default is 120. |
 | `--out <file>` | write the spec here instead of stdout |
 
 `--learn` reads each approved mapping as evidence of which provider key means which canonical name. It learns a token only from a key with exactly one token it cannot explain. It also needs that neither the key nor its parent shares a word with the canonical name. So `emails.work` mapped to `email` does not teach it that "work" means email. The leave-one-provider-out evaluation below runs on synonyms learned this way.
@@ -114,7 +115,7 @@ The command runs once per field, through the shell, with one JSON question on st
 
 (`sources` is shortened.) `semantic` appears for a canonical field that has one. `current` appears for a field that inference already mapped. Each source carries up to 3 distinct non-null example values. `sources` holds the first 200 scalar paths found in the samples.
 
-The reply is the last non-empty line of stdout, as a JSON string or a bare path. `null` or an empty reply means no answer. An answer is dropped for a path that is not one of `sources`, or that another field already reads. For a command that exits non-zero, the CLI prints `--ask failed for <field>: <stderr>` and skips that field. The rest of the run carries on. An empty `--ask ""` means no ask. A reply that is not valid UTF-8 is decoded with replacement characters, so it names no known path and the field is skipped.
+The reply is the last non-empty line of stdout, as a JSON string or a bare path. `null` or an empty reply means no answer. An answer is dropped for a path that is not one of `sources`, or that another field already reads, including each path of a `join` or `coalesce` rule. For a command that exits non-zero, the CLI prints `--ask failed for <field>: <stderr>` and skips that field. A command that runs longer than `--ask-timeout` seconds (120 by default) is stopped, and the CLI prints `--ask failed for <field>: timed out after <s> s` and skips that field. The rest of the run carries on. An empty `--ask ""` means no ask. A reply that is not valid UTF-8 is decoded with replacement characters, so it names no known path and the field is skipped.
 
 With a command that answers `"zq7"` for `title`, the line becomes:
 

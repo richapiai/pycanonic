@@ -284,13 +284,15 @@ def fit_leaf(
         out = [j for j in live if owner[j] == u]
         best = s.select([j for j in every if owner[j] != u])
         held += bool(best and best[0][1] >= floor * (len(live) - len(out)) and s.hits(best[0][0]).issuperset(out))
-    order = sorted(live, key=lambda j: j in s.hits(c))  # failures first, stable in pair order
+    # Pairs where the default has no value but the rule writes one: verify counts them as misses.
+    extra = [j for j in every if targets[j] is None and s.out(c, j) is not None]
+    order = sorted(live + extra, key=lambda j: j in s.hits(c))  # failures first, stable in pair order
     examples = [{"pair": pairs[j].name, "want": targets[j], "got": s.out(c, j)} for j in order[:3]]
     flags = dict.fromkeys(f for j in s.hits(c) if match(s.out(c, j), targets[j], tol) == "tolerated" for f in used(s.out(c, j), targets[j], tol))
     cut = sum(match(s.out(c, j), targets[j], tol) == "miss" for j in s.hits(c))  # hits that only near() accepts
     if cut:
         flags[f"{NEAR} in {cut} pairs"] = None
-    return LeafFit(field, c.rule(), c.label(), support, len(live), held / len(units), examples, alternatives, tolerated=", ".join(flags) or None)
+    return LeafFit(field, c.rule(), c.label(), support, len(live) + len(extra), held / len(units), examples, alternatives, tolerated=", ".join(flags) or None)
 
 
 def _case_variant(c: _Cand, chosen: _Cand) -> bool:

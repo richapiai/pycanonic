@@ -20,7 +20,10 @@ def _num_eq(a: float, b: float) -> bool:
     """By value; when either side is at least 2^53 in magnitude, integer or not, within one double
     step of `a` (TypeScript writes a rounded big integer, pycanonic keeps it exact)."""
     if max(abs(a), abs(b)) >= TWO_53:
-        return abs(float(a) - float(b)) <= math.ulp(float(a))
+        try:
+            return abs(float(a) - float(b)) <= math.ulp(float(a))
+        except OverflowError:  # an integer past the double range: compare exactly
+            return a == b
     return a == b
 
 
@@ -87,7 +90,11 @@ def match(a: Any, b: Any, tol: Tolerance) -> Literal["exact", "tolerated", "miss
     if tol == Tolerance() or isinstance(a, bool) or isinstance(b, bool):
         return "miss"
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-        return "tolerated" if tol.num and abs(a - b) <= tol.num * max(abs(a), abs(b)) else "miss"
+        try:
+            near = bool(tol.num) and abs(a - b) <= tol.num * max(abs(a), abs(b))
+        except OverflowError:  # an integer past the double range
+            near = False
+        return "tolerated" if near else "miss"
     if isinstance(a, str) and isinstance(b, str):
         both = _URL.match(fffd(a)) and _URL.match(fffd(b))
         t = tol if both else Tolerance(space=tol.space)

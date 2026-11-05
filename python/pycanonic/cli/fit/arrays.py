@@ -257,7 +257,8 @@ def _aggregate(f: LeafFit, key: str, eps: list[Pair], owners: list[int], targets
     rest = sorted((i for i in range(len(cands)) if i != top), key=lambda i: -len(hits[i] & set(full)))
     alternatives = [{"rule": cands[i][0], "kind": "group", "support": len(hits[i] & set(full))} for i in rest[:3]]
     flags = dict.fromkeys(x for j in hits[top] & set(full) if match(outs[j], targets[j], tol) == "tolerated" for x in used(outs[j], targets[j], tol))
-    return LeafFit(key, rule, "group", len(hits[top] & set(full)), len(full), held / len(units), examples, alternatives, tolerated=", ".join(flags) or None)
+    extra = len(set(nulls) - hits[top])  # the default has no value, the rule writes one: a miss in verify
+    return LeafFit(key, rule, "group", len(hits[top] & set(full)), len(full) + extra, held / len(units), examples, alternatives, tolerated=", ".join(flags) or None)
 
 
 @dataclass
@@ -414,5 +415,7 @@ def fit_array(field: str, node: dict[str, Any], pairs: list[Pair], owners: list[
     order = sorted(live, key=lambda j: j in t.hits)
     examples = [{"pair": pairs[j].name, "want": wants[j], "got": t.outs[j]} for j in order[:3]]
     kind = t.items.kind if t.kind == "path" else t.kind
-    head = LeafFit(field, t.rule, kind, len(t.hits), len(live), t.items.holdout, examples, alternatives)
+    # Pairs with no list in the default where the rule writes something else: verify counts them as misses.
+    extra = sum(t.outs[j] is not None and t.outs[j] is not MISSING and (wants[j] is MISSING or not same(t.outs[j], wants[j])) for j in range(len(pairs)) if j not in live)
+    head = LeafFit(field, t.rule, kind, len(t.hits), len(live) + extra, t.items.holdout, examples, alternatives)
     return t.rule, [head, *(replace(f, field=f"{field}.{f.field}") for f in t.items.fits)]

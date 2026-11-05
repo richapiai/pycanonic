@@ -356,12 +356,13 @@ def infer(
     min_score: float = 0.4,
     ask: str | None = None,
     raws: list[str] | None = None,
+    ask_timeout: float = 120.0,
 ) -> tuple[dict[str, Any], list[FieldReport]]:
     """The draft spec (status "draft") and one report line per canonical field.
 
     `known` is the canonical output per sample (None where unknown). `learn` takes approved specs to
     learn synonyms from (`synonyms` wins on conflicts). `ask` is a shell command asked about each
-    doubtful scalar field. `raws` is each sample's raw text, needed to propose anchors."""
+    doubtful scalar field, and `ask_timeout` the seconds one ask may run. `raws` is each sample's raw text, needed to propose anchors."""
     from .ask import LOW, ask_low_confidence, ask_with  # here, not at the top, because ask.py imports FieldReport from this module
 
     for i, s in enumerate(learn or []):
@@ -371,7 +372,7 @@ def infer(
     merged = {**learned, **(synonyms or {})}
     r = infer_draft(schema, samples, provider=provider, endpoint=endpoint, synonyms=merged, known=known, raws=raws, min_score=min_score)
     if ask:
-        r = ask_low_confidence(r, schema, samples, ask_with(ask))
+        r = ask_low_confidence(r, schema, samples, ask_with(ask, ask_timeout))
     report = [replace(f, check=(f.confidence or 0) < LOW or f.how == "ask") for f in r.fields]
     report += [FieldReport(u["field"], "unmapped", best=u.get("best"), confidence=u.get("score")) for u in r.unmapped]
     return r.spec, report

@@ -176,10 +176,10 @@ def test_root_array_body() -> None:
     assert f.rule == {"from": "[0].full"}
 
 
-def test_skips_null_targets() -> None:
+def test_null_target_counts_when_the_rule_writes_a_value() -> None:
     rows = [(None if i == 0 else f"t{i}", {"t": f"t{i}"}) for i in range(6)]
     f = leaf("t", rows)
-    assert (f.rule, f.support, f.total) == ({"from": "t"}, 5, 5)
+    assert (f.rule, f.support, f.total) == ({"from": "t"}, 5, 6)  # the rule writes a value where the default has none: a miss
 
 
 def test_deterministic() -> None:

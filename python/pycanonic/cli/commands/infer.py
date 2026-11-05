@@ -8,7 +8,8 @@ from typing import Any
 
 from ..infer.infer import FieldReport, infer, to_fixed
 from ..infer.learn import learn_synonyms
-from ..io import Transforms, UsageError, is_obj, js_json, js_number, json_files, pad, parse_json, parser, read_json, read_text
+from ..infer.ask import ASK_TIMEOUT
+from ..io import Transforms, UsageError, is_obj, js_json, js_number, json_files, pad, parse_json, parser, read_json, read_text, seconds
 
 USAGE = """canonic infer --schema <canonical.json> --provider <name> --endpoint <name> [options] <samples>...
 
@@ -22,6 +23,7 @@ USAGE = """canonic infer --schema <canonical.json> --provider <name> --endpoint 
   --ask <command>     optional model pass: each unmapped or low-confidence field is sent to this shell
                       command as a JSON question on stdin; it prints one source path or null
                       (for example --ask "./ask.sh"). Answers are still marked for review.
+  --ask-timeout <s>   seconds one --ask command may run before its field is skipped (default 120)
   --out <file>        write the spec here instead of stdout"""
 
 
@@ -72,6 +74,7 @@ def run(args: list[str], transforms: Transforms) -> int:
     for flag in ("--schema", "--provider", "--endpoint", "--known", "--synonyms", "--min-score", "--out", "--ask"):
         p.add_argument(flag)
     p.add_argument("--learn", action="append")
+    p.add_argument("--ask-timeout", type=seconds, default=ASK_TIMEOUT)
     p.add_argument("paths", nargs="*")
     a = p.parse_intermixed_args(args)
     if not a.schema or not a.provider or not a.endpoint or not a.paths:
@@ -81,7 +84,7 @@ def run(args: list[str], transforms: Transforms) -> int:
     schema = read_json(a.schema)
     samples = [parse_json(t, f) for t, f in zip(raws, files)]
     options = extras(a.known, a.synonyms, a.learn, a.min_score, files, schema)
-    spec, fields = infer(samples, schema, provider=a.provider, endpoint=a.endpoint, raws=raws, ask=a.ask, **options)
+    spec, fields = infer(samples, schema, provider=a.provider, endpoint=a.endpoint, raws=raws, ask=a.ask, ask_timeout=a.ask_timeout, **options)
     if len(files) < 5:
         print(f"only {len(files)} samples: a field that happens to be null in all of them can't be found", file=sys.stderr)
     print(report(fields, spec), file=sys.stderr)

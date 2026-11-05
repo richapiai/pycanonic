@@ -10,7 +10,9 @@ from typing import Any
 
 from ... import Rejected, _api
 from .compare import Tolerance, same
+from ..infer.sources import format_path
 from .arrays import MISSING
+from .leaves import _segs
 from .fit import _cmp, _empty, _nodes, _val
 from .pairs import Pair
 
@@ -95,11 +97,14 @@ def _branch(node: dict[str, Any], obj: Any) -> tuple[str, dict[str, Any]] | None
     return None if hit is None else (str(hit.get("title", "")), hit.get("properties") or {})
 
 
-def _leaf_rows(node: dict[str, Any], prefix: str) -> Iterator[str]:
-    """Row keys for the leaves of an object node, nested lists as `a[].b[] (count)` and their leaves."""
+def _leaf_rows(node: dict[str, Any], prefix: str, segs: tuple[str, ...] = ()) -> Iterator[str]:
+    """Row keys for the leaves of an object node, nested lists as `a[].b[] (count)` and their leaves.
+    The keys below `prefix` are quoted as fit writes them (`jobs[].["a.b"]`), so a key with a dot
+    or a bracket is one key."""
     for name, sub in (node.get("properties") or {}).items():
         sub = sub if isinstance(sub, dict) else {}
-        p = f"{prefix}.{name}"
+        rel = (*segs, name)
+        p = f"{prefix}.{format_path(list(rel))}"
         if sub.get("type") == "array":
             yield p + "[] (count)"
             items = sub.get("items") or {}
@@ -108,7 +113,7 @@ def _leaf_rows(node: dict[str, Any], prefix: str) -> Iterator[str]:
             else:
                 yield p + "[]"
         elif "properties" in sub and not sub.get("x-open"):
-            yield from _leaf_rows(sub, p)
+            yield from _leaf_rows(sub, prefix, rel)
         else:
             yield p
 
@@ -124,16 +129,18 @@ def _covers(imap: Any, rel: str, defs: dict[str, Any]) -> bool:
         imap = defs.get(imap["$ref"])
     if not isinstance(imap, dict):
         return False
-    parts = rel.split(".")
+    head, arr, rest = rel.partition("[]")
+    parts = _segs(head)
     for i in range(1, len(parts) + 1):
-        r = imap.get(".".join(parts[:i]))
+        last = i == len(parts)
+        r = imap.get(format_path(parts[:i]) + (arr if last else ""))
         if r is None:
             continue
-        if i == len(parts) or isinstance(r, str):
+        if (last and not rest) or isinstance(r, str):
             return True
         if "item" in r:
-            if parts[i - 1].endswith("[]"):
-                return _covers(r["item"], ".".join(parts[i:]), defs)
+            if last:
+                return _covers(r["item"], rest.lstrip("."), defs)
         elif _copies(r):
             return True
     return False
@@ -233,8 +240,8 @@ def _unmapped(spec_fields: dict[str, Any], schema: dict[str, Any]) -> list[str]:
     for k, node in _nodes(schema):
         if ("properties" in node and not node.get("x-open")) or k in spec_fields:
             continue
-        parts = k.split(".")
-        if not any(copied(".".join(parts[:i])) for i in range(1, len(parts))):
+        parts = _segs(k)
+        if not any(copied(format_path(parts[:i])) for i in range(1, len(parts))):
             out.append(k)
     return out
 

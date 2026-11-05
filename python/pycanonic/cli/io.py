@@ -39,6 +39,14 @@ def add_tolerance(p: argparse.ArgumentParser) -> None:
     p.add_argument("--text-ignore-space", action="store_true")
 
 
+def seconds(text: str) -> float:
+    """A positive, finite number of seconds, for --ask-timeout. argparse reports a ValueError as a bad value."""
+    t = float(text)
+    if not 0 < t < float("inf"):  # also catches nan
+        raise ValueError(text)
+    return t
+
+
 def tolerance(a: argparse.Namespace) -> Tolerance:
     """The `Tolerance` of the three flags."""
     if not a.num_tolerance >= 0:  # also catches nan
