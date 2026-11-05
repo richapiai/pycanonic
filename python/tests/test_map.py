@@ -233,3 +233,87 @@ def test_load_plan_checks_the_format_stamp():
     plan["format"] = 3
     with pytest.raises(ValueError, match=r"plan format 3 is not supported\. This build reads format 1 or 2\. Rebuild the plan\."):
         _core.load_plan(json.dumps(plan), None)
+
+
+def _on_missing_spec(fields):
+    return {"language": 2, "provider": "acme", "endpoint": "items", "version": 1, "status": "promoted", "fields": fields}
+
+
+def test_on_missing_custom_gets_none():
+    import pycanonic
+
+    schema = {"type": "object", "properties": {"slug": {"type": "string"}}}
+    seen = []
+
+    def f(v):
+        seen.append(v)
+        return "none" if v is None else v.upper()
+
+    spec = _on_missing_spec({"slug": {"from": "name", "transform": "f", "on_missing": "transform"}})
+    a = pycanonic.compile_spec(spec, schema, transforms={"f": f})
+    assert a.map({}) == {"slug": "none"}
+    assert a.map({"name": None}) == {"slug": "none"}
+    assert a.map({"name": "ada"}) == {"slug": "ADA"}
+    assert seen == [None, None, "ada"]
+    assert json.loads(a.plan_json())["format"] == 2
+    assert "on_missing" in a.plan_json()
+    # Without the option the transform is skipped.
+    plain = pycanonic.compile_spec(
+        _on_missing_spec({"slug": {"from": "name", "transform": "f"}}), schema, transforms={"f": f}
+    )
+    assert plain.map({}) == {"slug": None}
+    assert "on_missing" not in plain.plan_json()
+
+
+def test_on_missing_custom_container_gets_none():
+    import pycanonic
+
+    schema = {
+        "type": "object",
+        "properties": {"hq": {"type": "object", "properties": {"a": {"type": "integer"}, "b": {"type": "string"}}}},
+    }
+    seen = []
+
+    def f(v):
+        seen.append(v)
+        return {"a": None, "b": None} if v is None else v
+
+    spec = _on_missing_spec({"hq": {"from": "office", "transform": "f", "on_missing": "transform"}})
+    a = pycanonic.compile_spec(spec, schema, transforms={"f": f})
+    assert a.map({}) == {"hq": {"a": None, "b": None}}
+    assert a.map({"office": {"a": 1, "b": "x"}}) == {"hq": {"a": 1, "b": "x"}}
+    assert seen[0] is None
+    assert json.loads(a.map_json(b"{}")) == {"hq": {"a": None, "b": None}}
+
+
+def test_on_missing_null_result_is_a_miss_not_an_error():
+    import pycanonic
+
+    schema = {"type": "object", "properties": {"slug": {"type": "string"}}}
+    spec = _on_missing_spec(
+        {"slug": {"from": "name", "transform": "f", "on_missing": "transform", "default": "n/a"}}
+    )
+    a = pycanonic.compile_spec(spec, schema, transforms={"f": lambda v: None})
+    assert a.map({}) == {"slug": "n/a"}
+    assert a.stats_snapshot()["fields"]["slug"]["errors"] == 0
+
+
+def test_on_missing_routing_field_fails_compile():
+    import pycanonic
+
+    schema = {"type": "object", "properties": {"email": {"type": "string", "semantic": "email", "routing": True}}}
+    spec = _on_missing_spec({"email": {"from": "e", "transform": "f", "on_missing": "transform"}})
+    with pytest.raises(pycanonic.SpecError, match="routing fields can't have on_missing"):
+        pycanonic.compile_spec(spec, schema, transforms={"f": lambda v: v})
+
+
+def test_on_missing_container_null_result_and_plan_round_trip():
+    import pycanonic
+
+    schema = {"type": "object", "properties": {"hq": {"type": "object", "properties": {"a": {"type": "integer"}}}}}
+    spec = _on_missing_spec({"hq": {"from": "office", "transform": "f", "on_missing": "transform"}})
+    a = pycanonic.compile_spec(spec, schema, transforms={"f": lambda v: v})
+    assert a.map({}) == {"hq": None}
+    assert a.stats_snapshot()["fields"]["hq"]["errors"] == 0
+    b = pycanonic.load(a.plan_json(), transforms={"f": lambda v: {"a": 7} if v is None else v})
+    assert b.map({}) == {"hq": {"a": 7}}

@@ -22,7 +22,7 @@ artifact.map({"name": " Dr. Ada Lovelace "})["full_name"]  # "Ada Lovelace"
 
 A transform is `f(value)` or `f(value, arg)`.
 
-- `value` is never `None`. The plan skips the transforms for a missing source, and a pipeline stops at the first `None`.
+- `value` is never `None`, with one exception. The plan skips the transforms for a missing source, and a pipeline stops at the first `None`. A language 2 rule with `"on_missing": "transform"` calls the first transform with `None` when its one `from` path is missing or null. A container transform gets `None` the same way. Write that function to accept `None`, or it raises and counts an error. A `None` result is a miss, not an error, and `default` applies to it.
 - `arg` is the argument from the spec, `{ "my_transform": <arg> }`. For the bare-name form, the transform is called with one argument, `f(value)`. pycanonic checks arguments only for the default transforms. Yours get whatever the spec says.
 - Return `None` for input you cannot handle. This counts an error for the field in `artifact.stats`.
 - Return a `str`, `int`, `float`, `bool` or `None`. Any other type, such as a dict, counts as a rejection.

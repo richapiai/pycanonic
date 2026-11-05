@@ -83,6 +83,9 @@ pub fn entry_paths(es: &[(Path, Option<Cond>)]) -> Vec<&Path> {
 pub struct ScalarRule {
     pub source: Source,
     pub default: Option<Value>,
+    /// Language 2 (R54): `"on_missing": "transform"` calls the first transform with null for a
+    /// missing or null source.
+    pub on_missing: bool,
     pub transform: Vec<TransformRef>,
 }
 
@@ -113,6 +116,8 @@ pub struct ArrayRule {
     pub group: Option<(Path, bool)>,
     /// The fallback key paths of a `group_by` list, after the first.
     pub group_also: Vec<Path>,
+    /// Language 2 (R54): as `ScalarRule::on_missing`, for a container transform.
+    pub on_missing: bool,
 }
 
 /// A path that is `$group`, which language 2 reserves for the group of a grouped item map.
@@ -514,6 +519,17 @@ impl Checker {
             self.step(s, &format!("{at}[{i}]"));
         }
     }
+    /// `"on_missing"` is `"skip"` or `"transform"`.
+    fn on_missing(&mut self, r: &Map<String, Value>, at: &str) {
+        if r.get("on_missing")
+            .is_some_and(|v| !matches!(v.as_str(), Some("skip" | "transform")))
+        {
+            self.fail(
+                &format!("{at}.on_missing"),
+                "must be \"skip\" or \"transform\"",
+            );
+        }
+    }
     fn scalar(&mut self, r: &Value, at: &str) {
         if let Value::String(_) = r {
             return self.source(Some(r), at);
@@ -521,11 +537,21 @@ impl Checker {
         let Some(r) = r.as_object() else {
             return self.fail(at, "must be a path or a rule object");
         };
+        let on_missing: &[&str] = if self.language == 2 {
+            &["on_missing"]
+        } else {
+            &[]
+        };
         self.keys(
             r,
             at,
-            &["from", "coalesce", "default", "transform", "when", "omit"],
+            &[
+                &["from", "coalesce", "default", "transform", "when", "omit"][..],
+                on_missing,
+            ]
+            .concat(),
         );
+        self.on_missing(r, at);
         self.when(r, at);
         if r.contains_key("from") == r.contains_key("coalesce") {
             self.fail(at, "needs exactly one of from, coalesce");
@@ -562,7 +588,17 @@ impl Checker {
         } else {
             &[]
         };
-        self.keys(r, at, &[&ARRAY_KEYS[..], &WHEN, coalesce].concat());
+        let on_missing: &[&str] = if self.language == 2 {
+            &["on_missing"]
+        } else {
+            &[]
+        };
+        self.keys(
+            r,
+            at,
+            &[&ARRAY_KEYS[..], &WHEN, coalesce, on_missing].concat(),
+        );
+        self.on_missing(r, at);
         self.when(r, at);
         for k in &ARRAY_KEYS[4..] {
             if r.contains_key(*k) {
@@ -1057,6 +1093,10 @@ fn entries(v: &Value) -> Vec<(Path, Option<Cond>)> {
     v.as_array().unwrap().iter().map(entry).collect()
 }
 
+fn on_missing(r: &Value) -> bool {
+    r.get("on_missing").and_then(Value::as_str) == Some("transform")
+}
+
 /// A scalar `from`. A list that holds an object is computed, a list of paths stays `FromMany`.
 fn from_source(f: &Value) -> Source {
     match f {
@@ -1066,6 +1106,7 @@ fn from_source(f: &Value) -> Source {
                     Value::Object(o) => SourceItem::Rule(Box::new(ScalarRule {
                         source: from_source(&o["from"]),
                         default: None,
+                        on_missing: false,
                         transform: transform(o.get("transform")),
                     })),
                     p => SourceItem::Path(path(p)),
@@ -1154,6 +1195,7 @@ fn bare_rule(key: &str, r: &Value) -> Rule {
         return Rule::Array(ArrayRule {
             from: first,
             coalesce,
+            on_missing: on_missing(r),
             flatten: from,
             wrap: r.get("wrap") == Some(&Value::Bool(true)),
             filter: r.get("filter").map(conds),
@@ -1215,6 +1257,7 @@ fn bare_rule(key: &str, r: &Value) -> Rule {
     Rule::Scalar(ScalarRule {
         source,
         default: r.get("default").cloned(),
+        on_missing: on_missing(r),
         transform: transform(r.get("transform")),
     })
 }

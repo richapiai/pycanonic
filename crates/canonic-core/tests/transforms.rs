@@ -641,3 +641,10 @@ proptest! {
         prop_assert_eq!(run("lower", None, s(&x)), s(&x.to_lowercase()));
     }
 }
+
+#[test]
+fn every_builtin_gives_null_for_null() {
+    for b in all_builtins() {
+        assert_eq!(b.apply(Value::Null, None), Value::Null, "{b:?}");
+    }
+}

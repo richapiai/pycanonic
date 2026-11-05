@@ -691,7 +691,7 @@ pycanonic checks the result against the canonical node:
 - An object takes a dict with no keys outside the node. A key that is missing or null gets its `x-empty` form, and the keys come out in schema order.
 - An `x-open` map takes any dict.
 
-A result that does not fit gives null and counts an error, so a wrong shape never reaches the output. A transform that raises does the same. A missing or null source gives null without a call. List options with a container transform fail with `a container transform takes only from and transform`. In language 1, a custom transform on an array runs once per element, as before.
+A result that does not fit gives null and counts an error, so a wrong shape never reaches the output. A transform that raises does the same. A missing or null source gives null without a call, unless the rule has `on_missing` (below). List options with a container transform fail with `a container transform takes only from and transform`. In language 1, a custom transform on an array runs once per element, as before.
 
 ```python
 def by_team(people):
@@ -702,6 +702,36 @@ def by_team(people):
 
 art = pycanonic.compile_spec(spec, schema, transforms={"by_team": by_team})
 # spec: "teams[]": {"from": "staff", "transform": "by_team"}
+```
+
+#### on_missing
+
+`"on_missing": "transform"` calls the first transform with null when the source is missing or null. The default, `"skip"`, skips the transform for a missing source, as before. It works in language 2 on a scalar rule or a container rule with one `from` path. With `coalesce`, a `from` list, a computed source or an array rule that has list options, the compile fails with `on_missing needs one from path`. A routing field cannot have it.
+
+The rest of the chain runs as usual on the result. A non-null result is a fill. A null result is a miss, not an error, and `default` still applies to it. For a container rule, a result that does not fit the node gives null and counts an error, as before. A function that raises counts an error. A plan that uses `on_missing` is format 2.
+
+Every default transform gives null for null, so the option changes the output only when a custom transform is first in line. The function then receives `None`. This example uses a default transform, so the missing source stays null and takes the default.
+
+<!-- run -->
+```json
+{
+  "schema": {
+    "type": "object",
+    "properties": {"slug": {"type": "string"}}
+  },
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "slug": {"from": "name", "transform": "lower", "on_missing": "transform", "default": "unnamed"}
+    }
+  },
+  "body": {"id": 1},
+  "expected": {"slug": "unnamed"}
+}
 ```
 
 Use a container transform only for logic that is not mapping. `group_by` covers most of the cases that used to need one.

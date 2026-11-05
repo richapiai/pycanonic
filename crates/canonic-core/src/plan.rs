@@ -94,6 +94,9 @@ pub struct Scalar {
     pub validator: Option<Semantic>,
     /// A string, number or boolean. The grammar rejects `default: null`.
     pub default: Option<Value>,
+    /// Language 2 (R54): the first transform runs on a missing or null source, with null.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_missing: bool,
     pub stat: usize,
 }
 
@@ -231,6 +234,8 @@ pub enum Field {
         from: Path,
         tx: TxRef,
         node: Node,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        on_missing: bool,
         stat: usize,
     },
     /// Language 2: a canonical field the spec does not map, written as its `x-empty`:
@@ -403,7 +408,9 @@ impl Plan {
             match f {
                 Field::Null => false,
                 Field::Scalar(s) => {
-                    tx(&s.tx) || matches!(s.source, Source::Computed(_) | Source::CoalesceWhen(_))
+                    tx(&s.tx)
+                        || s.on_missing
+                        || matches!(s.source, Source::Computed(_) | Source::CoalesceWhen(_))
                 }
                 Field::Const(..)
                 | Field::OmitNull(_)
@@ -504,6 +511,9 @@ fn line(out: &mut String, name: &str, field: &Field) {
         Field::Scalar(s) => {
             let src = source(&s.source);
             let mut line = format!("{name} <- {src}{}", pipe(&s.tx));
+            if s.on_missing {
+                line += " | on_missing";
+            }
             if let Some(v) = s.validator {
                 line += &format!(" | validate {}", v.name());
             }
@@ -512,11 +522,17 @@ fn line(out: &mut String, name: &str, field: &Field) {
             }
             _ = writeln!(out, "{line}");
         }
-        Field::Container { from, tx, .. } => {
+        Field::Container {
+            from,
+            tx,
+            on_missing,
+            ..
+        } => {
             let tx = pipe(std::slice::from_ref(tx));
+            let also = if *on_missing { " | on_missing" } else { "" };
             _ = writeln!(
                 out,
-                "{name} <- {}{tx} | checked against the schema",
+                "{name} <- {}{tx}{also} | checked against the schema",
                 path(from)
             )
         }

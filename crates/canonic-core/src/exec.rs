@@ -172,6 +172,8 @@ struct Leaf {
     tx: Vec<TxRef>,
     validator: Option<Semantic>,
     default: Option<serde_json::Value>,
+    /// R54: the first transform runs on a missing source, with null.
+    on_missing: bool,
     stat: usize,
 }
 
@@ -204,6 +206,7 @@ struct Whole {
     from: Input,
     tx: TxRef,
     node: Node,
+    on_missing: bool,
     stat: usize,
 }
 
@@ -426,6 +429,7 @@ impl Builder<'_> {
             tx: self.tx(&s.tx)?,
             validator: s.validator,
             default: s.default.clone(),
+            on_missing: s.on_missing,
             stat: self.stat(s.stat)?,
         })
     }
@@ -488,6 +492,7 @@ impl Builder<'_> {
                 from,
                 tx,
                 node,
+                on_missing,
                 stat,
             } => Op::Container(Box::new(Whole {
                 from: match is_group(from) {
@@ -496,6 +501,7 @@ impl Builder<'_> {
                 },
                 tx: self.tx(std::slice::from_ref(tx))?.remove(0),
                 node: node.clone(),
+                on_missing: *on_missing,
                 stat: self.stat(*stat)?,
             })),
             Field::Aggregate(a, stat) => Op::Aggregate(Box::new(Fold {
@@ -1106,7 +1112,12 @@ impl<S: Sink> Exec<'_, S> {
     fn scalar<D: Doc>(&mut self, l: &Leaf, f: &mut Frame<'_, D>) -> S::Out {
         // None: absent. Some(None): rejected.
         let out = match &l.src {
-            Src::From(p) => f.read(*p).map(|d| self.single(l, &d)),
+            Src::From(p) => match f.read(*p) {
+                Some(d) => Some(self.single(l, &d)),
+                // R54: a null result is a miss, not an error.
+                None if l.on_missing => self.on_null(l).map(Some),
+                None => None,
+            },
             Src::Coalesce(ps) => ps
                 .iter()
                 .find_map(|p| f.read(*p))
@@ -1129,6 +1140,15 @@ impl<S: Sink> Exec<'_, S> {
                 let v = l.default.as_ref().map_or(Value::Null, json_value);
                 self.sink.scalar(v)
             }
+        }
+    }
+
+    /// R54: the first transform on null, then the rest as `pipe` runs them. Null is a miss.
+    fn on_null(&mut self, l: &Leaf) -> Option<S::Out> {
+        let (first, rest) = l.tx.split_first()?;
+        match pipe(self.custom, rest, apply(self.custom, first, Value::Null)) {
+            Value::Null | Value::Container => None,
+            v => Some(self.sink.scalar(v)),
         }
     }
 
@@ -1313,14 +1333,14 @@ impl<S: Sink> Exec<'_, S> {
             }),
             Input::At(at) => f.read(*at).map(|d| json(&d, 0, &mut budget)),
         };
+        // R54: a missing source with `on_missing` runs the transform on null.
+        let missing = input.is_none();
+        let input = match (input, w.on_missing) {
+            (None, true) => Some(Some(J::Null)),
+            (input, _) => input,
+        };
         let Some(input) = input else {
-            self.stats.miss(w.stat);
-            let v = match w.node.empty {
-                Some(Empty::List) => J::Array(Vec::new()),
-                Some(Empty::Object) => J::Object(Default::default()),
-                _ => J::Null,
-            };
-            return self.sink.passthrough(&&v);
+            return self.missing_whole(w);
         };
         let out = match (&w.tx, input) {
             (TxRef::Custom { index, arg, .. }, Some(v)) => self.custom.get(*index).and_then(|t| {
@@ -1335,8 +1355,21 @@ impl<S: Sink> Exec<'_, S> {
                 self.filled += 1;
                 self.sink.passthrough(&&v)
             }
+            // A null result for a missing source is a miss, not an error.
+            Some(_) if missing => self.missing_whole(w),
             _ => self.not_a_list(w.stat),
         }
+    }
+
+    /// A missing source: a miss, and the node's `x-empty`, a placeholder that is no fill.
+    fn missing_whole(&mut self, w: &Whole) -> S::Out {
+        self.stats.miss(w.stat);
+        let v = match w.node.empty {
+            Some(Empty::List) => J::Array(Vec::new()),
+            Some(Empty::Object) => J::Object(Default::default()),
+            _ => J::Null,
+        };
+        self.sink.passthrough(&&v)
     }
 
     fn not_a_list(&mut self, stat: usize) -> S::Out {

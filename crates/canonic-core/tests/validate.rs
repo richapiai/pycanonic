@@ -445,6 +445,7 @@ fn parse_spec_returns_the_typed_spec() {
         limit: None,
         group: None,
         group_also: _,
+        on_missing: _,
     }) = &s.fields[3].1
     else {
         panic!()

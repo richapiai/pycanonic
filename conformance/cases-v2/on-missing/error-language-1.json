@@ -1,0 +1,23 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "slug": {
+        "from": "a",
+        "on_missing": "transform"
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "slug": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"slug\"].on_missing: unknown property"
+}

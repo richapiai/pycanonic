@@ -121,6 +121,9 @@ impl Resolver<'_> {
         stat: usize,
         at: &str,
     ) -> Result<Scalar, String> {
+        if r.on_missing && !matches!(r.source, Source::From(_)) {
+            return Err(format!("{at}: on_missing needs one from path"));
+        }
         let (semantic, routing) = match &node.kind {
             Kind::Scalar {
                 semantic, routing, ..
@@ -134,6 +137,9 @@ impl Resolver<'_> {
         let plan_source = self.plan_source(&r.source, &format!("{at}.from"))?;
         // The validator step every routing field ends with.
         let validator = if routing {
+            if r.on_missing {
+                return Err(format!("{at}: routing fields can't have on_missing"));
+            }
             if matches!(r.source, Source::Computed(_)) {
                 return Err(format!("{at}: routing fields can't read a computed source"));
             }
@@ -173,6 +179,7 @@ impl Resolver<'_> {
             tx,
             validator,
             default,
+            on_missing: r.on_missing,
             stat,
         })
     }
@@ -184,6 +191,9 @@ impl Resolver<'_> {
         stat: usize,
         at: &str,
     ) -> Result<Field, String> {
+        if r.on_missing {
+            return Err(format!("{at}: on_missing needs one from path"));
+        }
         let Kind::Array { items, nested } = &node.kind else {
             return Err(format!("{at}: canonical field is not an array"));
         };
@@ -261,12 +271,13 @@ impl Resolver<'_> {
         if self.language != 2 || matches!(node.kind, Kind::Scalar { .. }) {
             return Ok(None);
         }
-        let (from, tx, ops) = match rule {
+        let (from, tx, ops, on_missing) = match rule {
             Rule::Scalar(ScalarRule {
                 source: Source::From(p),
                 default: None,
+                on_missing,
                 transform,
-            }) => (p, transform, false),
+            }) => (p, transform, false, *on_missing),
             Rule::Array(r) if r.item.is_none() && r.item_ref.is_none() && r.pluck.is_none() => {
                 let ops = !r.coalesce.is_empty()
                     || r.missing.is_some()
@@ -278,10 +289,13 @@ impl Resolver<'_> {
                     || r.sort.is_some()
                     || r.limit.is_some()
                     || r.group.is_some();
-                (&r.from, &r.transform, ops)
+                (&r.from, &r.transform, ops, r.on_missing)
             }
             _ => return Ok(None),
         };
+        if on_missing && matches!(rule, Rule::Array(r) if !r.coalesce.is_empty()) {
+            return Err(format!("{at}: on_missing needs one from path"));
+        }
         let [t] = tx.as_slice() else {
             return Ok(None);
         };
@@ -301,6 +315,7 @@ impl Resolver<'_> {
             from,
             tx,
             node,
+            on_missing,
             stat,
         }))
     }
