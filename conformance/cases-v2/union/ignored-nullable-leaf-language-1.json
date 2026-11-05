@@ -1,0 +1,44 @@
+{
+  "spec": {
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "name": "n"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "n": "Ada"
+      },
+      "context": null,
+      "expected": {
+        "name": "Ada"
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "name": null
+      }
+    }
+  ]
+}

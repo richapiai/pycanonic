@@ -5,7 +5,8 @@
     "version": 1,
     "status": "promoted",
     "fields": {
-      "title": "t"
+      "title": "title",
+      "author": "author.id"
     }
   },
   "schema": {
@@ -55,5 +56,27 @@
       }
     }
   },
-  "error": "canonical schema: author: oneOf needs language 2"
+  "inputs": [
+    {
+      "body": {
+        "title": "Hi",
+        "author": {
+          "id": "urn:example:person:1"
+        }
+      },
+      "context": null,
+      "expected": {
+        "title": "Hi",
+        "author": "urn:example:person:1"
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "title": null,
+        "author": null
+      }
+    }
+  ]
 }

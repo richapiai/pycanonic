@@ -66,13 +66,8 @@ def test_union_stats_inside_items_and_source():
 
 
 
-def test_validate_canonical_reports_union_errors():
-    bad = _case("error-schema-one-branch")["schema"]
-    assert pycanonic.validate_canonical(bad) == [
-        pycanonic.Issue("canonical schema", "author: oneOf needs two or more branches")
-    ]
-    # validate_canonical checks as language 1, which has no unions.
-    good = _case("person-or-org")["schema"]
-    assert pycanonic.validate_canonical(good) == [
-        pycanonic.Issue("canonical schema", "author: oneOf needs language 2")
-    ]
+
+def test_validate_canonical_ignores_unions():
+    # validate_canonical checks as language 1, which ignores oneOf as 0.1.1 did (R47).
+    for name in ["person-or-org", "error-schema-one-branch"]:
+        assert pycanonic.validate_canonical(_case(name)["schema"]) == []

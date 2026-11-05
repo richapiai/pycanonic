@@ -211,16 +211,19 @@ fn load_node(s: &Value, at: &str, in_array: bool, lang2: bool) -> Result<Node, S
         Some(Value::Object(props)) => Some(props),
         _ => None,
     };
-    if let Some(one_of) = s.get("oneOf") {
-        if s.contains_key("properties") {
-            return Err(format!("{here}: oneOf can't sit next to properties"));
-        }
-        let branches = load_union(one_of, at, here, in_array, lang2)?;
-        // After the shape checks, so `validate_canonical` (language 1) still reports them.
-        if !lang2 {
-            return Err(format!("{here}: oneOf needs language 2"));
-        }
-        return node(Kind::Union { branches });
+    // R47: a union is only a language 2 `oneOf` of object branches on a node without
+    // `properties`. Any other `oneOf` (a nullable leaf, required alternatives) is ignored, as in 0.1.1.
+    let union = match s.get("oneOf").and_then(Value::as_array) {
+        Some(bs) if lang2 && !s.contains_key("properties") && !bs.is_empty() => bs
+            .iter()
+            .all(|b| matches!(b.get("properties"), Some(Value::Object(_))))
+            .then_some(bs),
+        _ => None,
+    };
+    if let Some(bs) = union {
+        return node(Kind::Union {
+            branches: load_union(bs, at, here, in_array, lang2)?,
+        });
     }
     if open && props.is_none() && !has_type(s, "object") {
         return Err(format!("{here}: x-open needs an object node"));
@@ -277,16 +280,15 @@ fn load_node(s: &Value, at: &str, in_array: bool, lang2: bool) -> Result<Node, S
 /// The branches of a `oneOf` node: each `{"title": <identifier>, "properties": {...}}`, its
 /// children at `<at>(<title>).<name>`.
 fn load_union(
-    one_of: &Value,
+    branches: &[Value],
     at: &str,
     here: &str,
     in_array: bool,
     lang2: bool,
 ) -> Result<Vec<Branch>, String> {
-    let branches = match one_of.as_array() {
-        Some(b) if b.len() >= 2 => b,
-        _ => return Err(format!("{here}: oneOf needs two or more branches")),
-    };
+    if branches.len() < 2 {
+        return Err(format!("{here}: oneOf needs two or more branches"));
+    }
     let mut out: Vec<Branch> = Vec::new();
     for b in branches {
         let Some(title) = b.get("title").and_then(Value::as_str) else {
@@ -302,7 +304,7 @@ fn load_union(
             return Err(format!("{here}: duplicate branch title {quoted}"));
         }
         let Some(Value::Object(props)) = b.get("properties") else {
-            return Err(format!("{here}: oneOf branch {quoted} needs properties"));
+            unreachable!("load_node checked every branch");
         };
         let children = load_object(props, &format!("{at}({title})"), in_array, lang2)?;
         out.push((title.to_string(), children));

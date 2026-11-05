@@ -1,0 +1,48 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "a": "x",
+      "b": "y"
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "string"
+      },
+      "b": {
+        "type": "string"
+      }
+    },
+    "oneOf": [
+      {
+        "required": [
+          "a"
+        ]
+      },
+      {
+        "required": [
+          "b"
+        ]
+      }
+    ]
+  },
+  "inputs": [
+    {
+      "body": {
+        "x": "1"
+      },
+      "context": null,
+      "expected": {
+        "a": "1",
+        "b": null
+      }
+    }
+  ]
+}

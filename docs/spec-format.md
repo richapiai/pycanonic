@@ -427,7 +427,7 @@ With `"if_empty": "null"`, an object whose leaves are all null is null. It needs
 
 ### Unions
 
-An object node can be one of several shapes. In a language 2 schema, write `oneOf` with two or more branches, each `{"title": <identifier>, "properties": {...}}`. Titles are unique. A branch's properties load like any object's, so `x-empty`, arrays and nested objects work inside it. `x-empty` (null, `"{}"` or `"missing"`) goes on the union node itself. A node can't have both `oneOf` and `properties`, and a routing field can't sit inside a union.
+An object node can be one of several shapes. In a language 2 schema, write `oneOf` with two or more branches, each `{"title": <identifier>, "properties": {...}}`. Titles are unique. A branch's properties load like any object's, so `x-empty`, arrays and nested objects work inside it. `x-empty` (null, `"{}"` or `"missing"`) goes on the union node itself. A routing field can't sit inside a union. Any other `oneOf` loads as it did before: one in a language 1 schema, one next to `properties`, or one with a branch that has no `properties`, such as a nullable leaf.
 
 The spec maps the node with `one_of`, a list of branches tried in order:
 
