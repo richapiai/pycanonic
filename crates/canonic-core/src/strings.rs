@@ -250,3 +250,105 @@ fn title(s: &str) -> String {
     }
     out
 }
+
+/// A `format` template: text with `{}` (the one value) or `{n}` (source n) slots.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Template {
+    parts: Vec<Part>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+enum Part {
+    Text(String),
+    Slot(usize),
+    Next,
+}
+
+impl Template {
+    /// `{{` and `}}` write a brace. `None` for no placeholder, `{}` mixed with `{n}`, an unclosed
+    /// `{` or a stray `}`.
+    pub(crate) fn parse(s: &str) -> Option<Template> {
+        let (mut parts, mut text) = (Vec::new(), String::new());
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            match (c, chars.peek()) {
+                ('{', Some('{')) | ('}', Some('}')) => {
+                    chars.next();
+                    text.push(c);
+                }
+                ('{', _) => {
+                    let mut name = String::new();
+                    loop {
+                        match chars.next()? {
+                            '}' => break,
+                            c => name.push(c),
+                        }
+                    }
+                    let part = match name.as_str() {
+                        "" => Part::Next,
+                        n if n.bytes().all(|b| b.is_ascii_digit()) => Part::Slot(n.parse().ok()?),
+                        _ => return None,
+                    };
+                    if !text.is_empty() {
+                        parts.push(Part::Text(std::mem::take(&mut text)));
+                    }
+                    parts.push(part);
+                }
+                ('}', _) => return None,
+                _ => text.push(c),
+            }
+        }
+        if !text.is_empty() {
+            parts.push(Part::Text(text));
+        }
+        let next = parts.contains(&Part::Next);
+        let slot = parts.iter().any(|p| matches!(p, Part::Slot(_)));
+        (next != slot).then_some(Template { parts })
+    }
+
+    pub(crate) fn max_slot(&self) -> Option<usize> {
+        self.parts
+            .iter()
+            .filter_map(|p| match p {
+                Part::Slot(n) => Some(*n),
+                _ => None,
+            })
+            .max()
+    }
+
+    pub(crate) fn uses_next(&self) -> bool {
+        self.parts.contains(&Part::Next)
+    }
+
+    /// The template as a spec writes it.
+    pub(crate) fn text(&self) -> String {
+        self.parts
+            .iter()
+            .map(|p| match p {
+                Part::Text(t) => t.replace('{', "{{").replace('}', "}}"),
+                Part::Slot(n) => format!("{{{n}}}"),
+                Part::Next => "{}".into(),
+            })
+            .collect()
+    }
+
+    /// Fills the slots from `items`. Null if any slot's item is null, missing or a container.
+    pub(crate) fn render<'a>(&self, items: &[Value<'a>]) -> Option<Value<'a>> {
+        let mut out = String::new();
+        for p in &self.parts {
+            let n = match p {
+                Part::Text(t) => {
+                    out.push_str(t);
+                    continue;
+                }
+                Part::Slot(n) => *n,
+                Part::Next => 0,
+            };
+            match to_text(items.get(n)?.clone())? {
+                Value::Str(s) => out.push_str(&s),
+                _ => return None,
+            }
+        }
+        Some(owned(out))
+    }
+}

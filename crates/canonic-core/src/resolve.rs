@@ -69,13 +69,18 @@ impl Resolver<'_> {
                     ArgError::UnknownTransform => {
                         format!("{at}: unknown transform {}", json(&t.name))
                     }
+                    ArgError::InvalidArgument if t.name == "format" => {
+                        let got = t.arg.as_ref().map_or("none".into(), |a| a.to_string());
+                        let want = r#"{"format": "urn:example:item:{}"}"#;
+                        format!("{at}: invalid argument for format: got {got}, expected {want}")
+                    }
                     ArgError::InvalidArgument => {
                         format!("{at}: invalid argument for {}", t.name)
                     }
                 })
             })
             .collect::<Result<_, _>>()?;
-        number_args(&tx, sources, at)?;
+        source_args(&tx, sources, at)?;
         Ok(tx)
     }
 
@@ -536,32 +541,55 @@ pub(crate) fn source_count(source: &Source) -> usize {
     }
 }
 
-/// R51: a number or compare transform folds a `from` list when it is first in line and takes no
-/// argument. Every other one gets one value and needs a constant. This is the only place that
-/// words these errors.
-fn number_args(tx: &[TxRef], sources: usize, at: &str) -> Result<(), String> {
+/// R51 and R53: a number, compare or `format` transform sees the `from` list when it is first in
+/// line. Every other step gets one value. This is the only place that words these errors.
+fn source_args(tx: &[TxRef], sources: usize, at: &str) -> Result<(), String> {
+    let fail = |name: &str, got: String, want: String| {
+        Err(format!(
+            "{at}: invalid argument for {name}: got {got}, expected {want}"
+        ))
+    };
     for (i, t) in tx.iter().enumerate() {
-        let TxRef::Builtin(Builtin::Num(op, k)) = t else {
+        let on_list = i == 0 && sources > 1;
+        let TxRef::Builtin(b) = t else {
+            continue;
+        };
+        if let Builtin::Format(tpl) = b {
+            let seen = if on_list { sources } else { 1 };
+            if (on_list && tpl.uses_next()) || tpl.max_slot().is_some_and(|n| n >= seen) {
+                let got = json(&tpl.text());
+                let want = if on_list {
+                    let slots: Vec<String> = (0..sources).map(|n| format!("{{{n}}}")).collect();
+                    format!("{{\"format\": \"{}\"}}", slots.join("/"))
+                } else {
+                    "{\"format\": \"item:{}\"}".into()
+                };
+                return fail("format", got, want);
+            }
+            continue;
+        }
+        let Builtin::Num(op, k) = b else {
             continue;
         };
         let name = op.name();
-        let fail = |got: String, want: String| {
-            Err(format!(
-                "{at}: invalid argument for {name}: got {got}, expected {want}"
-            ))
-        };
-        match (i == 0 && sources > 1, k) {
+        match (on_list, k) {
             (true, Some(k)) => {
                 return fail(
+                    name,
                     k.to_string(),
                     "no argument on a from list, or one source in from".into(),
                 );
             }
             (false, None) if sources > 1 => {
-                return fail("none".into(), format!("a number, as in {{\"{name}\": 10}}"));
+                return fail(
+                    name,
+                    "none".into(),
+                    format!("a number, as in {{\"{name}\": 10}}"),
+                );
             }
             (false, None) => {
                 return fail(
+                    name,
                     "none".into(),
                     format!("two or more sources in from, or {{\"{name}\": 10}}"),
                 );

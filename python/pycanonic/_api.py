@@ -118,6 +118,7 @@ _DEFAULT_NAMES = (
     "lte",
     "gt",
     "gte",
+    "format",
 )
 _SEMANTICS = ("email", "phone", "domain", "linkedin_url", "url", "iso_date", "money")
 

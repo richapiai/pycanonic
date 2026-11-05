@@ -1,0 +1,26 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "bad",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "f": {
+        "from": "id",
+        "transform": {
+          "format": "urn:example:item:"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "f": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "acme bad v1: fields[\"f\"]: invalid argument for format: got \"urn:example:item:\", expected {\"format\": \"urn:example:item:{}\"}"
+}

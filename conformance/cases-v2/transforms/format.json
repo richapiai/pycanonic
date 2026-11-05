@@ -1,0 +1,227 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "one": {
+        "from": "id",
+        "transform": {
+          "format": "urn:example:item:{}"
+        }
+      },
+      "zero": {
+        "from": "id",
+        "transform": {
+          "format": "item/{0}"
+        }
+      },
+      "pair": {
+        "from": [
+          "org",
+          "name"
+        ],
+        "transform": {
+          "format": "{0}/{1}"
+        }
+      },
+      "swap": {
+        "from": [
+          "org",
+          "name"
+        ],
+        "transform": {
+          "format": "{1} at {1} and {0}"
+        }
+      },
+      "esc": {
+        "from": "id",
+        "transform": {
+          "format": "{{x}}={}"
+        }
+      },
+      "chain": {
+        "from": "id",
+        "transform": [
+          {
+            "strip_prefix": "id:"
+          },
+          {
+            "format": "https://x.example/people/{}"
+          }
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "one": {
+        "type": "string"
+      },
+      "zero": {
+        "type": "string"
+      },
+      "pair": {
+        "type": "string"
+      },
+      "swap": {
+        "type": "string"
+      },
+      "esc": {
+        "type": "string"
+      },
+      "chain": {
+        "type": "string"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "id": "123",
+        "org": "acme",
+        "name": "ada"
+      },
+      "context": null,
+      "expected": {
+        "one": "urn:example:item:123",
+        "zero": "item/123",
+        "pair": "acme/ada",
+        "swap": "ada at ada and acme",
+        "esc": "{x}=123",
+        "chain": "https://x.example/people/123"
+      }
+    },
+    {
+      "body": {
+        "id": 123,
+        "org": "acme",
+        "name": "ada"
+      },
+      "context": null,
+      "expected": {
+        "one": "urn:example:item:123",
+        "zero": "item/123",
+        "pair": "acme/ada",
+        "swap": "ada at ada and acme",
+        "esc": "{x}=123",
+        "chain": null
+      }
+    },
+    {
+      "body": {
+        "id": true,
+        "org": "acme",
+        "name": "ada"
+      },
+      "context": null,
+      "expected": {
+        "one": "urn:example:item:true",
+        "zero": "item/true",
+        "pair": "acme/ada",
+        "swap": "ada at ada and acme",
+        "esc": "{x}=true",
+        "chain": null
+      }
+    },
+    {
+      "body": {
+        "id": 2.5,
+        "org": 7,
+        "name": 1e+21
+      },
+      "context": null,
+      "expected": {
+        "one": "urn:example:item:2.5",
+        "zero": "item/2.5",
+        "pair": "7/1e+21",
+        "swap": "1e+21 at 1e+21 and 7",
+        "esc": "{x}=2.5",
+        "chain": null
+      }
+    },
+    {
+      "body": {
+        "id": 12345678901234567890,
+        "org": "acme",
+        "name": "ada"
+      },
+      "context": null,
+      "expected": {
+        "one": "urn:example:item:12345678901234567890",
+        "zero": "item/12345678901234567890",
+        "pair": "acme/ada",
+        "swap": "ada at ada and acme",
+        "esc": "{x}=12345678901234567890",
+        "chain": null
+      }
+    },
+    {
+      "body": {
+        "id": null,
+        "org": "acme",
+        "name": null
+      },
+      "context": null,
+      "expected": {
+        "one": null,
+        "zero": null,
+        "pair": null,
+        "swap": null,
+        "esc": null,
+        "chain": null
+      }
+    },
+    {
+      "body": {
+        "org": "acme"
+      },
+      "context": null,
+      "expected": {
+        "one": null,
+        "zero": null,
+        "pair": null,
+        "swap": null,
+        "esc": null,
+        "chain": null
+      }
+    },
+    {
+      "body": {
+        "id": {},
+        "org": [
+          "a"
+        ],
+        "name": "x"
+      },
+      "context": null,
+      "expected": {
+        "one": null,
+        "zero": null,
+        "pair": null,
+        "swap": null,
+        "esc": null,
+        "chain": null
+      }
+    },
+    {
+      "body": {
+        "id": "",
+        "org": "",
+        "name": ""
+      },
+      "context": null,
+      "expected": {
+        "one": "urn:example:item:",
+        "zero": "item/",
+        "pair": "/",
+        "swap": " at  and ",
+        "esc": "{x}=",
+        "chain": "https://x.example/people/"
+      }
+    }
+  ]
+}

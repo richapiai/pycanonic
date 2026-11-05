@@ -1,4 +1,4 @@
-"""Every json block marked `<!-- run -->` in docs/spec-format.md and docs/fit.md runs.
+"""Every json block marked `<!-- run -->` in docs/spec-format.md, docs/transforms.md and docs/fit.md runs.
 
 A block is `{"schema": ..., "spec": ...}`, optionally with `"body"`, `"context"` and `"expected"`
 (the conformance case format: `{"$rejected": "<reason>"}` means map raises Rejected). The spec must
@@ -18,7 +18,7 @@ BLOCK = re.compile(r"<!-- run -->\s*```json\n(.*?)```", re.S)
 
 def _blocks() -> list[object]:
     out = []
-    for name in ("spec-format.md", "fit.md"):
+    for name in ("spec-format.md", "fit.md", "transforms.md"):
         for i, m in enumerate(BLOCK.finditer((DOCS / name).read_text(encoding="utf-8"))):
             out.append(pytest.param(m.group(1), id=f"{name}#{i}"))
     return out

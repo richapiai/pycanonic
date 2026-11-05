@@ -1,0 +1,26 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "bad",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "f": {
+        "from": "a",
+        "transform": {
+          "format": "{1}"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "f": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "acme bad v1: fields[\"f\"]: invalid argument for format: got \"{1}\", expected {\"format\": \"item:{}\"}"
+}

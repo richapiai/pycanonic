@@ -170,6 +170,7 @@ def test_default_transforms_and_validators_like_the_readme() -> None:
             "lte",
             "gt",
             "gte",
+            "format",
         ]
     )
     assert validators["email"]("N/A") is None

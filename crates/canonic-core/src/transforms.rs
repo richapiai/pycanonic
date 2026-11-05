@@ -5,7 +5,7 @@
 use crate::canonical::{Empty, Kind, Node, Semantic};
 use crate::dates::{self, DateOut, Layout, date_from_epoch, date_from_string};
 use crate::numbers::{self, NumOp};
-use crate::strings::{self, Find, Otherwise, Pattern};
+use crate::strings::{self, Find, Otherwise, Pattern, Template};
 use crate::value::{Value, js_number_to_string};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as J};
@@ -143,6 +143,8 @@ pub enum Builtin {
     Len,
     /// `Some(k)`: one source and a constant. `None`: the fold of a `from` list.
     Num(NumOp, Option<f64>),
+    /// Builds a string from a template. `{}` takes the one value, `{n}` source n of a list.
+    Format(Template),
 }
 
 /// Why `builtin` refused: the name is not a default transform, or its argument is wrong.
@@ -155,7 +157,7 @@ pub enum ArgError {
 /// How many of the default transforms language 1 has. They come first in the list.
 pub const LANGUAGE_1_TRANSFORMS: usize = 9;
 
-const NAMES: [&str; 36] = [
+const NAMES: [&str; 37] = [
     "cast",
     "lower",
     "trim",
@@ -193,6 +195,7 @@ const NAMES: [&str; 36] = [
     "lte",
     "gt",
     "gte",
+    "format",
 ];
 
 /// True for a default transform that only a language 2 spec can name.
@@ -283,6 +286,10 @@ pub fn builtin(name: &str, arg: Option<&serde_json::Value>) -> Result<Builtin, A
         "lookup" => strings::lookup_arg(arg).ok_or(ArgError::InvalidArgument),
         "split" => strings::split_arg(arg).ok_or(ArgError::InvalidArgument),
         "len" => no_arg(Builtin::Len),
+        "format" => text
+            .and_then(Template::parse)
+            .map(Builtin::Format)
+            .ok_or(ArgError::InvalidArgument),
         _ => match NumOp::from_name(name) {
             Some(op) => match arg {
                 None => Ok(Builtin::Num(op, None)),
@@ -364,6 +371,7 @@ impl Transform for Builtin {
             },
             Builtin::Num(op, Some(k)) => return numbers::with_constant(*op, *k, &v),
             Builtin::Num(_, None) => None,
+            Builtin::Format(t) => t.render(&[v]),
         };
         out.unwrap_or(Value::Null)
     }
@@ -433,6 +441,7 @@ impl Builtin {
             Builtin::ParseRange(RangeEnd::Min) => ("parse_range", text("min")),
             Builtin::ParseRange(RangeEnd::Max) => ("parse_range", text("max")),
             Builtin::Len => ("len", None),
+            Builtin::Format(t) => ("format", text(&t.text())),
             Builtin::Num(op, k) => (
                 op.name(),
                 k.map(|k| {
@@ -469,6 +478,7 @@ impl Builtin {
         let sep = match self {
             Builtin::Join(sep) => sep,
             Builtin::Num(op, None) => return numbers::fold(*op, items),
+            Builtin::Format(t) => return t.render(items).unwrap_or(Value::Null),
             _ => return Value::Null,
         };
         let sep = sep.as_deref().unwrap_or(" ");

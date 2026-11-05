@@ -1,0 +1,26 @@
+{
+  "spec": {
+    "language": 1,
+    "provider": "acme",
+    "endpoint": "items",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "f": {
+        "from": "id",
+        "transform": {
+          "format": "urn:example:item:{}"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "f": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "acme items v1: fields[\"f\"]: unknown transform \"format\""
+}

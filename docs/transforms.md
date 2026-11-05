@@ -288,6 +288,46 @@ No argument. It gives the number of elements of an array, or the number of chara
 | `"héllo"` | `5` |
 | `{}` | null |
 
+### format
+
+Argument, required: a template string. It builds a string from the sources, so it is the inverse of `strip_prefix`: a bare id becomes a full id or a URL. On one source, `{}` or `{0}` writes the value. On a `from` list, `{0}`, `{1}` and so on write the sources in order, and the slots can come in any order and repeat. `{{` writes `{` and `}}` writes `}`. As the first transform on a `from` list, it fills the slots from the list. Later in a chain it gets one value.
+
+A number is written as JavaScript writes it, and a big integer keeps its exact digits. A boolean is `true` or `false`. A null, a missing source or an object or array gives null, and so does a list with any such source. A null from a source that was present counts one error.
+
+These arguments fail the compile, with the field and an example: a template with no placeholder, `{}` mixed with `{n}`, an unclosed `{` or a stray `}`, `{}` on a `from` list, an index past the last source, and `{1}` or higher on one source.
+
+| Rule | Input | Output |
+|---|---|---|
+| `{"format": "urn:example:item:{}"}` | `"123"` | `"urn:example:item:123"` |
+| same | `123` | `"urn:example:item:123"` |
+| same | `true` | `"urn:example:item:true"` |
+| same | `""` | `"urn:example:item:"` |
+| same | null, missing, `{}` or `[]` | null |
+| `{"format": "{0}/{1}"}` on `["org", "name"]` | `"acme"`, `"ada"` | `"acme/ada"` |
+| same | `"acme"`, null | null |
+| `{"format": "{{x}}={}"}` | `"1"` | `"{x}=1"` |
+| `{"format": "item:"}` | any | compile error |
+| `{"format": "{}/{0}"}` | any | compile error |
+| `{"format": "{}"}` on `["a", "b"]` | any | compile error |
+| `{"format": "{0}{2}"}` on `["a", "b"]` | any | compile error |
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "properties": {"url": {"type": "string"}}},
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {"url": {"from": ["org", "slug"], "transform": {"format": "https://x.example/{0}/people/{1}"}}}
+  },
+  "body": {"org": "acme", "slug": "ada"},
+  "expected": {"url": "https://x.example/acme/people/ada"}
+}
+```
+
 ## Container transforms
 
 In a language 2 spec, a single custom transform on an array or object field gets the whole source value. It returns a list or a dict. [spec-format.md](spec-format.md#container-transforms) has the rules.

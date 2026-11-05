@@ -1,0 +1,29 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "bad",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "f": {
+        "from": [
+          "a",
+          "b"
+        ],
+        "transform": {
+          "format": "{0}{2}"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "f": {
+        "type": "string"
+      }
+    }
+  },
+  "error": "acme bad v1: fields[\"f\"]: invalid argument for format: got \"{0}{2}\", expected {\"format\": \"{0}/{1}\"}"
+}

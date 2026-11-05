@@ -397,7 +397,7 @@ fn builtin_arguments() {
         };
         assert!(b(name, a).is_ok(), "{name}");
     }
-    assert_eq!(default_transform_names().len(), 36);
+    assert_eq!(default_transform_names().len(), 37);
 }
 
 #[test]
@@ -489,6 +489,7 @@ fn all_builtins() -> Vec<Builtin> {
         Len,
         Num(NumOp::Add, Some(1.0)),
         Num(NumOp::Gte, None),
+        builtin("format", Some(&json!("{0}-{1}"))).unwrap(),
     ]
 }
 

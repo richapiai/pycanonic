@@ -494,9 +494,9 @@ fn date_number_range_arguments_are_checked() {
 }
 
 #[test]
-fn thirty_six_default_transforms() {
+fn thirty_seven_default_transforms() {
     let names = canonic_core::default_transform_names();
-    assert_eq!(names.len(), 36);
+    assert_eq!(names.len(), 37);
     assert_eq!(canonic_core::LANGUAGE_1_TRANSFORMS, 9);
     assert_eq!(names[canonic_core::LANGUAGE_1_TRANSFORMS], "regex");
 }
