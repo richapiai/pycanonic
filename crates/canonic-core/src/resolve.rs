@@ -8,8 +8,8 @@ use crate::plan::{
     Scalar, TxRef,
 };
 use crate::spec::{
-    ArrayRule, FieldMap, Rule, ScalarRule, Source, SourceItem, Step, TransformRef, field_key,
-    is_group, parse_spec,
+    ArrayRule, Branch, FieldMap, Rule, ScalarRule, Source, SourceItem, Step, TransformRef,
+    field_key, is_group, parse_spec,
 };
 use crate::transforms::{ArgError, Builtin, builtin, language_2_only};
 use serde_json::Value;
@@ -153,6 +153,7 @@ impl Resolver<'_> {
             Kind::Object { open: true, .. } => (None, false),
             Kind::Array { .. } => return Err(format!("{at}: canonical field is an array; add []")),
             Kind::Object { .. } => return Err(format!("{at}: canonical field is an object")),
+            Kind::Union { .. } => return Err(one_of_needed(at)),
         };
         let tx = self.tx(&r.transform, at, source_count(&r.source))?;
         let plan_source = self.plan_source(&r.source, &format!("{at}.from"))?;
@@ -310,7 +311,7 @@ impl Resolver<'_> {
         stat: usize,
         at: &str,
     ) -> Result<Option<Field>, String> {
-        if self.language != 2 || matches!(node.kind, Kind::Scalar { .. }) {
+        if self.language != 2 || matches!(node.kind, Kind::Scalar { .. } | Kind::Union { .. }) {
             return Ok(None);
         }
         let (from, tx, ops, on_missing) = match rule {
@@ -363,6 +364,40 @@ impl Resolver<'_> {
         }))
     }
 
+    /// R55: each branch's fields against that schema branch, stats named `<node>(<branch>).<leaf>`.
+    /// `name` is the node's own stat name.
+    fn union(&mut self, bs: &[Branch], node: &Node, name: &str, at: &str) -> Result<Field, String> {
+        let Kind::Union { branches } = &node.kind else {
+            return Err(format!("{at}: one_of needs a oneOf node"));
+        };
+        // `extract` reads routing fields whatever the record, so none can depend on a branch.
+        if branches.iter().any(|(_, c)| routed(c)) {
+            return Err(format!("{at}: routing fields can't sit inside a oneOf"));
+        }
+        let mut out = Vec::new();
+        for (i, b) in bs.iter().enumerate() {
+            let bat = format!("{at}.one_of[{i}]");
+            let Some((_, children)) = branches.iter().find(|(n, _)| *n == b.name) else {
+                return Err(format!(
+                    "{bat}: canonical schema has no branch {}",
+                    json(&b.name)
+                ));
+            };
+            let prefix = format!("{name}({}).", b.name);
+            let members =
+                self.object(children, &b.fields, Some(&prefix), &format!("{bat}.fields"))?;
+            out.push(plan::Branch {
+                name: b.name.clone(),
+                when: b.when.clone(),
+                members,
+            });
+        }
+        Ok(Field::Union {
+            branches: out,
+            empty: node.empty.filter(|e| *e == Empty::Object),
+        })
+    }
+
     /// Resolves `map` against an object's children. Inside an item, `within` prefixes stat names.
     fn object(
         &mut self,
@@ -399,19 +434,33 @@ impl Resolver<'_> {
                 return Err(format!("{kat}: only an array root has the field \"[]\""));
             }
             let target = lookup(children, &path).ok_or_else(|| {
+                // A key below a `oneOf` node belongs inside its `one_of`.
+                let union = (1..path.len()).find(|&n| {
+                    matches!(
+                        lookup(children, &path[..n]).map(|x| &x.kind),
+                        Some(Kind::Union { .. })
+                    )
+                });
+                if let Some(n) = union {
+                    let node = json(&path[..n].join("."));
+                    return format!("{kat}: {node} is a oneOf node; map it with one_of");
+                }
                 let name = key.strip_suffix("[]").unwrap_or(key);
                 format!("{kat}: canonical schema has no field {}", json(name))
             })?;
             let stat = self.stat_names.len();
-            // An object rule reads no value of its own, so it has no stat slot.
-            if !matches!(rule, Rule::Object { .. }) {
-                // No dot before a quoted key: `["@graph"][]["@id"]`, as the path grammar writes it.
+            // No dot before a quoted key: `["@graph"][]["@id"]`, as the path grammar writes it.
+            let stat_name = {
                 let within = within.unwrap_or("");
                 let within = match key.starts_with('[') {
                     true => within.strip_suffix('.').unwrap_or(within),
                     false => within,
                 };
-                self.stat_names.push(format!("{within}{key}"));
+                format!("{within}{key}")
+            };
+            // An object or a union reads no value of its own, so it has no stat slot.
+            if !matches!(rule, Rule::Object { .. } | Rule::OneOf(_)) {
+                self.stat_names.push(stat_name.clone());
             }
             // The grammar puts an array rule exactly on the keys ending in [].
             let field = match rule {
@@ -458,7 +507,12 @@ impl Resolver<'_> {
                     Kind::Object { .. } => {
                         return Err(format!("{kat}: canonical field is an object"));
                     }
+                    Kind::Union { .. } => return Err(one_of_needed(&kat)),
                 },
+                Rule::OneOf(_) if key.ends_with("[]") => {
+                    return Err(format!("{kat}: canonical field is not an array"));
+                }
+                Rule::OneOf(bs) => self.union(bs, target, &stat_name, &kat)?,
                 Rule::Scalar(r) => match self.container(rule, target, stat, &kat)? {
                     Some(f) => f,
                     None => Field::Scalar(self.scalar(r, target, stat, &kat)?),
@@ -687,6 +741,20 @@ fn source_args(tx: &[TxRef], sources: usize, at: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn one_of_needed(at: &str) -> String {
+    format!("{at}: canonical field is a oneOf; map it with one_of")
+}
+
+/// A routing leaf among `children`, through nested objects and unions.
+fn routed(children: &[(String, Node)]) -> bool {
+    children.iter().any(|(_, n)| match &n.kind {
+        Kind::Scalar { routing, .. } => *routing,
+        Kind::Object { children, .. } => routed(children),
+        Kind::Union { branches } => branches.iter().any(|(_, c)| routed(c)),
+        Kind::Array { .. } => false,
+    })
+}
+
 fn lookup<'a>(mut children: &'a [(String, Node)], path: &[String]) -> Option<&'a Node> {
     let mut node: Option<&Node> = None;
     for part in path {
@@ -719,7 +787,9 @@ fn routing(fields: &[Named<Field>], stat_names: &[String], out: &mut Vec<Routing
                     anchor: None,
                 });
             }
+            // `union` rejects a routing field inside a branch.
             Field::Scalar(_)
+            | Field::Union { .. }
             | Field::Null
             | Field::List { .. }
             | Field::Const(..)
@@ -769,11 +839,15 @@ fn refs<'m>(map: &'m FieldMap, out: &mut Vec<&'m str>) {
             Rule::When { rule, .. } => &**rule,
             r => r,
         };
-        if let Rule::Array(a) = r {
-            out.extend(a.item_ref.as_deref());
-            if let Some(m) = &a.item {
-                refs(m, out);
+        match r {
+            Rule::Array(a) => {
+                out.extend(a.item_ref.as_deref());
+                if let Some(m) = &a.item {
+                    refs(m, out);
+                }
             }
+            Rule::OneOf(bs) => bs.iter().for_each(|b| refs(&b.fields, out)),
+            _ => {}
         }
     }
 }

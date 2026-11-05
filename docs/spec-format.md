@@ -425,6 +425,40 @@ With `"if_empty": "null"`, an object whose leaves are all null is null. It needs
 | `{}` | object of nulls, or `{}` under `x-empty` `"{}"` | null |
 | `{"city": "Oslo"}` | `{"city": "Oslo", "country": null}` | `{"city": "Oslo", "country": null}` |
 
+### Unions
+
+An object node can be one of several shapes. In a language 2 schema, write `oneOf` with two or more branches, each `{"title": <identifier>, "properties": {...}}`. Titles are unique. A branch's properties load like any object's, so `x-empty`, arrays and nested objects work inside it. `x-empty` (null, `"{}"` or `"missing"`) goes on the union node itself. A node can't have both `oneOf` and `properties`, and a routing field can't sit inside a union.
+
+The spec maps the node with `one_of`, a list of branches tried in order:
+
+```json
+"author": {"one_of": [
+  {"branch": "person", "when": {"path": "author.url", "contains": "/people/"}, "fields": {"id": "author.id", "first": "author.given"}},
+  {"branch": "org", "fields": {"id": "author.id", "name": "author.display"}}
+]}
+```
+
+The first branch whose `when` holds is written, and only the last branch can leave out `when`. The output has exactly that branch's keys, in its schema order. A key the branch does not map follows its own `x-empty`, then strict shape, then null. Keys in `fields` are relative to the union node and use the usual field key grammar. Source paths read the response, or the element inside an `item` map. If no branch holds, or the chosen branch writes nothing but null, the node writes its `x-empty`, else null. This holds under strict shape too, because a union has no single object of nulls. A `when` and `omit` next to `one_of` act on the whole node.
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "properties": {"author": {"type": "object", "oneOf": [
+    {"title": "person", "properties": {"id": {"type": "string"}, "first": {"type": "string"}, "kind": {"type": "string"}}},
+    {"title": "org", "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "kind": {"type": "string"}}}
+  ]}}},
+  "spec": {"language": 2, "provider": "acme", "endpoint": "posts", "version": 1, "status": "draft",
+    "fields": {"author": {"one_of": [
+      {"branch": "person", "when": {"path": "author.url", "contains": "/people/"}, "fields": {"id": "author.id", "first": "author.given", "kind": "author.kind"}},
+      {"branch": "org", "when": {"path": "author.url", "contains": "/orgs/"}, "fields": {"id": "author.id", "name": "author.display", "kind": "author.kind"}}
+    ]}}},
+  "body": {"author": {"url": "https://x.example/orgs/acme", "id": "urn:example:org:7", "display": "Acme", "kind": "ORG"}},
+  "expected": {"author": {"id": "urn:example:org:7", "name": "Acme", "kind": "ORG"}}
+}
+```
+
+Stats name each branch field `<node>(<branch>).<leaf>`, such as `author(person).first`, with the item prefix inside a list (`posts[].author(org).name`). Each field of a branch that is not written counts a miss. A field key below a union outside `one_of` fails with `"author" is a oneOf node; map it with one_of`, and a branch name the schema lacks fails with `canonical schema has no branch "team"`. A plan with a union is format 2.
+
 ### Wrap
 
 `"wrap": true` on an array rule turns a scalar or an object into a one-element array. An array source stays as it is. A missing or null source follows `missing` and `x-empty`. `wrap` acts on the top-level source only, not on each step of a `[]` path.

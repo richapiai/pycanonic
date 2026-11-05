@@ -259,6 +259,15 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
                 }
                 fields(f, members)
             }
+            // A branch condition can compare whole values.
+            Field::Union { branches, .. } => {
+                for b in branches {
+                    for p in b.when.iter().flat_map(cond_paths) {
+                        node(f, p).all = true;
+                    }
+                    fields(f, &b.members);
+                }
+            }
             Field::Scalar(s) => scalar(f, s),
             // A container transform gets its source whole.
             Field::Container { from, .. } if is_group(from) => {

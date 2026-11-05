@@ -1,0 +1,147 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "title": "title",
+      "author": {
+        "when": {
+          "path": "$input.full",
+          "eq": true
+        },
+        "omit": true,
+        "one_of": [
+          {
+            "branch": "person",
+            "when": {
+              "path": "author.url",
+              "contains": "/people/"
+            },
+            "fields": {
+              "kind": "author.kind",
+              "last": "author.family",
+              "first": "author.given",
+              "id": "author.id"
+            }
+          },
+          {
+            "branch": "org",
+            "fields": {
+              "id": "author.id",
+              "name": "author.display",
+              "followers": "author.followers",
+              "kind": "author.kind"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "author": {
+        "type": "object",
+        "oneOf": [
+          {
+            "title": "person",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "first": {
+                "type": "string"
+              },
+              "last": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "title": "org",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "followers": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "author": {
+          "url": "https://x.example/people/ada",
+          "id": "urn:example:person:1",
+          "given": "Ada",
+          "family": "Lovelace",
+          "kind": "PERSON"
+        }
+      },
+      "context": {
+        "full": true
+      },
+      "expected": {
+        "title": null,
+        "author": {
+          "id": "urn:example:person:1",
+          "first": "Ada",
+          "last": "Lovelace",
+          "kind": "PERSON"
+        }
+      }
+    },
+    {
+      "body": {
+        "author": {
+          "url": "https://x.example/people/ada",
+          "id": "urn:example:person:1",
+          "given": "Ada",
+          "family": "Lovelace",
+          "kind": "PERSON"
+        }
+      },
+      "context": {
+        "full": false
+      },
+      "expected": {
+        "title": null
+      }
+    },
+    {
+      "body": {
+        "author": {
+          "url": "https://x.example/people/ada",
+          "id": "urn:example:person:1",
+          "given": "Ada",
+          "family": "Lovelace",
+          "kind": "PERSON"
+        }
+      },
+      "context": null,
+      "expected": {
+        "title": null
+      }
+    }
+  ]
+}

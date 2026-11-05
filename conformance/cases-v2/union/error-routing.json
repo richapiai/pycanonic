@@ -1,0 +1,90 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "author": {
+        "one_of": [
+          {
+            "branch": "person",
+            "when": {
+              "path": "author.url",
+              "contains": "/people/"
+            },
+            "fields": {
+              "kind": "author.kind",
+              "last": "author.family",
+              "first": "author.given",
+              "id": "author.id"
+            }
+          },
+          {
+            "branch": "org",
+            "fields": {
+              "id": "author.id",
+              "name": "author.display",
+              "followers": "author.followers",
+              "kind": "author.kind"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "author": {
+        "type": "object",
+        "oneOf": [
+          {
+            "title": "person",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "first": {
+                "type": "string"
+              },
+              "last": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string",
+                "semantic": "email",
+                "routing": true
+              }
+            }
+          },
+          {
+            "title": "org",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "followers": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "error": "acme posts v1: fields[\"author\"]: routing fields can't sit inside a oneOf"
+}

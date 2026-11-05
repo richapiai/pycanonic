@@ -254,7 +254,16 @@ enum Op {
         op: Box<Op>,
         empty: Option<J>,
     },
+    /// R55: the members of the first branch whose condition holds (`None`: always). No branch, or
+    /// one that writes nothing but null, writes `empty`.
+    Union {
+        branches: Vec<Arm>,
+        empty: J,
+    },
 }
+
+/// A union branch: its condition (`None`: always) and its members.
+type Arm = (Option<Cond<Path>>, Vec<(usize, Op)>);
 
 enum Kind {
     /// The item's fields, read in their own scope (one element).
@@ -483,6 +492,20 @@ impl Builder<'_> {
                             _ => J::Null,
                         }),
                     }
+                }
+            }
+            Field::Union { branches, empty } => {
+                let mut out = Vec::with_capacity(branches.len());
+                for b in branches {
+                    let when = b.when.as_ref().map(|c| self.cond(c));
+                    out.push((when, self.fields(&b.members)?));
+                }
+                Op::Union {
+                    branches: out,
+                    empty: match empty {
+                        Some(Empty::Object) => J::Object(Default::default()),
+                        _ => J::Null,
+                    },
                 }
             }
             Field::Const(v, stat) => Op::Const(v.clone(), Some(self.stat(*stat)?)),
@@ -1096,6 +1119,27 @@ impl<S: Sink> Exec<'_, S> {
                     None => self.sink.scalar(Value::Null),
                 }
             }
+            Op::Union { branches, empty } => {
+                // Inside an item map the frame's document is the element, which `holds` then reads.
+                let chosen = branches.iter().position(|(c, _)| {
+                    (c.as_ref()).is_none_or(|c| holds(c, f.doc.as_ref(), None, f.ctx.as_ref()))
+                });
+                for (i, (_, members)) in branches.iter().enumerate() {
+                    if Some(i) != chosen {
+                        members.iter().for_each(|(_, op)| self.miss(op));
+                    }
+                }
+                let Some(i) = chosen else {
+                    return self.sink.passthrough(&empty);
+                };
+                let (mark, filled) = (self.sink.mark(), self.filled);
+                let out = self.object(&branches[i].1, f);
+                if self.filled > filled {
+                    return out;
+                }
+                self.sink.rewind(mark);
+                self.sink.passthrough(&empty)
+            }
             Op::Optional {
                 members,
                 present,
@@ -1133,6 +1177,9 @@ impl<S: Sink> Exec<'_, S> {
                 c.iter().for_each(|(_, op)| self.miss(op))
             }
             Op::OmitNull(op) | Op::When { op, .. } => self.miss(op),
+            Op::Union { branches, .. } => (branches.iter())
+                .flat_map(|(_, c)| c)
+                .for_each(|(_, op)| self.miss(op)),
         }
     }
 

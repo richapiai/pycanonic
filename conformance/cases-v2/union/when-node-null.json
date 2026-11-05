@@ -1,0 +1,129 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "author": {
+        "when": {
+          "path": "draft",
+          "eq": false
+        },
+        "one_of": [
+          {
+            "branch": "person",
+            "when": {
+              "path": "author.url",
+              "contains": "/people/"
+            },
+            "fields": {
+              "kind": "author.kind",
+              "last": "author.family",
+              "first": "author.given",
+              "id": "author.id"
+            }
+          },
+          {
+            "branch": "org",
+            "fields": {
+              "id": "author.id",
+              "name": "author.display",
+              "followers": "author.followers",
+              "kind": "author.kind"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "author": {
+        "type": "object",
+        "oneOf": [
+          {
+            "title": "person",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "first": {
+                "type": "string"
+              },
+              "last": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "title": "org",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "followers": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "author": {
+          "url": "https://x.example/orgs/acme",
+          "id": "urn:example:org:7",
+          "display": "Acme",
+          "followers": 120,
+          "kind": "ORG"
+        },
+        "draft": false
+      },
+      "context": null,
+      "expected": {
+        "title": null,
+        "author": {
+          "id": "urn:example:org:7",
+          "name": "Acme",
+          "followers": 120,
+          "kind": "ORG"
+        }
+      }
+    },
+    {
+      "body": {
+        "author": {
+          "url": "https://x.example/orgs/acme",
+          "id": "urn:example:org:7",
+          "display": "Acme",
+          "followers": 120,
+          "kind": "ORG"
+        },
+        "draft": true
+      },
+      "context": null,
+      "expected": {
+        "title": null,
+        "author": null
+      }
+    }
+  ]
+}

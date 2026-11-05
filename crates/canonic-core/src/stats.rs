@@ -44,6 +44,9 @@ fn walk(fields: &[Named<Field>], list: Option<usize>, within: &mut [Option<usize
             Field::Null | Field::Empty(_) => {}
             Field::OmitNull(_) | Field::When { .. } => unreachable!("inner() unwraps it"),
             Field::Object { members, .. } => walk(members, list, within),
+            Field::Union { branches, .. } => {
+                (branches.iter()).for_each(|b| walk(&b.members, list, within))
+            }
             Field::Scalar(Scalar { stat, .. })
             | Field::Const(_, stat)
             | Field::Aggregate(_, stat)

@@ -1,0 +1,184 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "posts[]": {
+        "from": "feed",
+        "item": {
+          "text": "body",
+          "author": {
+            "one_of": [
+              {
+                "branch": "person",
+                "when": {
+                  "path": "author.url",
+                  "contains": "/people/"
+                },
+                "fields": {
+                  "id": "author.id",
+                  "first": "author.given"
+                }
+              },
+              {
+                "branch": "org",
+                "when": [
+                  {
+                    "path": "author.url",
+                    "contains": "/orgs/"
+                  },
+                  {
+                    "path": "author.followers",
+                    "gt": 0
+                  }
+                ],
+                "fields": {
+                  "id": "author.id",
+                  "name": "author.display",
+                  "followers": "author.followers"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "posts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "author": {
+              "type": "object",
+              "oneOf": [
+                {
+                  "title": "person",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "first": {
+                      "type": "string"
+                    },
+                    "last": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "title": "org",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "followers": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "feed": [
+          {
+            "body": "a",
+            "author": {
+              "url": "https://x.example/people/ada",
+              "id": "urn:example:person:1",
+              "given": "Ada",
+              "family": "Lovelace",
+              "kind": "PERSON"
+            }
+          },
+          {
+            "body": "b",
+            "author": {
+              "url": "https://x.example/orgs/acme",
+              "id": "urn:example:org:7",
+              "display": "Acme",
+              "followers": 120,
+              "kind": "ORG"
+            }
+          },
+          {
+            "body": "c",
+            "author": {
+              "url": "https://x.example/orgs/acme",
+              "id": "urn:example:org:7",
+              "display": "Acme",
+              "followers": 0,
+              "kind": "ORG"
+            }
+          },
+          {
+            "body": "d"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "posts": [
+          {
+            "text": "a",
+            "author": {
+              "id": "urn:example:person:1",
+              "first": "Ada",
+              "last": null,
+              "kind": null
+            }
+          },
+          {
+            "text": "b",
+            "author": {
+              "id": "urn:example:org:7",
+              "name": "Acme",
+              "followers": 120,
+              "kind": null
+            }
+          },
+          {
+            "text": "c",
+            "author": null
+          },
+          {
+            "text": "d",
+            "author": null
+          }
+        ]
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "posts": null
+      }
+    }
+  ]
+}

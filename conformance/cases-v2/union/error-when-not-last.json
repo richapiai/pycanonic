@@ -1,0 +1,79 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "author": {
+        "one_of": [
+          {
+            "branch": "person",
+            "fields": {
+              "id": "a"
+            }
+          },
+          {
+            "branch": "org",
+            "when": {
+              "path": "author.url",
+              "contains": "/orgs/"
+            },
+            "fields": {
+              "id": "a"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "author": {
+        "type": "object",
+        "oneOf": [
+          {
+            "title": "person",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "first": {
+                "type": "string"
+              },
+              "last": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "title": "org",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "followers": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"author\"].one_of[0]: only the last branch can leave out when"
+}

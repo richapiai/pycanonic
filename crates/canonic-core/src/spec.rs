@@ -165,6 +165,17 @@ pub enum Rule {
         omit: bool,
         rule: Box<Rule>,
     },
+    /// Language 2 (R55), on a `oneOf` node: the branches in spec order. The first whose `when`
+    /// holds is written. Only the last can leave out `when`.
+    OneOf(Vec<Branch>),
+}
+
+/// A `one_of` entry: a schema branch, its condition and its fields, keyed relative to the node.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Branch {
+    pub name: String,
+    pub when: Option<Cond>,
+    pub fields: FieldMap,
 }
 
 /// Canonical field path to its rule, in spec order. A key ending in `[]` holds a `Rule::Array`.
@@ -893,6 +904,46 @@ impl Checker {
             }
         }
     }
+    /// Language 2 (R55): `{"one_of": [{"branch": <name>, "when": <condition>, "fields": {...}}]}`.
+    fn one_of(&mut self, o: &Map<String, Value>, at: &str) {
+        self.lang2(at, "one_of");
+        self.keys(o, at, &["one_of", "when", "omit"]);
+        self.when(o, at);
+        let at = format!("{at}.one_of");
+        let Some(bs) = o["one_of"].as_array().filter(|a| !a.is_empty()) else {
+            return self.fail(&at, "must be a non-empty array of branches");
+        };
+        let mut seen = Vec::new();
+        for (i, b) in bs.iter().enumerate() {
+            let at = format!("{at}[{i}]");
+            let Some(b) = b.as_object() else {
+                self.fail(
+                    &at,
+                    "must be {\"branch\": <name>, \"when\": <condition>, \"fields\": {...}}",
+                );
+                continue;
+            };
+            self.keys(b, &at, &["branch", "when", "fields"]);
+            match b.get("branch").and_then(Value::as_str) {
+                Some(n) if seen.contains(&n) => self.fail(
+                    &format!("{at}.branch"),
+                    &format!("{} is mapped twice", json_string(n)),
+                ),
+                Some(n) if !n.is_empty() => seen.push(n),
+                _ => self.fail(&format!("{at}.branch"), "must be a branch name"),
+            }
+            match b.get("when") {
+                Some(c) => self.conds(c, &format!("{at}.when")),
+                None if i + 1 < bs.len() => {
+                    self.fail(&at, "only the last branch can leave out when")
+                }
+                None => {}
+            }
+            if let Some(f) = b.get("fields") {
+                self.fields(f, &format!("{at}.fields"));
+            }
+        }
+    }
     fn fields(&mut self, v: &Value, at: &str) {
         let Some(o) = v.as_object().filter(|o| !o.is_empty()) else {
             return self.fail(at, "must be a non-empty object");
@@ -911,6 +962,8 @@ impl Checker {
                         _ => "canonical field must be a path of keys, optionally ending in []",
                     },
                 );
+            } else if let Some(o) = r.as_object().filter(|o| o.contains_key("one_of")) {
+                self.one_of(o, &kat);
             } else if let Some(o) = r.as_object().filter(|o| o.contains_key("const")) {
                 self.lang2(&kat, "const");
                 self.keys(o, &kat, &["const", "when", "omit"]);
@@ -1169,6 +1222,14 @@ fn rule(key: &str, r: &Value) -> Rule {
 
 /// `rule` without its `when`.
 fn bare_rule(key: &str, r: &Value) -> Rule {
+    if let Some(bs) = r.get("one_of") {
+        let branch = |b: &Value| Branch {
+            name: b["branch"].as_str().unwrap().to_string(),
+            when: b.get("when").map(conds),
+            fields: b.get("fields").map(field_map).unwrap_or_default(),
+        };
+        return Rule::OneOf(bs.as_array().unwrap().iter().map(branch).collect());
+    }
     if let Some(c) = r.get("const") {
         return Rule::Const(c.clone());
     }

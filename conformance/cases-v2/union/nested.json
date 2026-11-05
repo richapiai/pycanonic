@@ -1,0 +1,129 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "author": {
+        "one_of": [
+          {
+            "branch": "person",
+            "when": {
+              "path": "author.url",
+              "contains": "/people/"
+            },
+            "fields": {
+              "name.first": "author.given",
+              "links[]": {
+                "from": "author.links",
+                "item": {
+                  "href": "$"
+                }
+              }
+            }
+          },
+          {
+            "branch": "org",
+            "fields": {
+              "name": "author.display"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "author": {
+        "type": "object",
+        "oneOf": [
+          {
+            "title": "person",
+            "properties": {
+              "name": {
+                "type": "object",
+                "properties": {
+                  "first": {
+                    "type": "string"
+                  },
+                  "last": {
+                    "type": "string"
+                  }
+                }
+              },
+              "links": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "href": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "title": "org",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "author": {
+          "url": "https://x.example/people/ada",
+          "id": "urn:example:person:1",
+          "given": "Ada",
+          "family": "Lovelace",
+          "kind": "PERSON",
+          "links": [
+            "https://x.example/people/ada/blog"
+          ]
+        }
+      },
+      "context": null,
+      "expected": {
+        "author": {
+          "name": {
+            "first": "Ada",
+            "last": null
+          },
+          "links": [
+            {
+              "href": "https://x.example/people/ada/blog"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "body": {
+        "author": {
+          "url": "https://x.example/orgs/acme",
+          "id": "urn:example:org:7",
+          "display": "Acme",
+          "followers": 120,
+          "kind": "ORG"
+        }
+      },
+      "context": null,
+      "expected": {
+        "author": {
+          "name": "Acme"
+        }
+      }
+    }
+  ]
+}

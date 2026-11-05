@@ -34,8 +34,8 @@ pub use exec::{Program, execute, execute_field};
 pub use extract::ExtractStream;
 pub use json::{Filter, ParseError, parse, unescape};
 pub use plan::{
-    CompileError, Field, Format, ListKind, Meta, Named, PLAN_FORMAT, Plan, Reject, RoutingField,
-    Scalar, TxRef,
+    Branch, CompileError, Field, Format, ListKind, Meta, Named, PLAN_FORMAT, Plan, Reject,
+    RoutingField, Scalar, TxRef,
 };
 pub use resolve::compile;
 pub use shadow::{

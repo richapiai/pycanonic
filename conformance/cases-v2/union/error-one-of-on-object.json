@@ -1,0 +1,35 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "posts",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "meta": {
+        "one_of": [
+          {
+            "branch": "org",
+            "fields": {
+              "id": "a"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "meta": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "error": "acme posts v1: fields[\"meta\"]: one_of needs a oneOf node"
+}

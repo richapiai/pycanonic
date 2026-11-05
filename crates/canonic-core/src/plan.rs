@@ -255,6 +255,24 @@ pub enum Field {
     /// Language 2: a canonical field the spec does not map, written as its `x-empty`:
     /// `List` (`[]`) or `Object` (`{}`). An unmapped null or left-out field is `Null` or `OmitNull`.
     Empty(Empty),
+    /// Language 2 (R55): a `oneOf` node. The first branch whose `when` holds (none: always) is
+    /// written, its members in that branch's schema order. No branch holding, or a branch that
+    /// writes nothing but null, writes `empty` (`Object`: `{}`, else null). Every field in a
+    /// branch that is not written is a miss.
+    Union {
+        branches: Vec<Branch>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        empty: Option<Empty>,
+    },
+}
+
+/// A branch of a `Field::Union`: the schema branch title, its condition and its members.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Branch {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<Cond>,
+    pub members: Vec<Named<Field>>,
 }
 
 /// The members, present paths and option of a `Field::Object`, in the variant's field order.
@@ -436,6 +454,7 @@ impl Plan {
                 | Field::Empty(_)
                 | Field::Aggregate(..)
                 | Field::Container { .. }
+                | Field::Union { .. }
                 | Field::When { .. } => true,
                 Field::Object {
                     members,
@@ -529,6 +548,19 @@ fn line(out: &mut String, name: &str, field: &Field) {
                 None => {}
             }
             lines(out, &format!("{name}."), members)
+        }
+        Field::Union { branches, empty } => {
+            if *empty == Some(Empty::Object) {
+                _ = writeln!(out, "{name}: {{}} when no branch holds");
+            }
+            for b in branches {
+                let name = format!("{name}({})", b.name);
+                match &b.when {
+                    Some(c) => _ = writeln!(out, "{name}: when {}", cond(c)),
+                    None => _ = writeln!(out, "{name}: otherwise"),
+                }
+                lines(out, &format!("{name}."), &b.members);
+            }
         }
         Field::Scalar(s) => {
             let src = source(&s.source);

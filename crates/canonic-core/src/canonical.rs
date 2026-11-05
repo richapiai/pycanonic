@@ -67,7 +67,13 @@ pub enum Kind {
         items: Option<Box<Node>>,
         nested: bool,
     },
+    /// Language 2 (R55): `oneOf`, two or more titled object branches. A spec picks one per record
+    /// with `one_of`. Each branch holds its children in schema order.
+    Union { branches: Vec<Branch> },
 }
+
+/// A `oneOf` branch: its title and its children in schema order.
+pub type Branch = (String, Vec<(String, Node)>);
 
 /// Language 2 `x-empty`: the output for a missing or null source. The plan also uses it for the
 /// array rule options `missing` and `empty` (`Null` or `List` there).
@@ -114,7 +120,8 @@ pub fn empty_shape(node: &Node) -> Option<Value> {
                 .filter_map(|(k, c)| Some((k.clone(), empty_shape(c)?)))
                 .collect(),
         ),
-        // Task 10: a `oneOf` node writes null.
+        // No single shape exists, so a `oneOf` node writes null.
+        (None, Kind::Union { .. }) => Value::Null,
     })
 }
 
@@ -187,7 +194,7 @@ fn load_node(s: &Value, at: &str, in_array: bool, lang2: bool) -> Result<Node, S
         let fits = match (&kind, empty) {
             (_, None | Some(Empty::Null | Empty::Missing)) => true,
             (Kind::Array { .. }, Some(e)) => e == Empty::List,
-            (Kind::Object { .. }, Some(e)) => e == Empty::Object,
+            (Kind::Object { .. } | Kind::Union { .. }, Some(e)) => e == Empty::Object,
             (Kind::Scalar { .. }, _) => false,
         };
         if !fits {
@@ -204,6 +211,17 @@ fn load_node(s: &Value, at: &str, in_array: bool, lang2: bool) -> Result<Node, S
         Some(Value::Object(props)) => Some(props),
         _ => None,
     };
+    if let Some(one_of) = s.get("oneOf") {
+        if s.contains_key("properties") {
+            return Err(format!("{here}: oneOf can't sit next to properties"));
+        }
+        let branches = load_union(one_of, at, here, in_array, lang2)?;
+        // After the shape checks, so `validate_canonical` (language 1) still reports them.
+        if !lang2 {
+            return Err(format!("{here}: oneOf needs language 2"));
+        }
+        return node(Kind::Union { branches });
+    }
     if open && props.is_none() && !has_type(s, "object") {
         return Err(format!("{here}: x-open needs an object node"));
     }
@@ -254,6 +272,42 @@ fn load_node(s: &Value, at: &str, in_array: bool, lang2: bool) -> Result<Node, S
         routing,
         aliases,
     })
+}
+
+/// The branches of a `oneOf` node: each `{"title": <identifier>, "properties": {...}}`, its
+/// children at `<at>(<title>).<name>`.
+fn load_union(
+    one_of: &Value,
+    at: &str,
+    here: &str,
+    in_array: bool,
+    lang2: bool,
+) -> Result<Vec<Branch>, String> {
+    let branches = match one_of.as_array() {
+        Some(b) if b.len() >= 2 => b,
+        _ => return Err(format!("{here}: oneOf needs two or more branches")),
+    };
+    let mut out: Vec<Branch> = Vec::new();
+    for b in branches {
+        let Some(title) = b.get("title").and_then(Value::as_str) else {
+            return Err(format!("{here}: oneOf branch needs a title"));
+        };
+        let quoted = Value::from(title);
+        if !name_ok(title) {
+            return Err(format!(
+                "{here}: oneOf branch title {quoted} is not an identifier"
+            ));
+        }
+        if out.iter().any(|(t, _)| t == title) {
+            return Err(format!("{here}: duplicate branch title {quoted}"));
+        }
+        let Some(Value::Object(props)) = b.get("properties") else {
+            return Err(format!("{here}: oneOf branch {quoted} needs properties"));
+        };
+        let children = load_object(props, &format!("{at}({title})"), in_array, lang2)?;
+        out.push((title.to_string(), children));
+    }
+    Ok(out)
 }
 
 fn load_object(
