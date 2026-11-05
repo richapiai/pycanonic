@@ -665,6 +665,13 @@ mod tests {
         assert_eq!(check_size(usize::MAX), Err(ParseError::Size));
     }
 
+    // A caller that breaks the ASCII rule gets an empty string, not an invalid `&str`.
+    #[test]
+    fn ascii_str_never_makes_invalid_text() {
+        assert_eq!(simd::ascii_str(b"\xff\xfe"), "");
+        assert_eq!(simd::ascii_str(b"12.5"), "12.5");
+    }
+
     fn all() -> Filter {
         ALL.clone()
     }

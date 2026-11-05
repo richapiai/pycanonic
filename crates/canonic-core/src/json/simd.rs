@@ -13,14 +13,13 @@
 //! JSON never has one. `structurals` reports it in the index. `skip` gives up on it, and the caller
 //! scans bytes for that container instead.
 //!
-//! The crate's only `unsafe` lives here: the SIMD loads and [`ascii_str`].
+//! The crate's only `unsafe` lives here: the SIMD loads.
 
-/// `b` as `&str` without a UTF-8 pass, for bytes the caller has already seen to be ASCII (number
-/// text, plain strings). The parser borrows these on its hot path.
+/// `b` as `&str`, for bytes the caller has already seen to be ASCII (number text, plain strings).
+/// The check is still made, so a wrong caller gets `""`, never an invalid `&str`. It is one fast
+/// pass over bytes that are already in cache.
 pub(crate) fn ascii_str(b: &[u8]) -> &str {
-    debug_assert!(b.is_ascii());
-    // SAFETY: every caller has checked each byte of `b` is below 0x80, and ASCII is valid UTF-8.
-    unsafe { std::str::from_utf8_unchecked(b) }
+    std::str::from_utf8(b).unwrap_or_default()
 }
 
 /// Sorted positions of every unescaped `"` (opening and closing), and of `{ } [ ] : , \` outside
