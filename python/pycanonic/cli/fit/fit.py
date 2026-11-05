@@ -18,7 +18,7 @@ from ..infer.ask import MAX_SOURCES, Ask, answer, ask_with, question, rule_for
 from ..infer.score import Leaf
 from ..infer.sources import collect
 from ..io import Transforms, read_json, tolerance
-from . import decide
+from . import align, decide
 from .arrays import MISSING, agree, fit_array, get
 from .chains import apply_rule
 from .compare import Tolerance, match, near, same
@@ -432,12 +432,13 @@ def exit_code(result: FitResult, strict: bool = False) -> int:
 def run(args: argparse.Namespace, transforms: Transforms | None = None) -> int:
     """`canonic fit` with parsed arguments (see commands/fit.py for the flags)."""
     pairs, skipped = load_pairs(Path(args.default), Path(args.provider), Path(args.inputs) if args.inputs else None)
+    schema = read_json(args.schema) if args.schema else derive_schema([p.default for p in pairs])
+    pairs, schema, aligned = align.from_args(args, pairs, schema)
     if len(pairs) < 3:
         print(f"need at least 3 pairs, got {len(pairs)}", file=sys.stderr)
         return 2
     if len(pairs) < 8:
         print(f"fit: only {len(pairs)} pairs; 8 or more that differ give rules you can trust", file=sys.stderr)
-    schema = read_json(args.schema) if args.schema else derive_schema([p.default for p in pairs])
     keep = read_json(args.keep) if args.keep else {}
     if not isinstance(keep, dict):
         raise ValueError(f"{args.keep}: must be an object of field key to rule")
@@ -447,7 +448,7 @@ def run(args: argparse.Namespace, transforms: Transforms | None = None) -> int:
             print(f'fit: --keep key "{k}" matches no field', file=sys.stderr)
     opts = FitOptions(args.provider_name, args.endpoint, args.min_auto, args.min_pairs, keep, ask_with(args.ask) if args.ask else None, transforms or {}, tolerance(args))
     result = fit_pairs(pairs, schema, opts)
-    result.skipped = skipped
+    result.skipped, result.aligned = skipped, aligned
     out = Path(args.out)
     if result.spec is None:
         print("fit: no field could be mapped, so no spec was written", file=sys.stderr)

@@ -140,6 +140,21 @@ Two providers that scrape the same record at different times can differ by a few
 
 Lists and objects compare part by part with the same flags. In `fit`, a field (a leaf inside list items too) whose rule is right on some pair only within a flag is review, never auto, and its note reads `matches within --num-tolerance 0.01`. In `verify`, a tolerated pair counts as a match, and the field reports how many pairs matched only that way (`tolerated 5` in the table, `"tolerated": 5` in JSON, left out when 0).
 
+### Lists that come in a different order
+
+`--align-items <default list> <provider list> --by <default id> <provider id> [--id-pattern <regex>]` makes `fit` and `verify` work on the items of a list instead of the whole bodies. A search, activity or comments endpoint returns many of the same items from both providers, in another order and with some on one side only, so a fit on the whole bodies finds almost nothing.
+
+```
+canonic fit --default samples/default/ --provider samples/new/ --provider-name globex --endpoint search --out globex.json \
+  --align-items data.items results --by id id
+```
+
+The list paths are dotted (`data.items`) and the id paths are relative to one element. The id is the digits of the id as text, so `urn:example:item:752` and `"752"` match. An id with no digits has no match. With `--id-pattern`, the id is group 1 of the regex if it has one, else the whole match, and a value that does not match has no id. A bad regex exits 2. `--by` is required.
+
+For each sample pair, the first element of each id on each side is paired, in the default list's order, as `<pair>#<n>`. Each item pair keeps the inputs of its response. A second element with the same id on one side counts as unmatched. A list that is missing or not a list on one side gives 0 matched.
+
+The schema and the spec are item-level: `--schema` (or the one derived from the default samples) is cut down to the list's items, which must be an object, and the draft spec maps one item. `verify` maps each provider item through the spec against that item schema. `--num-tolerance`, `--ignore`, `--allow` and the other flags work on the item pairs. The report lists `aligned` per sample pair, with the matched, default-only and provider-only counts, in the text output and in `--json`.
+
 ## What is decided automatically, and what can break
 
 This is the table the reviewer reads. The report prints the row of each field that is not auto, under "what can break". The texts below are the texts `fit` prints.
@@ -208,7 +223,7 @@ For a manual field that needs code, `--transforms-out transforms.py` writes one 
 
 ```
 canonic verify globex.json --schema canonical.json --default samples/default/ --provider samples/new/ \
-  [--inputs samples/inputs/] [--transforms transforms.py] [--min-match 0.95] [--max-reject 0.10] [--fail-unmapped] [--allow FIELD=REASON] [--allow-file allow.json] [--ignore <field>] [--num-tolerance <f>] [--url-ignore-query] [--text-ignore-space] [--json]
+  [--inputs samples/inputs/] [--transforms transforms.py] [--min-match 0.95] [--max-reject 0.10] [--fail-unmapped] [--allow FIELD=REASON] [--allow-file allow.json] [--ignore <field>] [--num-tolerance <f>] [--url-ignore-query] [--text-ignore-space] [--align-items <default list> <provider list> --by <default id> <provider id> [--id-pattern <regex>]] [--json]
 ```
 
 It maps each provider body through the spec and compares the output with the default's body of the same name. It checks:

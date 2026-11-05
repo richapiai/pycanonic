@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import align
+
 _TRANSFORM = "A value format that the samples did not show, such as a date without a month. The transform returns null and counts an error. Watch the error counts after launch."
 
 # The design table's texts, verbatim except the strip rows: a value without the prefix passes
@@ -86,13 +88,14 @@ class FitResult:
     spec: dict[str, Any] | None  # None when no field could be mapped (a spec needs one field)
     transforms: str  # the stub module text
     skipped: list[tuple[str, str]] = field(default_factory=list)
+    aligned: list[align.AlignCount] = field(default_factory=list)
 
     def summary(self) -> dict[str, int]:
         return {t: sum(r.tier == t for r in self.fields) for t in ("auto", "review", "manual")}
 
 
 def to_json(result: FitResult) -> dict[str, Any]:
-    return {
+    out = {
         "provider": result.provider,
         "endpoint": result.endpoint,
         "pairs": result.pairs,
@@ -103,6 +106,7 @@ def to_json(result: FitResult) -> dict[str, Any]:
         ],
         "summary": result.summary(),
     }
+    return {**out, "aligned": align.to_json(result.aligned)} if result.aligned else out
 
 
 def write_json(result: FitResult, path: str | Path) -> None:
@@ -129,6 +133,8 @@ def to_md(result: FitResult) -> str:
         out.append(f"- skipped {name}: {why}")
     if result.skipped:
         out.append("")
+    if result.aligned:
+        out += [f"- {line}" for line in align.lines(result.aligned)] + [""]
     auto = [r for r in result.fields if r.tier == "auto"]
     if auto:
         out += ["## Auto", "", "| field | kind | rule | pairs | holdout |", "|---|---|---|---|---|"]

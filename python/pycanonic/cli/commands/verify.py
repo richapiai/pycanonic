@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from ..fit import verify
+from ..fit import align, verify
 from ..fit.pairs import load_pairs
 from ..io import Transforms, UsageError, add_tolerance, parser, read_json, tolerance
 
@@ -37,6 +37,12 @@ USAGE = """canonic verify <spec.json> --schema <file> --default <dir> --provider
                        one (0.01 is 1%); a tolerated pair counts as a match, and the field reports how many
   --url-ignore-query   compare two scheme:// URLs without their query (the part from ? to before #)
   --text-ignore-space  compare two texts after collapsing white space and trimming
+  --align-items <default list> <provider list> --by <default id> <provider id> [--id-pattern <regex>]
+                       verify the items of a list: pair the elements of the two lists by id (the
+                       digits of the id, or group 1 of the regex, else the whole match) as pairs named
+                       `<pair>#<n>`, and map each provider item through the spec against the item
+                       schema. --schema and the spec are item-level. The report counts matched,
+                       default-only and provider-only items per pair
   --json               print the result as JSON instead of a table"""
 
 
@@ -87,18 +93,22 @@ def run(args: list[str], transforms: Transforms) -> int:
     p.add_argument("--allow", action="append", default=[])
     p.add_argument("--allow-file")
     add_tolerance(p)
+    align.add_flags(p)
     p.add_argument("spec", nargs="?")
     a = p.parse_intermixed_args(args)
     if not (a.spec and a.schema and a.default and a.provider):
         raise UsageError(USAGE)
     allow = _allow(a.allow, a.allow_file)
     pairs, skipped = load_pairs(Path(a.default), Path(a.provider), Path(a.inputs) if a.inputs else None)
+    schema = read_json(a.schema)
+    pairs, schema, aligned = align.from_args(a, pairs, schema)
     if not pairs:
         print("verify: no pairs", file=sys.stderr)
         return 2
-    r = verify.run(read_json(a.spec), read_json(a.schema), pairs, a.min_match, transforms, a.max_reject, skipped, a.fail_unmapped, a.ignore, allow, tolerance(a))
+    r = verify.run(read_json(a.spec), schema, pairs, a.min_match, transforms, a.max_reject, skipped, a.fail_unmapped, a.ignore, allow, tolerance(a))
     if a.json:
-        sys.stdout.write(json.dumps(r.to_json(len(pairs), skipped), indent=2, ensure_ascii=False) + "\n")
+        out = r.to_json(len(pairs), skipped)
+        sys.stdout.write(json.dumps({**out, "aligned": align.to_json(aligned)} if aligned else out, indent=2, ensure_ascii=False) + "\n")
     else:
-        sys.stdout.write(_table(r, len(pairs), skipped))
+        sys.stdout.write("".join(line + "\n" for line in align.lines(aligned)) + _table(r, len(pairs), skipped))
     return 0 if r.ok else 1
