@@ -103,10 +103,6 @@ With few pairs, `fit` can propose rules that fit the samples by chance, for exam
 - A dict or list value reaches a transform as a JSON copy, not the original object. The copy stops at 512 levels of nesting or 1,000,000 values. Past either cap the field is `None` and one error is counted.
 - A transform that mutates the input dict during a `map` call can see stale reads. pycanonic reads a shared path prefix once per call, so later fields read the sub-dict as it was first seen.
 
-## Aggregates take no transform
-
-An aggregate such as `{"aggregate": "min", "from": "$group[].started"}` returns the folded value as it is. It cannot take `transform`, so a grouped date cannot be reformatted in the spec. Format the source dates the way the output needs, or build the array with a container transform.
-
 ## A custom transform costs a round trip
 
 A custom transform is a Python call. On a leaf, the cost is the call itself. A container transform also gets its source as a JSON copy, and its result is checked against the canonical node. In one measurement, a container transform over a list of 12 objects took 90 µs of a 94 µs `map`. The same spec without that field mapped in 3 µs. Keep container transforms for logic that the spec language cannot express.

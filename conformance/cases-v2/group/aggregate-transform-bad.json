@@ -1,0 +1,27 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "a": {
+        "aggregate": "max",
+        "from": "xs[].v",
+        "transform": {
+          "add": "1"
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "number"
+      }
+    }
+  },
+  "error": "acme people v1: fields[\"a\"].transform: invalid argument for add: got \"1\", expected {\"add\": 10}"
+}

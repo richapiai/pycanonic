@@ -1,0 +1,61 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "a": {
+        "aggregate": "first",
+        "from": "xs[].v",
+        "filter": {
+          "path": "t"
+        }
+      },
+      "b": {
+        "aggregate": "first",
+        "from": "xs[].v",
+        "filter": "x",
+        "transform": []
+      },
+      "c[]": {
+        "from": "xs",
+        "group_by": "k",
+        "item": {
+          "d": {
+            "aggregate": "count",
+            "from": "$group",
+            "filter": {
+              "path": "$group.x",
+              "eq": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "string"
+      },
+      "b": {
+        "type": "string"
+      },
+      "c": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "d": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"a\"].filter: needs exactly one of eq, in, present, matches, starts_with, ends_with, contains, lt, lte, gt, gte; spec.fields[\"b\"].transform: must not be empty; spec.fields[\"b\"].filter: must be {\"path\": <path>, \"eq\" | \"in\" | \"present\" | \"matches\" | \"starts_with\" | \"ends_with\" | \"contains\" | \"lt\" | \"lte\" | \"gt\" | \"gte\": <value>}, {\"not\": <condition>}, {\"all\": [<condition>, ...]} or {\"any\": [<condition>, ...]}; spec.fields[\"c[]\"].item[\"d\"].filter.path: $group is only a list or aggregate from"
+}

@@ -198,9 +198,11 @@ enum Input {
 struct Fold {
     op: AggOp,
     input: Input,
-    /// Only `flatten` is set.
+    /// Only `flatten` and `filter` are set.
     ops: ListOps<Path>,
     pluck: Path,
+    /// The transform chain on the result.
+    tx: Vec<TxRef>,
     propagate: bool,
     sep: String,
     stat: usize,
@@ -556,9 +558,11 @@ impl Builder<'_> {
                 },
                 ops: ListOps {
                     flatten: a.flatten.iter().map(|p| self.path(p)).collect(),
+                    filter: a.filter.as_ref().map(|c| self.cond(c)),
                     ..ListOps::default()
                 },
                 pluck: self.path(&a.pluck),
+                tx: self.tx(&a.tx)?,
                 propagate: a.propagate,
                 sep: a.sep.clone().unwrap_or_else(|| " ".into()),
                 stat: self.stat(*stat)?,
@@ -1383,12 +1387,33 @@ impl<S: Sink> Exec<'_, S> {
             },
         };
         let out = xs.and_then(|xs| {
-            let values = (refine(xs, &a.ops, None).iter())
+            let values = (refine(xs, &a.ops, f.ctx.as_ref()).iter())
                 .map(|e| read(Some(e), &a.pluck))
                 .collect();
             aggregate(a.op, values, a.propagate, &a.sep)
         });
         match out {
+            // A transform runs on a non-null result. A null from it is one error.
+            Some(Agg::Doc(d)) if !a.tx.is_empty() => match pipe_doc(self.custom, &a.tx, &d) {
+                Value::Null => self.fold_failed(a),
+                Value::Container => {
+                    self.filled += 1;
+                    self.sink.passthrough(&d)
+                }
+                v => {
+                    self.filled += 1;
+                    self.sink.scalar(v)
+                }
+            },
+            Some(Agg::Value(v)) if !a.tx.is_empty() && !v.is_null() => {
+                match pipe(self.custom, &a.tx, v) {
+                    Value::Null | Value::Container => self.fold_failed(a),
+                    v => {
+                        self.filled += 1;
+                        self.sink.scalar(v)
+                    }
+                }
+            }
             Some(Agg::Doc(d)) => {
                 self.filled += 1;
                 self.sink.passthrough(&d)
@@ -1405,6 +1430,12 @@ impl<S: Sink> Exec<'_, S> {
                 self.sink.scalar(Value::Null)
             }
         }
+    }
+
+    fn fold_failed(&mut self, a: &Fold) -> S::Out {
+        self.stats.error(a.stat);
+        self.stats.miss(a.stat);
+        self.sink.scalar(Value::Null)
     }
 
     /// A container transform: the source as JSON, the transform, then `conform`. A missing source

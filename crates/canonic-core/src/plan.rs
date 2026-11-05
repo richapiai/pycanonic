@@ -604,6 +604,10 @@ fn line(out: &mut String, name: &str, field: &Field) {
             if let Some(sep) = &a.sep {
                 line += &format!(" | sep {}", Value::from(sep.as_str()));
             }
+            if let Some(c) = &a.filter {
+                line += &format!(" | filter {}", cond(c));
+            }
+            line += &pipe(&a.tx);
             _ = writeln!(out, "{line}");
         }
         Field::List {

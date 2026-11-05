@@ -225,3 +225,31 @@ fn fallback_keys_take_the_first_present_key() {
         [vec![1, 2, 8], vec![3], vec![4, 5], vec![6], vec![7]]
     );
 }
+
+/// An aggregate transform: a null result from a non-null one is one error, a null aggregate
+/// counts none. The plan holds both options, writes format 2 and prints them.
+#[test]
+fn aggregate_transform_and_filter_count_errors_and_round_trip() {
+    let schema = json!({"type": "object", "properties": {
+        "a": {"type": "string"}, "b": {"type": "string"}, "c": {"type": "string"}}});
+    let spec = json!({"language": 2, "provider": "acme", "endpoint": "people", "version": 1,
+        "status": "promoted", "fields": {
+            "a": {"aggregate": "max", "from": "xs[].s", "transform": [{"format_date": "date"}]},
+            "b": {"aggregate": "first", "from": "xs[].v", "transform": "to_string"},
+            "c": {"aggregate": "first", "from": "xs[].u",
+                "filter": {"path": "t", "eq": "doc"}}}});
+    let plan = compile(&spec, &schema, &[]).unwrap();
+    let text = serde_json::to_string(&plan).unwrap();
+    let a = Artifact::new(serde_json::from_str(&text).unwrap(), Default::default()).unwrap();
+    let body = br#"{"xs": [{"s": "junk", "t": "x", "u": "n"}, {"t": "doc", "u": "m"}]}"#;
+    assert_eq!(
+        a.map_json(body, None).unwrap(),
+        br#"{"a":null,"b":null,"c":"m"}"#
+    );
+    let s = a.stats.snapshot();
+    let errors: Vec<_> = s.fields.iter().map(|f| f.1.errors).collect();
+    assert_eq!(errors, [1, 0, 0]);
+    let src = plan.source();
+    assert!(src.contains("a <- max(xs[].s) | format_date"), "{src}");
+    assert!(src.contains("| filter"), "{src}");
+}

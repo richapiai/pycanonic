@@ -141,6 +141,15 @@ pub struct Aggregate {
     /// `join` only. The default is a space, as for the `join` transform.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sep: Option<String>,
+    /// Language 2 (R50 style): elements that pass, before `pluck` and the op. Element-relative.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Cond>,
+    /// The spec's `transform`, which runs on the result. `resolve` turns it into `tx`.
+    #[serde(skip)]
+    pub transform: Vec<TransformRef>,
+    /// The resolved transform chain: what the plan holds and runs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tx: Vec<crate::plan::TxRef>,
 }
 
 // A parse-time type, a few per field: its size does not matter.
@@ -761,9 +770,24 @@ impl Checker {
         self.keys(
             o,
             at,
-            &["aggregate", "from", "nulls", "sep", "when", "omit"],
+            &[
+                "aggregate",
+                "from",
+                "nulls",
+                "sep",
+                "when",
+                "omit",
+                "transform",
+                "filter",
+            ],
         );
         self.when(o, at);
+        if let Some(t) = o.get("transform") {
+            self.transform(t, &format!("{at}.transform"));
+        }
+        if let Some(c) = o.get("filter") {
+            self.conds(c, &format!("{at}.filter"));
+        }
         let op = o.get("aggregate").and_then(Value::as_str).and_then(agg_op);
         if op.is_none() {
             let names: Vec<&str> = AGG_OPS.iter().map(|(n, _)| *n).collect();
@@ -1303,6 +1327,9 @@ fn bare_rule(key: &str, r: &Value) -> Rule {
             pluck,
             propagate: r.get("nulls").is_some_and(|n| n == "propagate"),
             sep: r.get("sep").and_then(Value::as_str).map(String::from),
+            filter: r.get("filter").map(conds),
+            transform: transform(r.get("transform")),
+            tx: Vec::new(),
         });
     }
     let source = match r {

@@ -640,6 +640,27 @@ Aggregates also work outside a group, on any array path. `{"aggregate": "count",
 
 A grouped source follows the list operation table: a missing source gives null, `[]` gives `[]`, and a source that is not an array gives null and counts an error.
 
+An aggregate takes `"filter"` and `"transform"`. `filter` is the condition grammar of an array `filter`, read relative to each element. It keeps the elements that pass before `pluck` and the op. So `{"aggregate": "first", "from": "media[].url", "filter": {"path": "type", "eq": "document"}}` gives the `url` of the first element whose `type` is `document`. A condition path that starts with `$group` fails the compile, as in a list `filter`.
+
+`transform` is any transform chain, as on a scalar rule. It runs on the result of the op. A null result skips the chain and counts no error. A chain that gives null from a non-null result counts one error. A `count`, `any` or `all` result is a value, so it takes a transform too. A bad argument fails the compile with the field location, as for a scalar. A plan that uses either key is format 2.
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "properties": {"doc": {"type": "string"}, "jobs": {"type": "array", "items": {"type": "object", "properties": {
+    "start": {"type": "string"}}}}}},
+  "spec": {"language": 2, "provider": "acme", "endpoint": "media", "version": 1, "status": "draft",
+    "fields": {
+      "doc": {"aggregate": "first", "from": "media[].url", "filter": {"path": "type", "eq": "document"}},
+      "jobs[]": {"from": "xs", "group_by": "k", "item": {
+        "start": {"aggregate": "min", "from": "$group[].s", "transform": [{"format_date": "datetime_ms"}]}}}}},
+  "body": {
+    "media": [{"type": "image", "url": "https://x.example/a.png"}, {"type": "document", "url": "https://x.example/d.pdf"}],
+    "xs": [{"k": "a", "s": "2019-03"}, {"k": "a", "s": "2018"}]},
+  "expected": {"doc": "https://x.example/d.pdf", "jobs": [{"start": "2018-01-01T00:00:00.000Z"}]}
+}
+```
+
 ### Request inputs and conditions
 
 `map(body, context={...})` and `map_json(raw, context={...})` take the request inputs as a dict. A path that starts with `$input` reads it, as in `$input.page`. `$input` works as a scalar `from` and as a condition path. Without a context, every `$input` path is missing, and nothing raises. A body key named `$input` is not read this way. Write it as `["$input"]`.

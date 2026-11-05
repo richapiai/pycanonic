@@ -1,0 +1,112 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "doc": {
+        "aggregate": "first",
+        "from": "media[].url",
+        "filter": {
+          "path": "type",
+          "eq": "document"
+        }
+      },
+      "n": {
+        "aggregate": "count",
+        "from": "media",
+        "filter": {
+          "path": "type",
+          "in": [
+            "document",
+            "image"
+          ]
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "doc": {
+        "type": "string"
+      },
+      "n": {
+        "type": "number"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "media": [
+          {
+            "type": "image",
+            "url": "https://x.example/a.png"
+          },
+          {
+            "type": "document",
+            "url": "https://x.example/d.pdf"
+          },
+          {
+            "type": "document",
+            "url": "https://x.example/e.pdf"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "doc": "https://x.example/d.pdf",
+        "n": 3
+      }
+    },
+    {
+      "body": {
+        "media": [
+          {
+            "type": "image",
+            "url": "https://x.example/a.png"
+          },
+          {
+            "type": "video"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "doc": null,
+        "n": 1
+      }
+    },
+    {
+      "body": {
+        "media": []
+      },
+      "context": null,
+      "expected": {
+        "doc": null,
+        "n": 0
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "doc": null,
+        "n": 0
+      }
+    },
+    {
+      "body": {
+        "media": "none"
+      },
+      "context": null,
+      "expected": {
+        "doc": null,
+        "n": null
+      }
+    }
+  ]
+}

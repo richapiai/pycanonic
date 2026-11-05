@@ -511,7 +511,13 @@ impl Resolver<'_> {
                         return Err(format!("{kat}: routing fields can't be aggregates"));
                     }
                     Kind::Scalar { .. } | Kind::Object { open: true, .. } => {
-                        Field::Aggregate(a.clone(), stat)
+                        let tx = self.tx(&a.transform, &format!("{kat}.transform"), 1)?;
+                        let a = crate::spec::Aggregate {
+                            tx,
+                            transform: Vec::new(),
+                            ..a.clone()
+                        };
+                        Field::Aggregate(a, stat)
                     }
                     Kind::Array { .. } => {
                         return Err(format!("{kat}: canonical field is an array; add []"));

@@ -1,0 +1,78 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "people",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "jobs[]": {
+        "from": "xs",
+        "group_by": "k",
+        "item": {
+          "start": {
+            "aggregate": "min",
+            "from": "$group[].s",
+            "transform": [
+              {
+                "format_date": "datetime_ms"
+              }
+            ]
+          },
+          "n": {
+            "aggregate": "count",
+            "from": "$group",
+            "filter": {
+              "path": "s",
+              "starts_with": "2019"
+            }
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "jobs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string"
+            },
+            "n": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "xs": [
+          {
+            "k": "a",
+            "s": "2019-03"
+          },
+          {
+            "k": "a",
+            "s": "2018"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "jobs": [
+          {
+            "start": "2018-01-01T00:00:00.000Z",
+            "n": 1
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -282,6 +282,9 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
             Field::Aggregate(a, _) => {
                 let mut e = Filter::default();
                 node(&mut e, &a.pluck).all = true;
+                for p in a.filter.iter().flat_map(cond_paths) {
+                    node(&mut e, p).all = true;
+                }
                 elements(f, &a.from, &a.flatten, false, is_group(&a.from), e);
             }
             Field::List {
