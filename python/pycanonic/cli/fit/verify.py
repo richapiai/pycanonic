@@ -23,20 +23,23 @@ class VerifyResult:
     ok: bool
     rejected_wrongly: list[str]  # rejects that throw away an answer equal to the default's
     misses: dict[str, list[str]] = field(default_factory=dict)  # field key to the first 5 pairs that miss
-    unmapped: dict[str, int] = field(default_factory=dict)  # leaf the spec leaves out to pairs where the default fills it
+    unmapped: dict[str, list[str]] = field(default_factory=dict)  # leaf the spec leaves out to the pairs where the default fills it
+    allowed: dict[str, str] = field(default_factory=dict)  # unmapped leaf to the reason it is expected
+    stale_allow: list[str] = field(default_factory=list)  # allow entries that cover no unmapped leaf
 
     def to_json(self, pairs: int, skipped: list[tuple[str, str]]) -> dict[str, Any]:
-        return {
+        out = {
             "ok": self.ok,
             "pairs": pairs,
             "skipped": [{"pair": n, "reason": why} for n, why in skipped],
             "shape_failures": [{"pair": p, "path": at, "message": m} for p, at, m in self.shape_failures],
             "fields": {k: {"match": m, "total": t, "share": m / t if t else 1.0, "misses": self.misses.get(k, [])} for k, (m, t) in self.fields.items()},
-            "unmapped": {k: {"pairs": n} for k, n in self.unmapped.items()},
+            "unmapped": {k: {"pairs": len(ns), "examples": ns[:5], **({"allowed": self.allowed[k]} if k in self.allowed else {})} for k, ns in self.unmapped.items()},
             "rejected": self.rejected,
             "rejected_wrongly": self.rejected_wrongly,
             "reject_share": len(self.rejected) / pairs if pairs else 0.0,
         }
+        return {**out, "stale_allow": self.stale_allow} if self.stale_allow else out
 
 
 def _kind(v: Any) -> str:
@@ -194,13 +197,16 @@ def run(
     skipped: list[tuple[str, str]] | None = None,
     fail_unmapped: bool = False,
     ignore: list[str] | None = None,
+    allow: dict[str, str] | None = None,
 ) -> VerifyResult:
     """Maps every pair. A rejected pair counts in no field. It fails only if the spec without its
     reject rules maps it to exactly the default's output, or if over `max_reject` of the pairs are
     rejected. A field counts only pairs where either side has a value, and any
     `skipped` pair fails the run. A leaf the spec does not map but the default fills is
     listed, and fails the run only with `fail_unmapped`. A list also scores each leaf of its
-    items by position and a count row; `ignore` drops a field and all below it."""
+    items by position and a count row; `ignore` drops a field and all below it.
+    `allow` maps a field to the reason its unmapped leaves are expected, itself and all below it, and
+    `fail_unmapped` fails only on the leaves it does not cover."""
     art = _api.compile_spec(spec, schema, transforms=transforms)
     loose = _api.compile_spec({k: v for k, v in spec.items() if k != "reject"}, schema, transforms=transforms) if spec.get("reject") else None
     sf = spec.get("fields") or {}
@@ -217,7 +223,7 @@ def run(
     unions = {k: n for k, n in _nodes(schema) if k in kept and "oneOf" in n}
     counts = {k: [0, 0] for k in order}
     misses: dict[str, list[str]] = {k: [] for k in order}
-    unmapped = dict.fromkeys((k for k in [*_unmapped(sf, schema), *left] if not _under(k, ignored)), 0)
+    unmapped: dict[str, list[str]] = {k: [] for k in [*_unmapped(sf, schema), *left] if not _under(k, ignored)}
     failures: list[tuple[str, str, str]] = []
     rejected: list[str] = []
     wrongly: list[str] = []
@@ -249,7 +255,8 @@ def run(
             continue
         failures += [(p.name, at, msg) for at, msg in shape(out, p.default, schema) if not _under(re.sub(r"\[\d+\]", "[]", at), ignored)]
         for k in unmapped:
-            unmapped[k] += not all(_empty(w) for _, w, _ in _walk(p.default, p.default, k))
+            if not all(_empty(w) for _, w, _ in _walk(p.default, p.default, k)):
+                unmapped[k].append(p.name)
         for k in keys:
             score(k, _val(out, k), _val(p.default, k), p.name)
             for row in rows.get(k, []):
@@ -266,7 +273,9 @@ def run(
     fields = {k: (m, t) for k, (m, t) in counts.items()}
     misses = {k: v for k, v in misses.items() if v}
     unmapped = {k: n for k, n in unmapped.items() if n}
+    reasons = {k: next(why for a, why in (allow or {}).items() if _under(k, {a})) for k in unmapped if _under(k, set(allow or ()))}
+    stale = [a for a in (allow or {}) if not any(_under(k, {a}) for k in unmapped)]
     share = len(rejected) / len(pairs) if pairs else 0.0
     ok = not skipped and not failures and not wrongly and share <= max_reject and all(t == 0 or m / t >= min_match for m, t in fields.values())
-    ok = ok and not (fail_unmapped and unmapped)
-    return VerifyResult(failures, fields, rejected, ok, wrongly, misses, unmapped)
+    ok = ok and not (fail_unmapped and any(k not in reasons for k in unmapped))
+    return VerifyResult(failures, fields, rejected, ok, wrongly, misses, unmapped, reasons, stale)

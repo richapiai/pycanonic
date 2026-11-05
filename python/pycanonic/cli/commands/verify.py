@@ -28,7 +28,11 @@ USAGE = """canonic verify <spec.json> --schema <file> --default <dir> --provider
   --max-reject <f>     share of pairs the spec may reject (default 0.10)
   --ignore <field>     leave a field and everything below it out of the scoring and the shape
                        check; repeat for more (`items` covers `items[]`, `items[].x`, `items[] (count)`)
-  --fail-unmapped      fail when the default fills a leaf the spec does not map
+  --fail-unmapped      fail when the default fills a leaf the spec does not map, unless it is allowed
+  --allow FIELD=REASON expect a field to stay unmapped, with the reason; it covers the field and
+                       everything below it, and repeats. The report names the first five pairs
+                       with a value, and notes an allowed field that is mapped or empty in every pair
+  --allow-file <json>  the same as a JSON object of field to reason; both sources merge
   --json               print the result as JSON instead of a table"""
 
 
@@ -38,12 +42,32 @@ def _table(r: verify.VerifyResult, pairs: int, skipped: list[tuple[str, str]]) -
     for k, (m, t) in r.fields.items():
         miss = f"  misses {', '.join(r.misses[k])}" if r.misses.get(k) else ""
         lines.append(f"{k.ljust(width)}  {m}/{t}  {m / t if t else 1.0:.2f}{miss}")
-    lines += [f"not mapped: {k} ({n} pairs with a value)" for k, n in r.unmapped.items()]
+    for k, ns in r.unmapped.items():
+        more = ", ..." if len(ns) > 5 else ""
+        why = f"  allowed: {r.allowed[k]}" if k in r.allowed else ""
+        lines.append(f"not mapped: {k} ({len(ns)} pairs with a value: {', '.join(ns[:5])}{more}){why}")
+    lines += [f"allow: {a} is mapped or empty in every pair" for a in r.stale_allow]
     lines += [f"shape  {p}  {at}  {msg}" for p, at, msg in r.shape_failures]
     lines += [f"rejected  {n}" for n in r.rejected]
     lines += [f"rejected wrongly  {n}  (without its reject rules the spec maps it to the default's body)" for n in r.rejected_wrongly]
     lines.append(f"verify: {'ok' if r.ok else 'failed'} ({pairs} pairs, {len(r.rejected)} rejected)")
     return "\n".join(lines) + "\n"
+
+
+def _allow(pairs: list[str], path: str | None) -> dict[str, str]:
+    """The allowed fields and their reasons from `--allow FIELD=REASON` and `--allow-file`."""
+    out: dict[str, str] = {}
+    if path:
+        data = read_json(path)
+        if not isinstance(data, dict) or not all(isinstance(k, str) and k and isinstance(v, str) for k, v in data.items()):
+            raise ValueError(f"--allow-file {path}: expected a JSON object of field to reason, such as {{\"status\": \"not-sold\"}}")
+        out.update(data)
+    for item in pairs:
+        field, sep, why = item.partition("=")
+        if not sep or not field.strip():
+            raise ValueError(f'--allow {item!r}: expected FIELD=REASON, such as status=not-sold')
+        out[field.strip()] = why
+    return out
 
 
 def run(args: list[str], transforms: Transforms) -> int:
@@ -55,15 +79,18 @@ def run(args: list[str], transforms: Transforms) -> int:
     p.add_argument("--json", action="store_true")
     p.add_argument("--ignore", action="append", default=[])
     p.add_argument("--fail-unmapped", action="store_true")
+    p.add_argument("--allow", action="append", default=[])
+    p.add_argument("--allow-file")
     p.add_argument("spec", nargs="?")
     a = p.parse_intermixed_args(args)
     if not (a.spec and a.schema and a.default and a.provider):
         raise UsageError(USAGE)
+    allow = _allow(a.allow, a.allow_file)
     pairs, skipped = load_pairs(Path(a.default), Path(a.provider), Path(a.inputs) if a.inputs else None)
     if not pairs:
         print("verify: no pairs", file=sys.stderr)
         return 2
-    r = verify.run(read_json(a.spec), read_json(a.schema), pairs, a.min_match, transforms, a.max_reject, skipped, a.fail_unmapped, a.ignore)
+    r = verify.run(read_json(a.spec), read_json(a.schema), pairs, a.min_match, transforms, a.max_reject, skipped, a.fail_unmapped, a.ignore, allow)
     if a.json:
         sys.stdout.write(json.dumps(r.to_json(len(pairs), skipped), indent=2, ensure_ascii=False) + "\n")
     else:

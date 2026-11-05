@@ -224,7 +224,7 @@ def test_unmapped_leaf_listed_and_fail_flag() -> None:
     schema = derive_schema([p.default for p in rows])
     s = spec({"name": "n", "hq.city": "c"})
     r = run(s, schema, rows, 0.95, None)
-    assert r.unmapped == {"status": 3, "hq.zip": 4} and r.ok
+    assert {k: len(v) for k, v in r.unmapped.items()} == {"status": 3, "hq.zip": 4} and r.ok
     assert not run(s, schema, rows, 0.95, None, fail_unmapped=True).ok
     open_schema = {"type": "object", "properties": {"m": {"type": "object", "x-open": True, "properties": {"a": S}}}}
     whole = run(spec({"m": "x"}), open_schema, pairs([({"m": {"a": "1"}}, {"x": {"a": "1"}})]), 0.95, None)
@@ -242,11 +242,11 @@ def test_unmapped_and_misses_in_cli(tmp_path: Path, capsys: pytest.CaptureFixtur
     args = ["verify", s, "--schema", sc, "--default", str(tmp_path / "d"), "--provider", str(tmp_path / "p"), "--min-match", "0"]
     assert main(args) == 0
     table = capsys.readouterr().out
-    assert "not mapped: status (12 pairs with a value)" in table
+    assert "not mapped: status (12 pairs with a value: p00.json, p01.json, p02.json, p03.json, p04.json, ...)" in table
     assert "name  5/12  0.42  misses p00.json, p01.json, p02.json, p03.json, p04.json\n" in table
     assert main([*args, "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out["unmapped"] == {"status": {"pairs": 12}}
+    assert out["unmapped"] == {"status": {"pairs": 12, "examples": [f"p{i:02}.json" for i in range(5)]}}
     assert out["fields"]["name"]["misses"] == ["p00.json", "p01.json", "p02.json", "p03.json", "p04.json"]
     assert main([*args, "--fail-unmapped"]) == 1
 
@@ -315,7 +315,7 @@ def test_item_leaf_outside_item_map_is_unmapped() -> None:
     rows = pairs([({"name": "a", "items": [{"name": "i", "url": "u"}]}, {"n": "a", "xs": [{"n": "i"}]}) for _ in range(2)])
     s = spec({"name": "n", "items[]": {"from": "xs", "item": {"name": "n"}}})
     r = run(s, ITEMS, rows, 0.95, None)
-    assert r.unmapped == {"items[].url": 2} and "items[].url" not in r.fields and r.ok
+    assert {k: len(v) for k, v in r.unmapped.items()} == {"items[].url": 2} and r.unmapped["items[].url"] == ["p0.json", "p1.json"] and "items[].url" not in r.fields and r.ok
     assert "items[]" not in r.fields and r.fields["items[].name"] == (2, 2)
     assert not run(s, ITEMS, rows, 0.95, None, fail_unmapped=True).ok
     ref = spec({"name": "n", "items[]": {"from": "xs", "item": {"$ref": "it"}}})
@@ -327,3 +327,66 @@ def test_ignore_item_leaf_waives_whole_list_row() -> None:
     assert not run(spec(ITEM_SPEC), ITEMS, rows, 0.95, None).ok
     r = run(spec(ITEM_SPEC), ITEMS, rows, 0.95, None, ignore=["items[].url"])
     assert r.ok and "items[].url" not in r.fields and "items[]" not in r.fields and r.fields["items[].name"] == (6, 6)
+
+
+def allow_setup(tmp_path: Path) -> list[str]:
+    """Four pairs where only `status` is unmapped; names p0..p3 hold a status in all but p1."""
+    (tmp_path / "d").mkdir()
+    (tmp_path / "p").mkdir()
+    for i in range(4):
+        write(tmp_path / "d" / f"p{i}.json", {"name": f"n{i}", "status": None if i == 1 else "on"})
+        write(tmp_path / "p" / f"p{i}.json", {"n": f"n{i}"})
+    s = write(tmp_path / "spec.json", spec({"name": "n"}))
+    sc = write(tmp_path / "schema.json", {"type": "object", "properties": {"name": S, "status": S}})
+    return ["verify", s, "--schema", sc, "--default", str(tmp_path / "d"), "--provider", str(tmp_path / "p"), "--fail-unmapped"]
+
+
+def test_allow_excuses_unmapped(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    args = allow_setup(tmp_path)
+    assert main(args) == 1
+    capsys.readouterr()
+    assert main([*args, "--allow", "status=not-sold"]) == 0
+    assert "allowed: not-sold" in capsys.readouterr().out
+    assert main([*args, "--allow", "other=x", "--json"]) == 1  # an unrelated allow excuses nothing
+    assert json.loads(capsys.readouterr().out)["stale_allow"] == ["other"]
+    assert main([*args, "--allow", "status=not-sold", "--allow", "other=x"]) == 0  # a stale entry does not fail
+    assert "allow: other is mapped or empty in every pair" in capsys.readouterr().out
+    assert main(args[:-1] + ["--allow", "x=y"]) == 0  # without --fail-unmapped ok is unchanged
+
+
+def test_allow_covers_everything_below() -> None:
+    rows = pairs([({"name": "a", "hq": {"city": "c", "zip": "z"}}, {"n": "a"})])
+    r = run(spec({"name": "n"}), derive_schema([p.default for p in rows]), rows, 0.95, None, fail_unmapped=True, allow={"hq": "later"})
+    assert r.ok and r.allowed == {"hq.city": "later", "hq.zip": "later"} and r.stale_allow == []
+
+
+def test_allow_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    args = allow_setup(tmp_path)
+    f = write(tmp_path / "allow.json", {"status": "not-sold"})
+    assert main([*args, "--allow-file", f]) == 0
+    capsys.readouterr()
+    assert main([*args, "--allow-file", f, "--allow", "status=cli-wins", "--json"]) == 0  # both merge, the flag wins
+    assert json.loads(capsys.readouterr().out)["unmapped"]["status"]["allowed"] == "cli-wins"
+
+
+@pytest.mark.parametrize("bad", ["status", "=why"])
+def test_bad_allow_exits_2(tmp_path: Path, capsys: pytest.CaptureFixture[str], bad: str) -> None:
+    assert main([*allow_setup(tmp_path), "--allow", bad]) == 2
+    assert "FIELD=REASON" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("content", ["[]", '{"status": 3}', "not json", None])
+def test_bad_allow_file_exits_2(tmp_path: Path, content: str | None) -> None:
+    args = allow_setup(tmp_path)
+    f = tmp_path / "allow.json"
+    if content is not None:
+        f.write_text(content)
+    assert main([*args, "--allow-file", str(f)]) == 2
+
+
+def test_unmapped_lists_pairs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    args = allow_setup(tmp_path)
+    main(args)
+    assert "not mapped: status (3 pairs with a value: p0.json, p2.json, p3.json)" in capsys.readouterr().out
+    main([*args, "--json"])
+    assert json.loads(capsys.readouterr().out)["unmapped"] == {"status": {"pairs": 3, "examples": ["p0.json", "p2.json", "p3.json"]}}

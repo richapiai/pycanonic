@@ -191,7 +191,7 @@ For a manual field that needs code, `--transforms-out transforms.py` writes one 
 
 ```
 canonic verify globex.json --schema canonical.json --default samples/default/ --provider samples/new/ \
-  [--inputs samples/inputs/] [--transforms transforms.py] [--min-match 0.95] [--max-reject 0.10] [--fail-unmapped] [--ignore <field>] [--json]
+  [--inputs samples/inputs/] [--transforms transforms.py] [--min-match 0.95] [--max-reject 0.10] [--fail-unmapped] [--allow FIELD=REASON] [--allow-file allow.json] [--ignore <field>] [--json]
 ```
 
 It maps each provider body through the spec and compares the output with the default's body of the same name. It checks:
@@ -203,7 +203,7 @@ It maps each provider body through the spec and compares the output with the def
    `--ignore <field>` takes a field and everything below it out of the scoring and the shape check. `--ignore items` drops `items[]`, `items[].name`, `items[] (count)` and their shape failures. Repeat the flag for more fields.
 3. Rejects: every rejected pair is listed. A rejected pair fails the run in one case: the spec without its reject rules maps that pair to exactly the default's output, so the reject threw away a correct answer. If the spec rejects more than `--max-reject` of the pairs (default 10%), the run fails too.
 4. Skipped pairs: a pair on one side only, or a body that is not JSON, fails the run.
-5. Leaves the spec does not map: each canonical leaf that the spec leaves out but the default fills is listed, for example `not mapped: status (12 pairs with a value)`. They do not fail the run, because the provider can lack a field on purpose. With `--fail-unmapped`, they do.
+5. Leaves the spec does not map: each canonical leaf that the spec leaves out but the default fills is listed with the first five pairs where the default has a value, for example `not mapped: status (12 pairs with a value: p00.json, p01.json, p02.json, p03.json, p04.json, ...)`. In `--json`, each entry has `pairs` (the count) and `examples`. They do not fail the run, because the provider can lack a field on purpose. With `--fail-unmapped`, they do, except the fields you allow. `--allow FIELD=REASON` expects a field to stay unmapped. It covers the field and everything below it, and you can repeat it. `--allow-file <json>` takes a JSON object of field to reason, and both sources merge. The table adds `allowed: <reason>` to such a field (in JSON, `"allowed"`). An allowed field that is mapped or empty in every pair gets the note `allow: <field> is mapped or empty in every pair` (in JSON, `stale_allow`), so old entries show up. The note does not fail the run. A bad `--allow` or `--allow-file` exits 2.
 
 It prints a table, or JSON with `--json`. If every check passes, it exits 0. If a check fails, it exits 1. If a file cannot be read or there are no pairs, it exits 2. Run it in CI on every spec change, and again after each new recording of pairs.
 
