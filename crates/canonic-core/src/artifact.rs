@@ -291,7 +291,7 @@ fn fields(f: &mut Filter, fs: &[Named<Field>]) {
                 // Conditions, `unique` and `sort_by` can compare whole values.
                 let filter = ops.filter.iter().flat_map(cond_paths);
                 let keys = ops.unique.iter().chain(ops.sort.iter().map(|(p, _)| p));
-                let group = ops.group.iter().map(|(p, _)| p);
+                let group = (ops.group.iter().map(|(p, _)| p)).chain(&ops.group_also);
                 for p in filter.chain(keys).chain(group) {
                     node(&mut e, p).all = true;
                 }

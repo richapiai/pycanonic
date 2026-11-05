@@ -111,6 +111,8 @@ pub struct ArrayRule {
     pub limit: Option<usize>,
     /// Language 2: `group_by` and whether groups are consecutive.
     pub group: Option<(Path, bool)>,
+    /// The fallback key paths of a `group_by` list, after the first.
+    pub group_also: Vec<Path>,
 }
 
 /// A path that is `$group`, which language 2 reserves for the group of a grouped item map.
@@ -657,7 +659,23 @@ impl Checker {
             self.fail(at, "limit must be a positive integer");
         }
         if r.contains_key("group_by") {
-            self.key_path(r.get("group_by"), &format!("{at}.group_by"));
+            let at = format!("{at}.group_by");
+            match r.get("group_by") {
+                Some(Value::Array(a)) if a.len() >= 2 => {
+                    for (i, p) in a.iter().enumerate() {
+                        self.key_path(Some(p), &format!("{at}[{i}]"));
+                    }
+                }
+                Some(Value::Array(a)) => self.fail(
+                    &at,
+                    if a.is_empty() {
+                        "is an empty list, expected a path or a list of 2 or more paths"
+                    } else {
+                        "is a list of one path, write the path as a string"
+                    },
+                ),
+                v => self.key_path(v, &at),
+            }
         }
         match r.get("consecutive") {
             Some(c) if !c.is_boolean() => {
@@ -1147,9 +1165,15 @@ fn bare_rule(key: &str, r: &Value) -> Rule {
                 .get("sort_by")
                 .map(|p| (path(p), r.get("order").is_some_and(|o| o == "desc"))),
             limit: r.get("limit").and_then(Value::as_u64).map(|n| n as usize),
-            group: r
-                .get("group_by")
-                .map(|p| (path(p), r.get("consecutive") != Some(&Value::Bool(false)))),
+            group: r.get("group_by").map(|p| {
+                let first = p.as_array().and_then(|a| a.first()).unwrap_or(p);
+                (
+                    path(first),
+                    r.get("consecutive") != Some(&Value::Bool(false)),
+                )
+            }),
+            group_also: (r.get("group_by").and_then(Value::as_array))
+                .map_or_else(Vec::new, |a| a[1..].iter().map(path).collect()),
             item: r
                 .get("item")
                 .filter(|i| i.get("$ref").is_none())

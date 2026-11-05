@@ -1,0 +1,70 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "orgs[]": {
+        "from": "xs",
+        "group_by": [
+          "a"
+        ],
+        "consecutive": false,
+        "item": {
+          "name": "org.name",
+          "n": {
+            "aggregate": "count",
+            "from": "$group"
+          },
+          "ids": {
+            "aggregate": "join",
+            "from": "$group[].n",
+            "sep": ","
+          },
+          "members[]": {
+            "from": "$group",
+            "item": {
+              "n": "n"
+            }
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "orgs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "n": {
+              "type": "number"
+            },
+            "ids": {
+              "type": "string"
+            },
+            "members": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "n": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"orgs[]\"].group_by: is a list of one path, write the path as a string"
+}

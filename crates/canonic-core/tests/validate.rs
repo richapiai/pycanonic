@@ -444,6 +444,7 @@ fn parse_spec_returns_the_typed_spec() {
         sort: None,
         limit: None,
         group: None,
+        group_also: _,
     }) = &s.fields[3].1
     else {
         panic!()

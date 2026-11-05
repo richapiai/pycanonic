@@ -42,16 +42,19 @@ impl AggOp {
     }
 }
 
-/// `elems` in groups by the value at `key`. Consecutive groups start whenever the key changes.
+/// `elems` in groups by the value at `keys`. Consecutive groups start whenever the key changes.
 /// Otherwise a group holds every element with its key, in order of first appearance. An element
-/// with a missing or null key is a group of its own.
-pub fn groups<D: Doc>(elems: Vec<D>, key: &KeyPath, consecutive: bool) -> Vec<Vec<D>> {
+/// with a missing or null key is a group of its own. `keys` are tried in order, and the first
+/// whose value is present and not null is the element's key.
+pub fn groups<D: Doc>(elems: Vec<D>, keys: &[KeyPath], consecutive: bool) -> Vec<Vec<D>> {
     let mut out: Vec<Vec<D>> = Vec::new();
     // Consecutive: the key of the last element. Otherwise: each key's group.
     let mut last: Option<String> = None;
     let mut at: HashMap<String, usize> = HashMap::new();
     for e in elems {
-        let k = read(Some(&e), key).and_then(|v| key_text(&v));
+        let k = keys
+            .iter()
+            .find_map(|key| read(Some(&e), key).and_then(|v| key_text(&v)));
         let i = match &k {
             None => None,
             Some(k) if consecutive => last.as_ref().filter(|l| *l == k).map(|_| out.len() - 1),

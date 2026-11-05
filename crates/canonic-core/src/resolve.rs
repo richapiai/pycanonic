@@ -232,6 +232,7 @@ impl Resolver<'_> {
             sort: r.sort.clone(),
             limit: r.limit,
             group: r.group.clone(),
+            group_also: r.group_also.clone(),
             from_group: self.language == 2 && is_group(&r.from),
         };
         let input = Step::Key("$input".into());

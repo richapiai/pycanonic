@@ -43,17 +43,17 @@ fn groups_consecutive_and_not() {
         {"id": 4, "k": "A"}, {"id": 5}, {"id": 6, "k": null}, {"id": 7}]"#;
     let doc = parse(body, &all).unwrap();
     let k = key("k");
-    let runs = groups(elems(&doc), &k, true);
+    let runs = groups(elems(&doc), std::slice::from_ref(&k), true);
     assert_eq!(
         ids(&runs),
         [vec![1, 2], vec![3], vec![4], vec![5], vec![6], vec![7]]
     );
-    let sets = groups(elems(&doc), &k, false);
+    let sets = groups(elems(&doc), std::slice::from_ref(&k), false);
     assert_eq!(
         ids(&sets),
         [vec![1, 2, 4], vec![3], vec![5], vec![6], vec![7]]
     );
-    assert!(groups(Vec::<&Node>::new(), &k, true).is_empty());
+    assert!(groups(Vec::<&Node>::new(), std::slice::from_ref(&k), true).is_empty());
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn group_keys_compare_numbers_by_value_and_ignore_key_order() {
         {"id": 3, "k": 1}, {"id": 4, "k": 1.0}, {"id": 5, "k": "1"}]"#;
     let doc = parse(body, &all).unwrap();
     assert_eq!(
-        ids(&groups(elems(&doc), &key("k"), true)),
+        ids(&groups(elems(&doc), &[key("k")], true)),
         [vec![1, 2], vec![3, 4], vec![5]]
     );
 }
@@ -194,7 +194,7 @@ proptest! {
         let body = serde_json::to_vec(&xs).unwrap();
         let all = Filter::all();
         let doc = parse(&body, &all).unwrap();
-        let gs = groups(elems(&doc), &key("k"), true);
+        let gs = groups(elems(&doc), &[key("k")], true);
         let joined: Vec<i64> = ids(&gs).concat();
         prop_assert_eq!(joined, (0..xs.len() as i64).collect::<Vec<_>>());
         // No two neighbouring groups share a key, and each group has one key.
@@ -203,4 +203,25 @@ proptest! {
             prop_assert!(g.iter().all(|e| k(e) == k(&g[0])));
         }
     }
+}
+
+#[test]
+fn fallback_keys_take_the_first_present_key() {
+    let all = Filter::all();
+    let body = br#"[{"id": 1, "a": "x", "b": "y"}, {"id": 2, "b": "x"}, {"id": 3, "a": null, "b": "y"},
+        {"id": 4, "a": "", "b": "y"}, {"id": 5, "a": "", "b": "z"}, {"id": 6}, {"id": 7, "a": null}, {"id": 8, "b": "x"}]"#;
+    let doc = parse(body, &all).unwrap();
+    let ks = [key("a"), key("b")];
+    // Keys: x, x, y, "", "", none, none, x.
+    let runs = groups(elems(&doc), &ks, true);
+    assert_eq!(
+        ids(&runs),
+        [vec![1, 2], vec![3], vec![4, 5], vec![6], vec![7], vec![8]]
+    );
+    // Not consecutive: element 8 (b: "x") rejoins elements 1 and 2.
+    let sets = groups(elems(&doc), &ks, false);
+    assert_eq!(
+        ids(&sets),
+        [vec![1, 2, 8], vec![3], vec![4, 5], vec![6], vec![7]]
+    );
 }

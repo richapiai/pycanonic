@@ -465,6 +465,32 @@ A condition has one of these forms. Its `path` is relative to the element, and `
 
 `"group_by": <path>` on an array rule groups the elements by the value at that path, relative to each element.
 
+`"group_by"` can also be a list of 2 or more paths, such as `["org.id", "org.url", "org.name"]`. Each element uses the first path whose value is present and not null. An empty string counts as present. Two elements group together when their chosen key values are equal, whichever path each came from. An element with no key at all is a group of its own. An empty list, a list of one path and an entry that is not a path fail the compile, and so does `$input` or `$group` in a path. A plan that uses a list is format 2.
+
+<!-- run -->
+```json
+{
+  "schema": {"type": "object", "properties": {"orgs": {"type": "array", "items": {"type": "object", "properties": {
+    "name": {"type": "string"}, "count": {"type": "number"}}}}}},
+  "spec": {"language": 2, "provider": "acme", "endpoint": "orgs", "version": 1, "status": "draft",
+    "fields": {"orgs[]": {"from": "xs", "group_by": ["org.id", "org.url", "org.name"], "consecutive": false, "item": {
+      "name": "org.name",
+      "count": {"aggregate": "count", "from": "$group"}}}}},
+  "body": {"xs": [
+    {"org": {"id": "o1", "name": "Orbit"}},
+    {"org": {"url": "https://x.example/orgs/nimbus", "name": "Nimbus"}},
+    {"org": {"id": "o1", "name": "Orbit Inc"}},
+    {"org": {"id": null, "url": "https://x.example/orgs/nimbus", "name": "Nimbus"}},
+    {"org": {"name": "Solo"}},
+    {}]},
+  "expected": {"orgs": [
+    {"name": "Orbit", "count": 2},
+    {"name": "Nimbus", "count": 2},
+    {"name": "Solo", "count": 1},
+    {"name": null, "count": 1}]}
+}
+```
+
 - With `"consecutive": true` (the default), a new group starts each time the key changes, and the groups keep the source order.
 - With `"consecutive": false`, all elements with the same key form one group, in the order of first appearance.
 - An element whose key is null or missing is a group of its own.

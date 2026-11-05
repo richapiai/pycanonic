@@ -366,6 +366,7 @@ impl Builder<'_> {
             sort: o.sort.as_ref().map(|(p, desc)| (self.path(p), *desc)),
             limit: o.limit,
             group: o.group.as_ref().map(|(p, c)| (self.path(p), *c)),
+            group_also: o.group_also.iter().map(|p| self.path(p)).collect(),
             from_group: o.from_group,
         }
     }
@@ -1257,7 +1258,10 @@ impl<S: Sink> Exec<'_, S> {
         let Some((key, consecutive)) = &ops.group else {
             return self.elements(xs.len(), |i| xs.get(i).cloned(), None, kind, stat, ops, f);
         };
-        let gs = groups(xs, key, *consecutive);
+        let keys: Vec<Path> = std::iter::once(key.clone())
+            .chain(ops.group_also.iter().cloned())
+            .collect();
+        let gs = groups(xs, &keys, *consecutive);
         let first = |i: usize| gs.get(i).and_then(|g| g.first()).cloned();
         self.elements(gs.len(), first, Some(&gs), kind, stat, ops, f)
     }

@@ -1,0 +1,72 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "orgs[]": {
+        "from": "xs",
+        "group_by": [
+          "a",
+          3,
+          "$group"
+        ],
+        "consecutive": false,
+        "item": {
+          "name": "org.name",
+          "n": {
+            "aggregate": "count",
+            "from": "$group"
+          },
+          "ids": {
+            "aggregate": "join",
+            "from": "$group[].n",
+            "sep": ","
+          },
+          "members[]": {
+            "from": "$group",
+            "item": {
+              "n": "n"
+            }
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "orgs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "n": {
+              "type": "number"
+            },
+            "ids": {
+              "type": "string"
+            },
+            "members": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "n": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": "invalid spec: spec.fields[\"orgs[]\"].group_by[1]: must be a path like a.b[0][\"c d\"]; spec.fields[\"orgs[]\"].group_by[2]: $group is only a list or aggregate from"
+}

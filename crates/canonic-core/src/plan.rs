@@ -136,6 +136,10 @@ pub struct ListOps<P = Path> {
     /// once, its first element as the element and the group as `$group`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<(P, bool)>,
+    /// The fallback key paths after the first (format 2): an element takes the first key path
+    /// whose value is present and not null.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub group_also: Vec<P>,
     /// The source is `$group`: the group of the grouped item map around, not a path.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub from_group: bool,
@@ -153,6 +157,7 @@ impl<P> Default for ListOps<P> {
             sort: None,
             limit: None,
             group: None,
+            group_also: Vec::new(),
             from_group: false,
         }
     }
@@ -561,7 +566,13 @@ fn line(out: &mut String, name: &str, field: &Field) {
             }
             if let Some((p, consecutive)) = &ops.group {
                 let all = if *consecutive { "" } else { " all" };
-                opts += &format!(" | group_by {}{all}", path(p));
+                let keys = std::iter::once(p).chain(&ops.group_also).map(&path);
+                let keys = keys.collect::<Vec<_>>();
+                let keys = match keys.len() {
+                    1 => keys[0].clone(),
+                    _ => format!("[{}]", keys.join(", ")),
+                };
+                opts += &format!(" | group_by {keys}{all}");
             }
             if ops.missing == Empty::List {
                 opts += " | missing []";

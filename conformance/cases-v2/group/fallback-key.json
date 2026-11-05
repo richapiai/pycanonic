@@ -1,0 +1,244 @@
+{
+  "spec": {
+    "language": 2,
+    "provider": "acme",
+    "endpoint": "orgs",
+    "version": 1,
+    "status": "promoted",
+    "fields": {
+      "orgs[]": {
+        "from": "xs",
+        "group_by": [
+          "org.id",
+          "org.url",
+          "org.name"
+        ],
+        "consecutive": false,
+        "item": {
+          "name": "org.name",
+          "n": {
+            "aggregate": "count",
+            "from": "$group"
+          },
+          "ids": {
+            "aggregate": "join",
+            "from": "$group[].n",
+            "sep": ","
+          },
+          "members[]": {
+            "from": "$group",
+            "item": {
+              "n": "n"
+            }
+          }
+        }
+      }
+    }
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "orgs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "n": {
+              "type": "number"
+            },
+            "ids": {
+              "type": "string"
+            },
+            "members": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "n": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "body": {
+        "xs": [
+          {
+            "n": 1,
+            "org": {
+              "id": "o1",
+              "name": "Orbit"
+            }
+          },
+          {
+            "n": 2,
+            "org": {
+              "url": "https://x.example/orgs/nimbus",
+              "name": "Nimbus"
+            }
+          },
+          {
+            "n": 3,
+            "org": {
+              "name": "Orbit"
+            }
+          },
+          {
+            "n": 4,
+            "org": {
+              "id": "o1",
+              "url": "https://x.example/orgs/orbit",
+              "name": "Orbit"
+            }
+          },
+          {
+            "n": 5,
+            "org": {
+              "id": null,
+              "url": "https://x.example/orgs/nimbus",
+              "name": "Nimbus"
+            }
+          },
+          {
+            "n": 6,
+            "org": {
+              "id": "",
+              "name": "Empty"
+            }
+          },
+          {
+            "n": 7,
+            "org": {
+              "id": "",
+              "name": "Empty"
+            }
+          },
+          {
+            "n": 8,
+            "org": {
+              "id": null,
+              "url": null,
+              "name": null
+            }
+          },
+          {
+            "n": 9
+          },
+          {
+            "n": 10,
+            "org": "x"
+          }
+        ]
+      },
+      "context": null,
+      "expected": {
+        "orgs": [
+          {
+            "name": "Orbit",
+            "n": 2,
+            "ids": "1,4",
+            "members": [
+              {
+                "n": 1
+              },
+              {
+                "n": 4
+              }
+            ]
+          },
+          {
+            "name": "Nimbus",
+            "n": 2,
+            "ids": "2,5",
+            "members": [
+              {
+                "n": 2
+              },
+              {
+                "n": 5
+              }
+            ]
+          },
+          {
+            "name": "Orbit",
+            "n": 1,
+            "ids": "3",
+            "members": [
+              {
+                "n": 3
+              }
+            ]
+          },
+          {
+            "name": "Empty",
+            "n": 2,
+            "ids": "6,7",
+            "members": [
+              {
+                "n": 6
+              },
+              {
+                "n": 7
+              }
+            ]
+          },
+          {
+            "name": null,
+            "n": 1,
+            "ids": "8",
+            "members": [
+              {
+                "n": 8
+              }
+            ]
+          },
+          {
+            "name": null,
+            "n": 1,
+            "ids": "9",
+            "members": [
+              {
+                "n": 9
+              }
+            ]
+          },
+          {
+            "name": null,
+            "n": 1,
+            "ids": "10",
+            "members": [
+              {
+                "n": 10
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "body": {
+        "xs": []
+      },
+      "context": null,
+      "expected": {
+        "orgs": []
+      }
+    },
+    {
+      "body": {},
+      "context": null,
+      "expected": {
+        "orgs": null
+      }
+    }
+  ]
+}

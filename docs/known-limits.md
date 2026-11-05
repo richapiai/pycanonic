@@ -95,10 +95,6 @@ With few pairs, `fit` can propose rules that fit the samples by chance, for exam
 
 An aggregate such as `{"aggregate": "min", "from": "$group[].started"}` returns the folded value as it is. It cannot take `transform`, so a grouped date cannot be reformatted in the spec. Format the source dates the way the output needs, or build the array with a container transform.
 
-## group_by reads one path
-
-`group_by` keys on one path. It cannot key on the first present of several paths, such as an ID with a name as fallback. An element whose key is null forms a group of its own.
-
 ## A custom transform costs a round trip
 
 A custom transform is a Python call. On a leaf, the cost is the call itself. A container transform also gets its source as a JSON copy, and its result is checked against the canonical node. In one measurement, a container transform over a list of 12 objects took 90 µs of a 94 µs `map`. The same spec without that field mapped in 3 µs. Keep container transforms for logic that the spec language cannot express.
