@@ -257,6 +257,29 @@ fn a_custom_transform_that_panics_counts_as_an_error_and_yields_null() {
 }
 
 #[test]
+fn a_custom_transform_that_returns_nan_maps_to_null_on_every_path() {
+    let a = artifact_with(
+        &spec(json!({ "first_name": { "from": "n", "transform": "nan" } })),
+        &canonical(),
+        custom("nan", |_| Value::Float(f64::NAN)),
+    );
+    let body = br#"{"n": "Ada"}"#;
+    let out = a.map_bytes(body, None).unwrap();
+    let Out::Obj(fields) = &out else {
+        panic!("not an object: {out:?}")
+    };
+    let first = (fields.iter()).find(|(i, _)| a.plan.names[*i] == "first_name");
+    assert!(matches!(first, Some((_, Out::Null))), "{first:?}");
+    let mut written = Vec::new();
+    canonic_core::write_json(&a.plan, &out, &mut written);
+    assert_eq!(written, a.map_json(body, None).unwrap());
+    assert_eq!(
+        a.stats.snapshot().fields,
+        vec![("first_name".into(), fs_(0, 2))]
+    );
+}
+
+#[test]
 fn map_counts_stats_once_per_call() {
     let a = artifact(&spec(json!({ "email": "e" })), &canonical());
     assert_eq!(a.stats.snapshot().responses, 0);

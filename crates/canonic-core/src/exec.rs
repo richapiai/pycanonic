@@ -818,11 +818,19 @@ fn apply<'v>(custom: &[Arc<dyn Transform>], t: &TxRef, v: Value<'v>) -> Value<'v
     match t {
         TxRef::Builtin(b) => b.apply(v, None),
         TxRef::Custom { index, arg, .. } => match custom.get(*index) {
-            Some(f) => {
-                catch_unwind(AssertUnwindSafe(|| f.apply(v, arg.as_ref()))).unwrap_or(Value::Null)
-            }
+            Some(f) => catch_unwind(AssertUnwindSafe(|| f.apply(v, arg.as_ref())))
+                .map_or(Value::Null, finite),
             None => Value::Null,
         },
+    }
+}
+
+/// A custom transform's result, with NaN and infinity as null. JSON has no such number, so every
+/// way out writes null for it and counts one error.
+fn finite(v: Value<'_>) -> Value<'_> {
+    match v {
+        Value::Float(f) if !f.is_finite() => Value::Null,
+        v => v,
     }
 }
 
@@ -854,7 +862,7 @@ fn container(custom: &[Arc<dyn Transform>], t: &TxRef, v: Option<J>) -> Value<'s
     };
     match custom.get(*index) {
         Some(f) => catch_unwind(AssertUnwindSafe(|| f.apply_container(&v, arg.as_ref())))
-            .unwrap_or(Value::Null),
+            .map_or(Value::Null, finite),
         None => Value::Null,
     }
 }
@@ -1243,9 +1251,11 @@ impl<S: Sink> Exec<'_, S> {
         let v = match first {
             TxRef::Builtin(b) => Some(b.apply(Value::Null, None)),
             TxRef::Custom { index, arg, .. } => self.custom.get(*index).and_then(|f| {
+                // NaN or infinity is not JSON: a rejection, as a raise is.
                 catch_unwind(AssertUnwindSafe(|| f.try_apply(Value::Null, arg.as_ref())))
                     .ok()
                     .flatten()
+                    .filter(|v| !matches!(v, Value::Float(f) if !f.is_finite()))
             }),
         };
         match v.map(|v| pipe(self.custom, rest, v)) {

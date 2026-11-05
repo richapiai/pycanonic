@@ -38,6 +38,7 @@ pycanonic 0.2.0 widens spec language 2, adds strict and union canonical schemas,
 
 - `group_by`, `unique` and a condition `eq` against an array or object now compare integers exactly. Before, two integers above 2^53 that round to the same double, such as the IDs `1234567890123456789` and `1234567890123456790`, merged into one group or one `unique` element. An integral float such as `1.0` still equals the integer `1`.
 - An aggregate `sum` whose total overflows a double now gives null and counts an error. Before, `map` returned `inf` while `map_json` wrote `null`.
+- A custom transform that returns NaN or infinity now gives null and counts an error. Before, `map` returned the float, `map_json` wrote `null` and the stats counted a fill.
 
 ### Compatibility
 

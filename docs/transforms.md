@@ -6,6 +6,8 @@ A spec with `"language": 2` can also use the twenty-nine transforms in [Language
 
 Every one returns null for input it cannot handle and never raises. A transform that gets a value and returns null sets the field to `None`, or to its `default`. It also adds one to that field's `errors` in `artifact.stats.snapshot()`. Property tests in `crates/canonic-core/tests/` run each transform on junk input and random values.
 
+A custom transform that returns NaN or infinity, or an integer too large for a double, is treated the same way: the field is `None` and counts one error. JSON has no such number, so `map` and `map_json` agree.
+
 ```python
 from pycanonic import default_transforms as T, validators as V
 
